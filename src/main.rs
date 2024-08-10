@@ -106,7 +106,7 @@ fn depth_first() {
                     let value = seq.value();
                     if is_prime(&value) {
                         println!("{}{} minimal prime!", indenter.leader(), seq);
-                        minimal_primes.push(value);
+                        minimal_primes.push((seq, value));
                     } else {
                         allowed_digits.push(digit);
                     }
@@ -154,13 +154,11 @@ fn depth_first() {
         println!("  {}", pattern);
     }
     println!("Minimal primes: ({} total)", minimal_primes.len());
-    minimal_primes.sort();
-    for p in minimal_primes {
-        println!("  {}", p);
+    minimal_primes.sort_by_key(|(_, val)| val.clone());
+    for (seq, p) in minimal_primes {
+        println!("  {} = ({} in base 10)", seq, p);
     }
 }
-
-
 
 fn find_contained_prime(seq: &DigitSeq) -> Option<DigitSeq> {
     for subseq in seq.0.iter().copied().powerset() {
