@@ -8,12 +8,57 @@ fn main() {
     depth_first();
 }
 
+struct Indenter {
+    stack: Vec<usize>,
+}
+
+impl Indenter {
+    const BAR: &'static str = " │  ";
+    const TEE: &'static str = " ├─ ";
+    const EMPTY: &'static str = "    ";
+
+    fn new() -> Self {
+        Self { stack: vec![] }
+    }
+
+    fn leader(&self) -> String {
+        let mut s = String::new();
+        for (idx, n) in self.stack.iter().copied().enumerate() {
+            for _ in 1..n {
+                s += Self::EMPTY;
+            }
+            if idx == self.stack.len() - 1 {
+                s += Self::TEE;
+            } else {
+                s += Self::BAR;
+            }
+        }
+        s
+    }
+
+    fn indent(&mut self) {
+        self.stack.push(1);
+    }
+
+    fn increase_indent(&mut self) {
+        if let Some(last) = self.stack.last_mut() {
+            *last += 1;
+        }
+    }
+
+    fn dedent(&mut self) {
+        self.stack.pop();
+    }
+}
+
 fn depth_first() {
     let mut minimal_primes = vec![];
     let mut cutoff_patterns = vec![];
 
     let mut top = VecDeque::new();
     top.push_back(Pattern::any());
+
+    let mut indenter = Indenter::new();
 
     let mut stack = vec![top];
     while let Some(top) = stack.last_mut() {
@@ -23,18 +68,19 @@ fn depth_first() {
             None => {
                 // Nothing left to investigate; drop down to the next one
                 stack.pop();
+                indenter.dedent();
                 continue;
             }
         };
 
-        // For formatting
-        let leader = " ".repeat(pattern.weight());
-        println!("{}{}", leader, pattern);
+        println!("{}{}", indenter.leader(), pattern);
+        indenter.indent();
 
         // Cutoff point
         if pattern.weight() > 10 {
-            println!("{} ...cutoff!", leader);
+            println!("{}...cutoff!", indenter.leader());
             cutoff_patterns.push(pattern);
+            indenter.dedent();
             continue;
         }
 
@@ -53,12 +99,12 @@ fn depth_first() {
             match find_contained_prime(&seq) {
                 Some(p) => {
                     assert_ne!(seq.0, p.0);
-                    println!(" {}{} contains prime: {}", leader, seq, p);
+                    println!("{}{} contains prime: {}", indenter.leader(), seq, p);
                 }
                 None => {
                     let value = seq.value();
                     if is_prime(&value) {
-                        println!(" {}{} minimal prime!", leader, seq);
+                        println!("{}{} minimal prime!", indenter.leader(), seq);
                         minimal_primes.push(value);
                     } else {
                         allowed_digits.push(digit);
@@ -69,7 +115,8 @@ fn depth_first() {
 
         // Now we've reduced the center, and have a new pattern.
         if allowed_digits.is_empty() {
-            println!(" {}eliminated all digits", leader);
+            println!("{}eliminated all digits", indenter.leader());
+            indenter.dedent();
             continue;
         } else {
             pattern.center = allowed_digits;
@@ -77,21 +124,27 @@ fn depth_first() {
 
         // Let's check whether this pattern is guaranteed to never be prime,
         // i.e., if there's a perpetual factor.
-        match find_perpetual_factor(&pattern) {
-            Some(f) => {
-                println!(" {}{} always divisible by {}!", leader, pattern, f);
-                continue;
-            }
-            None => println!(" {}{}", leader, pattern),
+        if let Some(f) = find_perpetual_factor(&pattern) {
+            println!(
+                "{}{} always divisible by {}!",
+                indenter.leader(),
+                pattern,
+                f
+            );
+            indenter.dedent();
+            continue;
         }
 
         // If we couldn't eliminate it, let's split it, left or right.
         // On vibes, let's split left when it's the second digit.
         if pattern.weight() == 1 {
+            println!("{}{} reduced, split left", indenter.leader(), pattern);
             stack.push(VecDeque::from(pattern.split_left()));
         } else {
+            println!("{}{} reduced, split right", indenter.leader(), pattern);
             stack.push(VecDeque::from(pattern.split_right()));
         }
+        indenter.increase_indent();
     }
 
     println!("Stopping now!");
@@ -128,7 +181,7 @@ fn breadth_first() {
         println!("Investigating {}", pattern);
 
         // Hack! Fix this
-        if hacky_test(&pattern) {
+        if find_perpetual_factor(&pattern).is_some() {
             println!("Delet: {}", pattern);
             continue;
         }
@@ -178,66 +231,6 @@ fn breadth_first() {
     for p in minimal_primes {
         println!("  {}", p);
     }
-}
-
-fn hacky_test(pattern: &Pattern) -> bool {
-    // Divisible by 2
-    if pattern.after.0.last().is_some_and(|d| d.0 % 2 == 0) {
-        return true;
-    }
-    // Nothing but 0s left
-    if pattern.before.0.is_empty() && pattern.center == vec![Digit(0)] {
-        return true;
-    }
-    {
-        // Divisible by 3
-        let mut three_sum_const = 0;
-        for digit in &pattern.before.0 {
-            three_sum_const += digit.0;
-        }
-        for digit in &pattern.after.0 {
-            three_sum_const += digit.0;
-        }
-        if three_sum_const % 3 != 0 {
-            return false;
-        }
-        for digit in &pattern.center {
-            if digit.0 % 3 != 0 {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    // TODO: turn this into a real "neverprime" machine.
-    // there are a few kinds of divisibility tests, all of which are necessary
-    // * last-digit: 2,5
-    //   * only the last digit matters
-    //   * kills branches like [468]+4 that'll never contain primes
-    //   * only works for primes dividing BASE
-    // * mod-sum: 3
-    //   * hyper-specific, only affects factors of BASE-1
-    //   * can deal with things like 8[0]+1
-    //   * can work on large centers, e.g., [069]+6669, or 1[0369]+2.
-    // * tricky: lots of primes?
-    //   * this is the evil case that is necessary but idk exactly how to do it yet
-    //   * only way to kill 4[6]+9
-    //   * mostly works on singleton centers, but i bet there's a rare case where
-    //     you get things equivalent mod p in the center
-    //   * approach: 4 is 4 mod 7, and when you tack on a 6, you get 4*10+6=5+6=4 again.
-    //     this tells you you can collapse the 6s. go check 49.
-    //   * the repdigit depends on the beginning; 3, 36, 366, don't have the same remainder
-    //     mod 7, but 3, 31, 311, do. (so 3[1]+5 would be never prime)
-    //   * i think this works with arbitrarily large primes. consider 4[3]+42 mod 13.
-    //     4*10+3=1+3=4, so check 442, which is 2*13*17
-    //   * maybe i can tackle it without knowing p?
-    //     4*10+6 = 4 for what p? it's factors of 4*9+6 i.e. 42 (hey there's 7!)
-    //     4*10+3 = 4 for factors of 4*9+3 = 39 (hey, there's 13!)
-    //   * maybe i can roll mod-3 into that then...
-    //     for 5[0369]28, 5*9+x, where x=0369, gives 45,48,51,54, all of which are
-    //     multiples of 3. so we can collapse them and check 528 mod 3, which is 0.
-    //   * i think that clinches it! i don't have to try arbitrarily high primes, i just
-    //     have to track factors of (before)*(BASE-1)+(center) :)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
