@@ -5,8 +5,99 @@ use std::collections::VecDeque;
 const BASE: u32 = 10;
 
 fn main() {
-    println!("Hello, world!");
+    depth_first();
+}
 
+fn depth_first() {
+    let mut minimal_primes = vec![];
+    let mut cutoff_patterns = vec![];
+
+    let mut top = VecDeque::new();
+    top.push_back(Pattern::any());
+
+    let mut stack = vec![top];
+    while let Some(top) = stack.last_mut() {
+        // Take the front off the vector, if present
+        let mut pattern = match top.pop_front() {
+            Some(pattern) => pattern,
+            None => {
+                // Nothing left to investigate; drop down to the next one
+                stack.pop();
+                continue;
+            }
+        };
+
+        let leader = " ".repeat(pattern.weight());
+
+        // Cutoff point
+        if pattern.weight() > 10 {
+            println!("{}{} ...cutoff!", leader, pattern);
+            cutoff_patterns.push(pattern);
+            continue;
+        }
+
+        println!("{}{}", leader, pattern);
+
+        // Say our pattern is ABC[PQR]+XYZ.
+        // We want to explore all possible children that have weight one more than this one.
+        // There's many ways we can do that.
+        // if hacky_test(&pattern) {
+        //     println!("{}{} never prime!", leader, pattern);
+        //     continue;
+        // }
+
+        // Can any of PQR be eliminated? Also, take care of ABC[PQR]XYZ (no center).
+        let mut allowed_digits = vec![];
+        for digit in pattern.center.iter().copied() {
+            let seq = pattern.clone().substitute(digit);
+
+            match find_contained_prime(&seq) {
+                Some(p) => {
+                    assert_ne!(seq.0, p.0);
+                    println!(" {}{} contains prime: {}", leader, seq, p);
+                }
+                None => {
+                    let value = seq.value();
+                    if is_prime(&value) {
+                        println!(" {}{} minimal prime!", leader, seq);
+                        minimal_primes.push(value);
+                    } else {
+                        allowed_digits.push(digit);
+                    }
+                }
+            }
+        }
+
+        // Here's the new pattern
+        pattern.center = allowed_digits;
+
+        if hacky_test(&pattern) {
+            println!(" {}{} never prime!", leader, pattern);
+            continue;
+        }
+
+        // Now that we've reduced the center, let's split it, left or right.
+        // On vibes, let's split left when it's the second digit.
+        if pattern.weight() == 1 {
+            stack.push(VecDeque::from(pattern.split_left()));
+        } else {
+            stack.push(VecDeque::from(pattern.split_right()));
+        }
+    }
+
+    println!("Stopping now!");
+    println!("Remaining branches:");
+    for pattern in cutoff_patterns {
+        println!("  {}", pattern);
+    }
+    println!("Minimal primes: ({} total)", minimal_primes.len());
+    minimal_primes.sort();
+    for p in minimal_primes {
+        println!("  {}", p);
+    }
+}
+
+fn breadth_first() {
     let init = Pattern::any();
     let mut branches = VecDeque::new();
     branches.push_back(init);
@@ -108,6 +199,36 @@ fn hacky_test(pattern: &Pattern) -> bool {
         }
         return true;
     }
+
+    // TODO: turn this into a real "neverprime" machine.
+    // there are a few kinds of divisibility tests, all of which are necessary
+    // * last-digit: 2,5
+    //   * only the last digit matters
+    //   * kills branches like [468]+4 that'll never contain primes
+    //   * only works for primes dividing BASE
+    // * mod-sum: 3
+    //   * hyper-specific, only affects factors of BASE-1
+    //   * can deal with things like 8[0]+1
+    //   * can work on large centers, e.g., [069]+6669, or 1[0369]+2.
+    // * tricky: lots of primes?
+    //   * this is the evil case that is necessary but idk exactly how to do it yet
+    //   * only way to kill 4[6]+9
+    //   * mostly works on singleton centers, but i bet there's a rare case where
+    //     you get things equivalent mod p in the center
+    //   * approach: 4 is 4 mod 7, and when you tack on a 6, you get 4*10+6=5+6=4 again.
+    //     this tells you you can collapse the 6s. go check 49.
+    //   * the repdigit depends on the beginning; 3, 36, 366, don't have the same remainder
+    //     mod 7, but 3, 31, 311, do. (so 3[1]+5 would be never prime)
+    //   * i think this works with arbitrarily large primes. consider 4[3]+42 mod 13.
+    //     4*10+3=1+3=4, so check 442, which is 2*13*17
+    //   * maybe i can tackle it without knowing p?
+    //     4*10+6 = 4 for what p? it's factors of 4*9+6 i.e. 42 (hey there's 7!)
+    //     4*10+3 = 4 for factors of 4*9+3 = 39 (hey, there's 13!)
+    //   * maybe i can roll mod-3 into that then...
+    //     for 5[0369]28, 5*9+x, where x=0369, gives 45,48,51,54, all of which are
+    //     multiples of 3. so we can collapse them and check 528 mod 3, which is 0.
+    //   * i think that clinches it! i don't have to try arbitrarily high primes, i just
+    //     have to track factors of (before)*(BASE-1)+(center) :)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
