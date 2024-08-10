@@ -27,26 +27,25 @@ fn depth_first() {
             }
         };
 
+        // For formatting
         let leader = " ".repeat(pattern.weight());
+        println!("{}{}", leader, pattern);
 
         // Cutoff point
         if pattern.weight() > 10 {
-            println!("{}{} ...cutoff!", leader, pattern);
+            println!("{} ...cutoff!", leader);
             cutoff_patterns.push(pattern);
             continue;
         }
 
-        println!("{}{}", leader, pattern);
-
         // Say our pattern is ABC[PQR]+XYZ.
         // We want to explore all possible children that have weight one more than this one.
         // There's many ways we can do that.
-        // if hacky_test(&pattern) {
-        //     println!("{}{} never prime!", leader, pattern);
-        //     continue;
-        // }
 
-        // Can any of PQR be eliminated? Also, take care of ABC[PQR]XYZ (no center).
+        // First, we try to reduce the center, by seeing whether any of P,Q,R can be
+        // substituted into the center.
+        // If the resulting sequences contains or is a prime, we can eliminate that
+        // branch.
         let mut allowed_digits = vec![];
         for digit in pattern.center.iter().copied() {
             let seq = pattern.clone().substitute(digit);
@@ -68,15 +67,25 @@ fn depth_first() {
             }
         }
 
-        // Here's the new pattern
-        pattern.center = allowed_digits;
-
-        if hacky_test(&pattern) {
-            println!(" {}{} never prime!", leader, pattern);
+        // Now we've reduced the center, and have a new pattern.
+        if allowed_digits.is_empty() {
+            println!(" {}eliminated all digits", leader);
             continue;
+        } else {
+            pattern.center = allowed_digits;
         }
 
-        // Now that we've reduced the center, let's split it, left or right.
+        // Let's check whether this pattern is guaranteed to never be prime,
+        // i.e., if there's a perpetual factor.
+        match find_perpetual_factor(&pattern) {
+            Some(f) => {
+                println!(" {}{} always divisible by {}!", leader, pattern, f);
+                continue;
+            }
+            None => println!(" {}{}", leader, pattern),
+        }
+
+        // If we couldn't eliminate it, let's split it, left or right.
         // On vibes, let's split left when it's the second digit.
         if pattern.weight() == 1 {
             stack.push(VecDeque::from(pattern.split_left()));
@@ -340,6 +349,70 @@ fn find_contained_prime(seq: &DigitSeq) -> Option<DigitSeq> {
     None
 }
 
+fn find_perpetual_factor(pattern: &Pattern) -> Option<BigUint> {
+    // This function is used to eliminate patterns that will always result
+    // in composite numbers, letting us cut off infinite branches of the
+    // search space.
+    // There are a few possible ways this can happen. We'll use base 10
+    // in the comments for familiarity/
+
+    // p divides BASE (e.g., 2, 5)
+    // ---------------------------
+    // This happens when the last digit is not coprime with the base.
+    // If so, the GCD of the last digit and BASE divides the pattern.
+    if let Some(d) = pattern.after.0.last() {
+        let gcd = gcd(d.0.into(), BASE.into());
+        assert!(gcd != BigUint::ZERO);
+        if gcd != BigUint::from(1_u32) {
+            return Some(gcd);
+        }
+    }
+
+    // p does not divide BASE (e.g. 7)
+    // -------------------------------
+    // This is how we detect patterns like 4[6]9 being divisible by 7.
+    //
+    // If 49, 469, 4669, etc are all divisible by 7, it means that:
+    // - 49 is divisible by 7
+    // - 4666...6669 is equivalent to 49 mod 7 (they're both 0)
+    //
+    // This means that 46666...60 is equivalent to 40 mod 7, but since 7
+    // and 10 are coprime, that means 466...666 and 4 are equivalent.
+    //
+    // It suffices to show that 4 and 46 are equivalent! If they are, then
+    // (10*x+6) maps them to 46 and 466, making 4, 46, and 466 equivalent,
+    // etc.
+    //
+    // So we need to prove two facts:
+    // - 49 is divisible by 7
+    // - 4 and 46 are equivalent mod 7, i.e., 46 - 4 is divisible by 7
+    //
+    // More generally, for a pattern a[b]c:
+    // - ac is divisible by p
+    // - ab - a is divisible by p
+    //
+    // Even better, we don't have to try a bunch of different p; what
+    // we're actually looking for is whether ac and (ab - a) have some
+    // non-trivial common factor, i.e., we can just use the GCD!
+    //
+    // Lastly, for patterns with more than one digit in the center,
+    // we can try all of them individually and lump them into the same GCD.
+    // This is what will let us eliminate patterns like 2[369]1.
+    let a = pattern.before.value();
+    let ac = (pattern.before.clone() + pattern.after.clone()).value();
+    let mut gcd_accumulated = ac;
+    for b in &pattern.center {
+        let ab = (pattern.before.clone() + DigitSeq::single(*b)).value();
+        gcd_accumulated = gcd(gcd_accumulated, ab - &a);
+    }
+    assert!(gcd_accumulated != BigUint::ZERO);
+    if gcd_accumulated != BigUint::from(1_u32) {
+        Some(gcd_accumulated)
+    } else {
+        None
+    }
+}
+
 fn is_prime(n: &BigUint) -> bool {
     let two: BigUint = BigUint::from(2_u32);
 
@@ -362,12 +435,24 @@ fn is_prime(n: &BigUint) -> bool {
             return true;
         }
 
-        if n.clone() % &factor == BigUint::ZERO {
+        if n % &factor == BigUint::ZERO {
             return false;
         }
 
         factor += 2_u32;
     }
+}
+
+fn gcd(mut a: BigUint, mut b: BigUint) -> BigUint {
+    if a < b {
+        std::mem::swap(&mut a, &mut b);
+    }
+
+    while b != BigUint::ZERO {
+        (b, a) = (a % &b, b);
+    }
+
+    a
 }
 
 fn all_digits() -> Vec<Digit> {
