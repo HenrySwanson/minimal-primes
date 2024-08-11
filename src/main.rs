@@ -12,7 +12,7 @@ mod tree_format;
 struct Args {
     /// Base, e.g., decimal, binary, etc.
     #[arg(default_value_t = 10)]
-    base: u32,
+    base: u8,
 
     /// How far to explore into a branch before we give up
     #[arg(short, long, default_value_t = 10)]
@@ -131,7 +131,7 @@ fn depth_first(args: Args) {
     }
 }
 
-fn find_contained_prime(seq: &DigitSeq, base: u32) -> Option<DigitSeq> {
+fn find_contained_prime(seq: &DigitSeq, base: u8) -> Option<DigitSeq> {
     for subseq in seq.0.iter().copied().powerset() {
         // Skip the trivial cases
         if subseq.is_empty() || subseq.len() == seq.0.len() {
@@ -148,7 +148,7 @@ fn find_contained_prime(seq: &DigitSeq, base: u32) -> Option<DigitSeq> {
     None
 }
 
-fn find_perpetual_factor(pattern: &Pattern, base: u32) -> Option<BigUint> {
+fn find_perpetual_factor(pattern: &Pattern, base: u8) -> Option<BigUint> {
     // This function is used to eliminate patterns that will always result
     // in composite numbers, letting us cut off infinite branches of the
     // search space.
