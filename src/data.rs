@@ -6,10 +6,10 @@ use num_bigint::BigUint;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Digit(pub u8);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DigitSeq(pub Vec<Digit>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Pattern {
     pub before: DigitSeq,
     pub center: Vec<Digit>,
