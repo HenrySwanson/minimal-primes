@@ -201,7 +201,7 @@ fn find_perpetual_factor(pattern: &Pattern, base: u32) -> Option<BigUint> {
     let ac = (pattern.before.clone() + pattern.after.clone()).value(base);
     let mut gcd_accumulated = ac;
     for b in &pattern.center {
-        let ab = (pattern.before.clone() + DigitSeq::single(*b)).value(base);
+        let ab = (pattern.before.clone() + *b).value(base);
         gcd_accumulated = gcd(gcd_accumulated, ab - &a);
     }
     assert!(gcd_accumulated != BigUint::ZERO);

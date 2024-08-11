@@ -19,10 +19,6 @@ impl DigitSeq {
         Self(vec![])
     }
 
-    pub fn single(d: Digit) -> Self {
-        Self(vec![d])
-    }
-
     pub fn value(&self, base: u32) -> BigUint {
         let mut value = BigUint::ZERO;
         for d in &self.0 {
@@ -42,6 +38,30 @@ impl std::ops::Add for DigitSeq {
     }
 }
 
+impl std::ops::Add<Digit> for DigitSeq {
+    type Output = DigitSeq;
+
+    fn add(mut self, rhs: Digit) -> Self::Output {
+        self.0.push(rhs);
+        self
+    }
+}
+
+impl std::ops::Add<DigitSeq> for Digit {
+    type Output = DigitSeq;
+
+    fn add(self, mut rhs: DigitSeq) -> Self::Output {
+        rhs.0.insert(0, self);
+        rhs
+    }
+}
+
+impl From<Digit> for DigitSeq {
+    fn from(d: Digit) -> Self {
+        Self(vec![d])
+    }
+}
+
 impl Pattern {
     pub fn any(base: u32) -> Self {
         Self {
@@ -56,7 +76,7 @@ impl Pattern {
     }
 
     pub fn substitute(self, digit: Digit) -> DigitSeq {
-        self.before + DigitSeq::single(digit) + self.after
+        self.before + digit + self.after
     }
 
     pub fn split_left(&self) -> Vec<Self> {
@@ -66,7 +86,7 @@ impl Pattern {
             // skip 0 if it'd be the first digit
             .filter(|digit| digit.0 != 0 || !self.before.0.is_empty())
             .map(|digit| {
-                let new_before = self.before.clone() + DigitSeq::single(digit);
+                let new_before = self.before.clone() + (digit);
 
                 Self {
                     before: new_before,
@@ -82,7 +102,7 @@ impl Pattern {
             .iter()
             .copied()
             .map(|digit| {
-                let new_after = DigitSeq::single(digit) + self.after.clone();
+                let new_after = (digit) + self.after.clone();
                 Self {
                     before: self.before.clone(),
                     center: self.center.clone(),
