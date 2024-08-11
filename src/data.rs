@@ -1,8 +1,6 @@
 use itertools::Itertools;
 use num_bigint::BigUint;
 
-pub const BASE: u32 = 10;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Digit(pub u32);
 
@@ -25,10 +23,10 @@ impl DigitSeq {
         Self(vec![d])
     }
 
-    pub fn value(&self) -> BigUint {
+    pub fn value(&self, base: u32) -> BigUint {
         let mut value = BigUint::ZERO;
         for d in &self.0 {
-            value *= BASE;
+            value *= base;
             value += d.0;
         }
         value
@@ -45,10 +43,10 @@ impl std::ops::Add for DigitSeq {
 }
 
 impl Pattern {
-    pub fn any() -> Self {
+    pub fn any(base: u32) -> Self {
         Self {
             before: DigitSeq::new(),
-            center: (0..BASE).map(Digit).collect(),
+            center: (0..base).map(Digit).collect(),
             after: DigitSeq::new(),
         }
     }
@@ -97,7 +95,7 @@ impl Pattern {
 
 impl std::fmt::Display for Digit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        write!(f, "{:x}", self.0)
     }
 }
 

@@ -1,4 +1,5 @@
-use data::{DigitSeq, Pattern, BASE};
+use clap::Parser;
+use data::{DigitSeq, Pattern};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use std::collections::VecDeque;
@@ -7,18 +8,30 @@ use tree_format::Indenter;
 mod data;
 mod tree_format;
 
-fn main() {
-    depth_first();
+#[derive(Parser)]
+struct Args {
+    /// Base, e.g., decimal, binary, etc.
+    #[arg(default_value_t = 10)]
+    base: u32,
+
+    /// How far to explore into a branch before we give up
+    #[arg(short, long, default_value_t = 10)]
+    cutoff: usize,
 }
 
-fn depth_first() {
+fn main() {
+    let args = Args::parse();
+    depth_first(args);
+}
+
+fn depth_first(args: Args) {
     let mut minimal_primes = vec![];
     let mut cutoff_patterns = vec![];
 
     let mut indenter = Indenter::new();
 
     let mut top = VecDeque::new();
-    top.push_back(Pattern::any());
+    top.push_back(Pattern::any(args.base));
     let mut stack = vec![top];
     while let Some(top) = stack.last_mut() {
         // Take the front off the vector, if present
@@ -40,7 +53,7 @@ fn depth_first() {
         indenter.push_new();
 
         // Cutoff point
-        if pattern.weight() > 10 {
+        if pattern.weight() > args.cutoff {
             indenter.prepare_pop();
             indenter.write_line("...cutoff!");
             cutoff_patterns.push(pattern);
@@ -59,13 +72,13 @@ fn depth_first() {
         for digit in pattern.center.iter().copied() {
             let seq = pattern.clone().substitute(digit);
 
-            match find_contained_prime(&seq) {
+            match find_contained_prime(&seq, args.base) {
                 Some(p) => {
                     assert_ne!(seq.0, p.0);
                     indenter.write_line(&format!("{} contains prime: {}", seq, p));
                 }
                 None => {
-                    let value = seq.value();
+                    let value = seq.value(args.base);
                     if is_prime(&value) {
                         indenter.write_line(&format!("{} minimal prime", seq));
                         minimal_primes.push((seq, value));
@@ -87,7 +100,7 @@ fn depth_first() {
 
         // Let's check whether this pattern is guaranteed to never be prime,
         // i.e., if there's a perpetual factor.
-        if let Some(f) = find_perpetual_factor(&pattern) {
+        if let Some(f) = find_perpetual_factor(&pattern, args.base) {
             indenter.prepare_pop();
             indenter.write_line(&format!("{} always divisible by {}!", pattern, f));
             continue;
@@ -118,7 +131,7 @@ fn depth_first() {
     }
 }
 
-fn find_contained_prime(seq: &DigitSeq) -> Option<DigitSeq> {
+fn find_contained_prime(seq: &DigitSeq, base: u32) -> Option<DigitSeq> {
     for subseq in seq.0.iter().copied().powerset() {
         // Skip the trivial cases
         if subseq.is_empty() || subseq.len() == seq.0.len() {
@@ -127,7 +140,7 @@ fn find_contained_prime(seq: &DigitSeq) -> Option<DigitSeq> {
 
         // Check if it's prime
         let subseq = DigitSeq(subseq);
-        if is_prime(&subseq.value()) {
+        if is_prime(&subseq.value(base)) {
             return Some(subseq);
         }
     }
@@ -135,7 +148,7 @@ fn find_contained_prime(seq: &DigitSeq) -> Option<DigitSeq> {
     None
 }
 
-fn find_perpetual_factor(pattern: &Pattern) -> Option<BigUint> {
+fn find_perpetual_factor(pattern: &Pattern, base: u32) -> Option<BigUint> {
     // This function is used to eliminate patterns that will always result
     // in composite numbers, letting us cut off infinite branches of the
     // search space.
@@ -147,7 +160,7 @@ fn find_perpetual_factor(pattern: &Pattern) -> Option<BigUint> {
     // This happens when the last digit is not coprime with the base.
     // If so, the GCD of the last digit and BASE divides the pattern.
     if let Some(d) = pattern.after.0.last() {
-        let gcd = gcd(d.0.into(), BASE.into());
+        let gcd = gcd(d.0.into(), base.into());
         assert!(gcd != BigUint::ZERO);
         if gcd != BigUint::from(1_u32) {
             return Some(gcd);
@@ -184,11 +197,11 @@ fn find_perpetual_factor(pattern: &Pattern) -> Option<BigUint> {
     // Lastly, for patterns with more than one digit in the center,
     // we can try all of them individually and lump them into the same GCD.
     // This is what will let us eliminate patterns like 2[369]1.
-    let a = pattern.before.value();
-    let ac = (pattern.before.clone() + pattern.after.clone()).value();
+    let a = pattern.before.value(base);
+    let ac = (pattern.before.clone() + pattern.after.clone()).value(base);
     let mut gcd_accumulated = ac;
     for b in &pattern.center {
-        let ab = (pattern.before.clone() + DigitSeq::single(*b)).value();
+        let ab = (pattern.before.clone() + DigitSeq::single(*b)).value(base);
         gcd_accumulated = gcd(gcd_accumulated, ab - &a);
     }
     assert!(gcd_accumulated != BigUint::ZERO);
