@@ -21,7 +21,93 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    depth_first(args);
+    // depth_first(args);
+
+    let mut ctx = SearchContext::new(args.base);
+    for i in 0..12 {
+        println!("------------");
+        println!("Level {}", i);
+        println!("------------");
+        println!(
+            "{}",
+            ctx.minimal_primes.iter().map(|(seq, _)| seq).format(", ")
+        );
+        println!("------------");
+        for pat in ctx.queue.iter() {
+            println!("{}", pat);
+        }
+        println!("------------");
+        ctx.search_one_level();
+    }
+}
+
+struct SearchContext {
+    base: u8,
+
+    minimal_primes: Vec<(DigitSeq, BigUint)>,
+    queue: VecDeque<Pattern>,
+}
+
+impl SearchContext {
+    pub fn new(base: u8) -> Self {
+        Self {
+            base,
+            minimal_primes: vec![],
+            queue: vec![Pattern::any(base)].into(),
+        }
+    }
+
+    pub fn search_one_level(&mut self) {
+        let old_queue = std::mem::take(&mut self.queue);
+        for mut pattern in old_queue {
+            // Say our pattern is ABC[PQR]+XYZ.
+            // We want to explore all possible children that have weight one more than this one.
+            // There's many ways we can do that.
+
+            // First, we try to reduce the center, by seeing whether any of P,Q,R can be
+            // substituted into the center.
+            // If the resulting sequences contains or is a prime, we can eliminate that
+            // branch.
+            let mut allowed_digits = vec![];
+            for digit in pattern.center.iter().copied() {
+                let seq = pattern.clone().substitute(digit);
+
+                match find_contained_prime(&seq, self.base) {
+                    Some(p) => {
+                        assert_ne!(seq.0, p.0);
+                    }
+                    None => {
+                        let value = seq.value(self.base);
+                        if is_prime(&value) {
+                            self.minimal_primes.push((seq, value));
+                        } else {
+                            allowed_digits.push(digit);
+                        }
+                    }
+                }
+            }
+
+            // Now we've reduced the center, and have a new pattern.
+            if allowed_digits.is_empty() {
+                continue;
+            } else {
+                pattern.center = allowed_digits;
+            }
+
+            // Let's check whether this pattern is guaranteed to never be prime,
+            // i.e., if there's a perpetual factor.
+            if let Some(f) = find_perpetual_factor(&pattern, self.base) {
+                continue;
+            }
+
+            // If we couldn't eliminate it, let's split it, left or right.
+            if pattern.weight() == 1 {
+                self.queue.extend(VecDeque::from(pattern.split_left()));
+            } else {
+                self.queue.extend(VecDeque::from(pattern.split_right()));
+            }
+        }
+    }
 }
 
 fn depth_first(args: Args) {
