@@ -2,65 +2,23 @@ use data::{DigitSeq, Pattern, BASE};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use std::collections::VecDeque;
+use tree_format::Indenter;
 
 mod data;
+mod tree_format;
 
 fn main() {
     depth_first();
-}
-
-struct Indenter {
-    stack: Vec<usize>,
-}
-
-impl Indenter {
-    const BAR: &'static str = " │  ";
-    const TEE: &'static str = " ├─ ";
-    const EMPTY: &'static str = "    ";
-
-    fn new() -> Self {
-        Self { stack: vec![] }
-    }
-
-    fn leader(&self) -> String {
-        let mut s = String::new();
-        for (idx, n) in self.stack.iter().copied().enumerate() {
-            for _ in 1..n {
-                s += Self::EMPTY;
-            }
-            if idx == self.stack.len() - 1 {
-                s += Self::TEE;
-            } else {
-                s += Self::BAR;
-            }
-        }
-        s
-    }
-
-    fn indent(&mut self) {
-        self.stack.push(1);
-    }
-
-    fn increase_indent(&mut self) {
-        if let Some(last) = self.stack.last_mut() {
-            *last += 1;
-        }
-    }
-
-    fn dedent(&mut self) {
-        self.stack.pop();
-    }
 }
 
 fn depth_first() {
     let mut minimal_primes = vec![];
     let mut cutoff_patterns = vec![];
 
-    let mut top = VecDeque::new();
-    top.push_back(Pattern::any());
-
     let mut indenter = Indenter::new();
 
+    let mut top = VecDeque::new();
+    top.push_back(Pattern::any());
     let mut stack = vec![top];
     while let Some(top) = stack.last_mut() {
         // Take the front off the vector, if present
@@ -69,19 +27,23 @@ fn depth_first() {
             None => {
                 // Nothing left to investigate; drop down to the next one
                 stack.pop();
-                indenter.dedent();
+                indenter.pop();
                 continue;
             }
         };
 
-        println!("{}{}", indenter.leader(), pattern);
-        indenter.indent();
+        if top.is_empty() {
+            indenter.close();
+        }
+
+        indenter.write_line(&format!("{}", pattern));
+        indenter.push_new();
 
         // Cutoff point
         if pattern.weight() > 10 {
-            println!("{}...cutoff!", indenter.leader());
+            indenter.prepare_pop();
+            indenter.write_line("...cutoff!");
             cutoff_patterns.push(pattern);
-            indenter.dedent();
             continue;
         }
 
@@ -100,12 +62,12 @@ fn depth_first() {
             match find_contained_prime(&seq) {
                 Some(p) => {
                     assert_ne!(seq.0, p.0);
-                    println!("{}{} contains prime: {}", indenter.leader(), seq, p);
+                    indenter.write_line(&format!("{} contains prime: {}", seq, p));
                 }
                 None => {
                     let value = seq.value();
                     if is_prime(&value) {
-                        println!("{}{} minimal prime!", indenter.leader(), seq);
+                        indenter.write_line(&format!("{} minimal prime", seq));
                         minimal_primes.push((seq, value));
                     } else {
                         allowed_digits.push(digit);
@@ -116,8 +78,8 @@ fn depth_first() {
 
         // Now we've reduced the center, and have a new pattern.
         if allowed_digits.is_empty() {
-            println!("{}eliminated all digits", indenter.leader());
-            indenter.dedent();
+            indenter.prepare_pop();
+            indenter.write_line("eliminated all digits");
             continue;
         } else {
             pattern.center = allowed_digits;
@@ -126,26 +88,22 @@ fn depth_first() {
         // Let's check whether this pattern is guaranteed to never be prime,
         // i.e., if there's a perpetual factor.
         if let Some(f) = find_perpetual_factor(&pattern) {
-            println!(
-                "{}{} always divisible by {}!",
-                indenter.leader(),
-                pattern,
-                f
-            );
-            indenter.dedent();
+            indenter.prepare_pop();
+            indenter.write_line(&format!("{} always divisible by {}!", pattern, f));
             continue;
         }
 
         // If we couldn't eliminate it, let's split it, left or right.
         // On vibes, let's split left when it's the second digit.
+        indenter.close();
         if pattern.weight() == 1 {
-            println!("{}{} reduced, split left", indenter.leader(), pattern);
+            indenter.write_line(&format!("{} reduced, split left", pattern));
             stack.push(VecDeque::from(pattern.split_left()));
         } else {
-            println!("{}{} reduced, split right", indenter.leader(), pattern);
+            indenter.write_line(&format!("{} reduced, split right", pattern));
             stack.push(VecDeque::from(pattern.split_right()));
         }
-        indenter.increase_indent();
+        indenter.push_new();
     }
 
     println!("Stopping now!");
