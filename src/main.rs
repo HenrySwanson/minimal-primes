@@ -32,7 +32,7 @@ fn main() {
     for pat in ctx.queue.iter() {
         println!("{}", pat);
     }
-    println!("---- MINIMAL PRIMES ----");
+    println!("---- MINIMAL PRIMES ({}) ----", ctx.minimal_primes.len());
     println!(
         "{}",
         ctx.minimal_primes.iter().map(|(seq, _)| seq).format(", ")
