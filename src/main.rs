@@ -133,7 +133,7 @@ impl SearchContext {
         // in composite numbers, letting us cut off infinite branches of the
         // search space.
         // There are a few possible ways this can happen. We'll use base 10
-        // in the comments for familiarity/
+        // in the comments for familiarity.
 
         // p divides BASE (e.g., 2, 5)
         // ---------------------------
@@ -179,17 +179,35 @@ impl SearchContext {
         // This is what will let us eliminate patterns like 2[369]1.
         let a = pattern.before.value(self.base);
         let ac = (pattern.before.clone() + pattern.after.clone()).value(self.base);
-        let mut gcd_accumulated = ac;
+        let mut gcd_accumulated = ac.clone();
         for b in &pattern.center {
             let ab = (pattern.before.clone() + *b).value(self.base);
             gcd_accumulated = gcd(gcd_accumulated, ab - &a);
         }
         assert!(gcd_accumulated != BigUint::ZERO);
         if gcd_accumulated != BigUint::from(1_u32) {
-            Some(gcd_accumulated)
-        } else {
-            None
+            return Some(gcd_accumulated);
         }
+
+        // Okay, let's try it again but checking two possible divisors; one for
+        // ac, abbc, abbbbc, and one for abc, abbbc, etc.
+        let mut gcd_accumulated_1 = ac;
+        let mut gcd_accumulated_2 = BigUint::ZERO;
+        for b in &pattern.center {
+            let abb = (pattern.before.clone() + *b + *b).value(self.base);
+            let abc = pattern.clone().substitute(*b).value(self.base);
+            let abb_minus_a = abb - &a;
+            gcd_accumulated_1 = gcd(gcd_accumulated_1, abb_minus_a.clone());
+            gcd_accumulated_2 = gcd(gcd_accumulated_2, abb_minus_a);
+            gcd_accumulated_2 = gcd(gcd_accumulated_2, abc);
+        }
+        assert!(gcd_accumulated_1 != BigUint::ZERO);
+        assert!(gcd_accumulated_2 != BigUint::ZERO);
+        if gcd_accumulated_1 != BigUint::from(1_u32) && gcd_accumulated_2 != BigUint::from(1_u32) {
+            return Some(gcd_accumulated_1);
+        }
+
+        None
     }
 }
 

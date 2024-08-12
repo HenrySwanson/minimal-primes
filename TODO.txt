@@ -1,0 +1,3 @@
+- Get rid of as many clone() as possible
+  - You should be able to get the value of (a + b) without needing to clone it!
+- gcd(ac, abc) is the same as gcd(ac, ab - a) if you're ignoring factors shared with the base
