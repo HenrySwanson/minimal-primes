@@ -21,11 +21,26 @@ impl DigitSeq {
         Self(vec![])
     }
 
+    pub fn single(d: Digit) -> Self {
+        Self(vec![d])
+    }
+
     pub fn value(&self, base: u8) -> BigUint {
         let mut value = BigUint::ZERO;
         for d in &self.0 {
             value *= base;
             value += d.0;
+        }
+        value
+    }
+
+    pub fn concat_value<'a>(seqs: impl IntoIterator<Item = &'a DigitSeq>, base: u8) -> BigUint {
+        let mut value = BigUint::ZERO;
+        for seq in seqs.into_iter() {
+            for d in &seq.0 {
+                value *= base;
+                value += d.0;
+            }
         }
         value
     }

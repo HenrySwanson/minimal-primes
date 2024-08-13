@@ -108,7 +108,7 @@ impl SearchContext {
         }
     }
 
-    fn test_for_contained_prime(&self, seq: &DigitSeq) -> Option<DigitSeq> {
+    fn test_for_contained_prime(&self, seq: &DigitSeq) -> Option<&DigitSeq> {
         // We don't need to search for *all* possible primes, just the minimal
         // ones. And if we've been doing our job right, we should have a complete
         // list of them (up to a length limit).
@@ -123,7 +123,7 @@ impl SearchContext {
             }
 
             // If we got here, then hooray, this is a match!
-            return Some(subseq.clone());
+            return Some(subseq);
         }
         None
     }
@@ -178,10 +178,10 @@ impl SearchContext {
         // we can try all of them individually and lump them into the same GCD.
         // This is what will let us eliminate patterns like 2[369]1.
         let a = pattern.before.value(self.base);
-        let ac = (pattern.before.clone() + pattern.after.clone()).value(self.base);
+        let ac = DigitSeq::concat_value([&pattern.before, &pattern.after], self.base);
         let mut gcd_accumulated = ac.clone();
         for b in &pattern.center {
-            let ab = (pattern.before.clone() + *b).value(self.base);
+            let ab = DigitSeq::concat_value([&pattern.before, &DigitSeq::single(*b)], self.base);
             gcd_accumulated = gcd(gcd_accumulated, ab - &a);
         }
         assert!(gcd_accumulated != BigUint::ZERO);
@@ -194,8 +194,9 @@ impl SearchContext {
         let mut gcd_accumulated_1 = ac;
         let mut gcd_accumulated_2 = BigUint::ZERO;
         for b in &pattern.center {
-            let abb = (pattern.before.clone() + *b + *b).value(self.base);
-            let abc = pattern.clone().substitute(*b).value(self.base);
+            let b = DigitSeq::single(*b);
+            let abb = DigitSeq::concat_value([&pattern.before, &b, &b], self.base);
+            let abc = DigitSeq::concat_value([&pattern.before, &b, &pattern.after], self.base);
             let abb_minus_a = abb - &a;
             gcd_accumulated_1 = gcd(gcd_accumulated_1, abb_minus_a.clone());
             gcd_accumulated_2 = gcd(gcd_accumulated_2, abb_minus_a);
