@@ -59,14 +59,15 @@ impl SearchContext {
     pub fn search_one_level(&mut self) {
         let old_queue = std::mem::take(&mut self.queue);
         for mut pattern in old_queue {
-            // Say our pattern is ABC[PQR]+XYZ.
-            // We want to explore all possible children that have weight one more than this one.
-            // There's many ways we can do that.
+            // Say our pattern is xL*z.
+            // We want to explore all possible children with weight one more than this one.
 
-            // First, we try to reduce the center, by seeing whether any of P,Q,R can be
-            // substituted into the center.
-            // If the resulting sequences contains or is a prime, we can eliminate that
-            // branch.
+            // First, we try to reduce the center, by seeing which elements of y ∈ L can
+            // be substituted into the pattern.
+            // If the resulting sequence contains or is a prime, we can eliminate that digit
+            // from L.
+            // NOTE: this is where we generate minimal primes of (weight + 1), so that they're
+            // all available for the next loop.
             let mut allowed_digits = vec![];
             for digit in pattern.center.iter().copied() {
                 let seq = pattern.clone().substitute(digit);
@@ -87,19 +88,18 @@ impl SearchContext {
             }
 
             // Now we've reduced the center, and have a new pattern.
-            if allowed_digits.is_empty() {
-                continue;
-            } else {
-                pattern.center = allowed_digits;
-            }
-
-            // Let's check whether this pattern is guaranteed to never be prime,
-            // i.e., if there's a perpetual factor.
-            if let Some(f) = self.find_perpetual_factor(&pattern) {
+            pattern.center = allowed_digits;
+            if pattern.center.is_empty() {
                 continue;
             }
 
-            // If we couldn't eliminate it, let's split it, left or right.
+            // Now, run some tests to see whether this pattern is guaranteed to
+            // be composite.
+            if self.test_for_perpetual_composite(&pattern) {
+                continue;
+            }
+
+            // If we couldn't eliminate the pattern, let's split it, left or right.
             if pattern.weight() == 1 {
                 self.queue.extend(VecDeque::from(pattern.split_left()));
             } else {
@@ -112,103 +112,117 @@ impl SearchContext {
         // We don't need to search for *all* possible primes, just the minimal
         // ones. And if we've been doing our job right, we should have a complete
         // list of them (up to a length limit).
-        'outer: for (subseq, _) in self.minimal_primes.iter() {
-            let mut iter = seq.0.iter().copied();
-            for d in subseq.0.iter().copied() {
-                // Chomp iter until we find that digit
-                match iter.any(|d2| d == d2) {
-                    true => {}
-                    false => continue 'outer,
-                }
-            }
-
-            // If we got here, then hooray, this is a match!
-            return Some(subseq);
-        }
-        None
+        self.minimal_primes
+            .iter()
+            .map(|(subseq, _)| subseq)
+            .find(|subseq| is_substring(subseq, seq))
     }
 
-    fn find_perpetual_factor(&self, pattern: &Pattern) -> Option<BigUint> {
+    fn test_for_perpetual_composite(&self, pattern: &Pattern) -> bool {
         // This function is used to eliminate patterns that will always result
         // in composite numbers, letting us cut off infinite branches of the
         // search space.
         // There are a few possible ways this can happen. We'll use base 10
-        // in the comments for familiarity.
+        // in the comments for familiarity, unless specified otherwise.
 
         // p divides BASE (e.g., 2, 5)
-        // ---------------------------
-        // This happens when the last digit is not coprime with the base.
-        // If so, the GCD of the last digit and BASE divides the pattern.
+        if let Some(_) = self.shares_factor_with_base(pattern) {
+            return true;
+        }
+        // p does not divide BASE (e.g. 7)
+        // -------------------------------
+        // This is how we detect patterns like 4[6]9 being divisible by 7.
+        for stride in 1..=2 {
+            if let Some(_) = self.find_perpetual_factor(pattern, stride) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn shares_factor_with_base(&self, pattern: &Pattern) -> Option<BigUint> {
         if let Some(d) = pattern.after.0.last() {
             let gcd = gcd(d.0.into(), self.base.into());
-            assert!(gcd != BigUint::ZERO);
+            debug_assert!(gcd != BigUint::ZERO);
             if gcd != BigUint::from(1_u32) {
                 return Some(gcd);
             }
         }
+        None
+    }
 
-        // p does not divide BASE (e.g. 7)
-        // -------------------------------
-        // This is how we detect patterns like 4[6]9 being divisible by 7.
-        //
+    fn find_perpetual_factor(&self, pattern: &Pattern, stride: usize) -> Option<Vec<BigUint>> {
         // If 49, 469, 4669, etc are all divisible by 7, it means that:
         // - 49 is divisible by 7
         // - 4666...6669 is equivalent to 49 mod 7 (they're both 0)
         //
-        // This means that 46666...60 is equivalent to 40 mod 7, but since 7
-        // and 10 are coprime, that means 466...666 and 4 are equivalent.
+        // For the second fact, it suffices to show that 49 and 469 are equivalent!
+        // If they are, then 10*(x-9)+69 maps them to 469 and 4669, making 49,
+        // 469, and 4669 equivalent.
         //
-        // It suffices to show that 4 and 46 are equivalent! If they are, then
-        // (10*x+6) maps them to 46 and 466, making 4, 46, and 466 equivalent,
-        // etc.
+        // (It would also suffice to show that 4 and 46 are equivalent mod 7.)
         //
         // So we need to prove two facts:
         // - 49 is divisible by 7
+        // = 469 is equivalent to 49 mod 7, i.e., it's divisible by 7
         // - 4 and 46 are equivalent mod 7, i.e., 46 - 4 is divisible by 7
         //
-        // More generally, for a pattern a[b]c:
-        // - ac is divisible by p
-        // - ab - a is divisible by p
+        // More generally, for a pattern a[b]*c:
+        // - ac and abc are divisible by p
         //
         // Even better, we don't have to try a bunch of different p; what
-        // we're actually looking for is whether ac and (ab - a) have some
+        // we're actually looking for is whether ac and abc have some
         // non-trivial common factor, i.e., we can just use the GCD!
         //
-        // Lastly, for patterns with more than one digit in the center,
+        // For patterns with more than one digit in the center,
         // we can try all of them individually and lump them into the same GCD.
         // This is what will let us eliminate patterns like 2[369]1.
-        let a = pattern.before.value(self.base);
-        let ac = DigitSeq::concat_value([&pattern.before, &pattern.after], self.base);
-        let mut gcd_accumulated = ac.clone();
-        for b in &pattern.center {
-            let ab = DigitSeq::concat_value([&pattern.before, &DigitSeq::single(*b)], self.base);
-            gcd_accumulated = gcd(gcd_accumulated, ab - &a);
-        }
-        assert!(gcd_accumulated != BigUint::ZERO);
-        if gcd_accumulated != BigUint::from(1_u32) {
-            return Some(gcd_accumulated);
-        }
+        //
+        // Lastly, we can extend this idea to situations where ac, abbc, abbbbc,
+        // have one divisor, and abc, abbbc, abbbbbc, have a different one.
+        let one = BigUint::from(1_u32);
 
-        // Okay, let's try it again but checking two possible divisors; one for
-        // ac, abbc, abbbbc, and one for abc, abbbc, etc.
-        let mut gcd_accumulated_1 = ac;
-        let mut gcd_accumulated_2 = BigUint::ZERO;
-        for b in &pattern.center {
-            let b = DigitSeq::single(*b);
-            let abb = DigitSeq::concat_value([&pattern.before, &b, &b], self.base);
-            let abc = DigitSeq::concat_value([&pattern.before, &b, &pattern.after], self.base);
-            let abb_minus_a = abb - &a;
-            gcd_accumulated_1 = gcd(gcd_accumulated_1, abb_minus_a.clone());
-            gcd_accumulated_2 = gcd(gcd_accumulated_2, abb_minus_a);
-            gcd_accumulated_2 = gcd(gcd_accumulated_2, abc);
+        let mut gcds = vec![BigUint::ZERO; stride];
+        for i in 0..stride {
+            // The smaller of the two sets: xL^iz
+            for center in pattern
+                .center
+                .iter()
+                .copied()
+                .combinations_with_replacement(i)
+            {
+                let value = DigitSeq::concat_value(
+                    [&pattern.before, &center.into(), &pattern.after],
+                    self.base,
+                );
+                // Update the GCD. If we ever see a 1, it's always going to
+                // be that way, so bail out instantly.
+                gcds[i] = gcd(gcds[i].clone(), value);
+                if gcds[i] == one {
+                    return None;
+                }
+            }
+            // The larger of the two sets: xL^(i+stride)z
+            for center in pattern
+                .center
+                .iter()
+                .copied()
+                .combinations_with_replacement(i + stride)
+            {
+                let value = DigitSeq::concat_value(
+                    [&pattern.before, &center.into(), &pattern.after],
+                    self.base,
+                );
+                gcds[i] = gcd(gcds[i].clone(), value);
+                if gcds[i] == one {
+                    return None;
+                }
+            }
         }
-        assert!(gcd_accumulated_1 != BigUint::ZERO);
-        assert!(gcd_accumulated_2 != BigUint::ZERO);
-        if gcd_accumulated_1 != BigUint::from(1_u32) && gcd_accumulated_2 != BigUint::from(1_u32) {
-            return Some(gcd_accumulated_1);
+        for g in &gcds {
+            debug_assert_ne!(*g, one);
         }
-
-        None
+        Some(gcds)
     }
 }
 
@@ -290,6 +304,19 @@ fn gcd(mut a: BigUint, mut b: BigUint) -> BigUint {
             }
         }
     }
+}
+
+fn is_substring(needle: &DigitSeq, haystack: &DigitSeq) -> bool {
+    let mut iter = haystack.0.iter().copied();
+    for d in needle.0.iter().copied() {
+        // Chomp iter until we find that digit
+        match iter.any(|d2| d == d2) {
+            true => {}
+            false => return false,
+        }
+    }
+    // If we got here, then hooray, this is a match!
+    true
 }
 
 #[cfg(test)]

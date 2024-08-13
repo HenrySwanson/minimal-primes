@@ -21,10 +21,6 @@ impl DigitSeq {
         Self(vec![])
     }
 
-    pub fn single(d: Digit) -> Self {
-        Self(vec![d])
-    }
-
     pub fn value(&self, base: u8) -> BigUint {
         let mut value = BigUint::ZERO;
         for d in &self.0 {
@@ -76,6 +72,12 @@ impl std::ops::Add<DigitSeq> for Digit {
 impl From<Digit> for DigitSeq {
     fn from(d: Digit) -> Self {
         Self(vec![d])
+    }
+}
+
+impl From<Vec<Digit>> for DigitSeq {
+    fn from(digits: Vec<Digit>) -> Self {
+        Self(digits)
     }
 }
 
@@ -154,7 +156,7 @@ impl std::fmt::Display for Pattern {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}[{}]+{}",
+            "{}[{}]*{}",
             self.before,
             self.center.iter().format(""),
             self.after
