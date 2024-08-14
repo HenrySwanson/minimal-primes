@@ -11,9 +11,13 @@ pub struct DigitSeq(pub Vec<Digit>);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pattern {
-    pub before: DigitSeq,
-    pub center: Vec<Digit>,
-    pub after: DigitSeq,
+    pub segments: Vec<Segment>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Segment {
+    pub fixed: DigitSeq,
+    pub core: Vec<Digit>,
 }
 
 impl DigitSeq {
@@ -69,6 +73,18 @@ impl std::ops::Add<DigitSeq> for Digit {
     }
 }
 
+impl std::ops::AddAssign for DigitSeq {
+    fn add_assign(&mut self, mut rhs: Self) {
+        self.0.append(&mut rhs.0)
+    }
+}
+
+impl std::ops::AddAssign<Digit> for DigitSeq {
+    fn add_assign(&mut self, rhs: Digit) {
+        self.0.push(rhs)
+    }
+}
+
 impl From<Digit> for DigitSeq {
     fn from(d: Digit) -> Self {
         Self(vec![d])
@@ -84,49 +100,64 @@ impl From<Vec<Digit>> for DigitSeq {
 impl Pattern {
     pub fn any(base: u8) -> Self {
         Self {
-            before: DigitSeq::new(),
-            center: (0..base).map(Digit).collect(),
-            after: DigitSeq::new(),
+            segments: vec![Segment {
+                fixed: DigitSeq::new(),
+                core: (0..base).map(Digit).collect(),
+            }],
         }
     }
 
     pub fn weight(&self) -> usize {
-        self.before.0.len() + self.after.0.len()
+        self.segments.iter().map(|seg| seg.fixed.0.len()).sum()
     }
 
-    pub fn substitute(self, digit: Digit) -> DigitSeq {
-        self.before + digit + self.after
+    pub fn substitute(self, slot: usize, digit: Digit) -> DigitSeq {
+        let mut output = DigitSeq::new();
+        for (i, seg) in self.segments.into_iter().enumerate() {
+            output += seg.fixed;
+            if i == slot {
+                debug_assert!(seg.core.contains(&digit));
+                output += digit;
+            }
+        }
+        output
     }
 
-    pub fn split_left(&self) -> Vec<Self> {
-        self.center
+    pub fn split_left(&self, slot: usize) -> Vec<Self> {
+        let segment = &self.segments[slot];
+        segment
+            .core
             .iter()
             .copied()
             // skip 0 if it'd be the first digit
-            .filter(|digit| digit.0 != 0 || !self.before.0.is_empty())
+            .filter(|digit| !(digit.0 == 0 && slot == 0 && segment.fixed.0.is_empty()))
             .map(|digit| {
-                let new_before = self.before.clone() + (digit);
-
-                Self {
-                    before: new_before,
-                    center: self.center.clone(),
-                    after: self.after.clone(),
-                }
+                // Insert the new digit into the fixed part of this segment
+                let mut new = self.clone();
+                new.segments[slot].fixed += digit;
+                new
             })
             .collect()
     }
 
-    pub fn split_right(&self) -> Vec<Self> {
-        self.center
+    pub fn split_right(&self, slot: usize) -> Vec<Self> {
+        let segment = &self.segments[slot];
+        segment
+            .core
             .iter()
             .copied()
             .map(|digit| {
-                let new_after = (digit) + self.after.clone();
-                Self {
-                    before: self.before.clone(),
-                    center: self.center.clone(),
-                    after: new_after,
+                // Copy and insert another digit to the right of this pattern.
+                // This may involve creating a new segment.
+                let mut new = self.clone();
+                match new.segments.get_mut(slot + 1) {
+                    Some(seg) => seg.fixed.0.insert(0, digit),
+                    None => new.segments.push(Segment {
+                        fixed: digit.into(),
+                        core: vec![],
+                    }),
                 }
+                new
             })
             .collect()
     }
@@ -154,12 +185,9 @@ impl std::fmt::Display for DigitSeq {
 
 impl std::fmt::Display for Pattern {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}[{}]*{}",
-            self.before,
-            self.center.iter().format(""),
-            self.after
-        )
+        for seg in &self.segments {
+            write!(f, "{}[{}]*", seg.fixed, seg.core.iter().format(""))?
+        }
+        Ok(())
     }
 }

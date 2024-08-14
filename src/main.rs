@@ -69,8 +69,8 @@ impl SearchContext {
             // NOTE: this is where we generate minimal primes of (weight + 1), so that they're
             // all available for the next loop.
             let mut allowed_digits = vec![];
-            for digit in pattern.center.iter().copied() {
-                let seq = pattern.clone().substitute(digit);
+            for digit in pattern.segments[0].core.iter().copied() {
+                let seq = pattern.clone().substitute(0, digit);
 
                 match self.test_for_contained_prime(&seq) {
                     Some(p) => {
@@ -87,9 +87,9 @@ impl SearchContext {
                 }
             }
 
-            // Now we've reduced the center, and have a new pattern.
-            pattern.center = allowed_digits;
-            if pattern.center.is_empty() {
+            // Now we've reduced the core, and have a new pattern.
+            pattern.segments[0].core = allowed_digits;
+            if pattern.segments[0].core.is_empty() {
                 continue;
             }
 
@@ -101,9 +101,9 @@ impl SearchContext {
 
             // If we couldn't eliminate the pattern, let's split it, left or right.
             if pattern.weight() == 1 {
-                self.queue.extend(VecDeque::from(pattern.split_left()));
+                self.queue.extend(VecDeque::from(pattern.split_left(0)));
             } else {
-                self.queue.extend(VecDeque::from(pattern.split_right()));
+                self.queue.extend(VecDeque::from(pattern.split_right(0)));
             }
         }
     }
@@ -141,14 +141,20 @@ impl SearchContext {
     }
 
     fn shares_factor_with_base(&self, pattern: &Pattern) -> Option<BigUint> {
-        if let Some(d) = pattern.after.0.last() {
-            let gcd = gcd(d.0.into(), self.base.into());
-            debug_assert!(gcd != BigUint::ZERO);
-            if gcd != BigUint::from(1_u32) {
-                return Some(gcd);
-            }
+        // Get the last digit of the pattern
+        let last_seg = pattern.segments.last()?;
+        if !last_seg.core.is_empty() {
+            return None;
         }
-        None
+        let d = last_seg.fixed.0.last()?;
+
+        let gcd = gcd(d.0.into(), self.base.into());
+        debug_assert!(gcd != BigUint::ZERO);
+        if gcd != BigUint::from(1_u32) {
+            Some(gcd)
+        } else {
+            None
+        }
     }
 
     fn find_perpetual_factor(&self, pattern: &Pattern, stride: usize) -> Option<Vec<BigUint>> {
@@ -182,17 +188,26 @@ impl SearchContext {
         // have one divisor, and abc, abbbc, abbbbbc, have a different one.
         let one = BigUint::from(1_u32);
 
+        // TODO: generalize
+        if pattern.segments.len() != 2 {
+            return None;
+        }
+
         let mut gcds = vec![BigUint::ZERO; stride];
         for i in 0..stride {
             // The smaller of the two sets: xL^iz
-            for center in pattern
-                .center
+            for center in pattern.segments[0]
+                .core
                 .iter()
                 .copied()
                 .combinations_with_replacement(i)
             {
                 let value = DigitSeq::concat_value(
-                    [&pattern.before, &center.into(), &pattern.after],
+                    [
+                        &pattern.segments[0].fixed,
+                        &center.into(),
+                        &pattern.segments[1].fixed,
+                    ],
                     self.base,
                 );
                 // Update the GCD. If we ever see a 1, it's always going to
@@ -203,14 +218,18 @@ impl SearchContext {
                 }
             }
             // The larger of the two sets: xL^(i+stride)z
-            for center in pattern
-                .center
+            for center in pattern.segments[0]
+                .core
                 .iter()
                 .copied()
                 .combinations_with_replacement(i + stride)
             {
                 let value = DigitSeq::concat_value(
-                    [&pattern.before, &center.into(), &pattern.after],
+                    [
+                        &pattern.segments[0].fixed,
+                        &center.into(),
+                        &pattern.segments[1].fixed,
+                    ],
                     self.base,
                 );
                 gcds[i] = gcd(gcds[i].clone(), value);
