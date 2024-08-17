@@ -82,8 +82,9 @@ impl SearchContext {
             debug_println!(" Exploring {}", pattern);
 
             // First, we try to reduce the cores.
-            let pattern = self.reduce_cores(pattern);
-            if pattern.cores.iter().all(|core| core.is_empty()) {
+            let mut pattern = self.reduce_cores(pattern);
+            pattern.simplify();
+            if pattern.cores.is_empty() {
                 debug_println!("  {} was reduced to trivial string", pattern);
                 continue;
             }
@@ -102,19 +103,10 @@ impl SearchContext {
             }
 
             // If we couldn't eliminate the pattern, let's split it, left or right.
-            // Also, pick a different (nonempty) slot to do each time.
-            // TODO: this is messy! what can i do better?
-            let mut slot = 0;
-            let mut nonempty_count = 0;
-            for (i, core) in pattern.cores.iter().enumerate().cycle() {
-                if !core.is_empty() {
-                    nonempty_count += 1;
-                }
-                if nonempty_count >= self.iter {
-                    slot = i;
-                    break;
-                }
-            }
+            // We can't split on a non-empty core, but after we simplify, we shouldn't
+            // have to worry about that.
+            let slot = self.iter % pattern.cores.len();
+            debug_assert!(!pattern.cores[slot].is_empty());
             if pattern.weight() == 1 {
                 debug_println!("  Splitting {} left", pattern);
                 self.queue.extend(VecDeque::from(pattern.split_left(slot)));
@@ -136,7 +128,7 @@ impl SearchContext {
             // next loop, those should all be available.
             let mut allowed_digits = vec![];
             for digit in core.iter().copied() {
-                let seq = old_pat.clone().substitute(i, digit);
+                let seq = old_pat.substitute(i, digit);
 
                 match self.test_for_contained_prime(&seq) {
                     Some(p) => {
@@ -271,11 +263,7 @@ impl SearchContext {
                 .combinations_with_replacement(i + stride)
             {
                 let value = DigitSeq::concat_value(
-                    [
-                        &pattern.digitseqs[0],
-                        &center.into(),
-                        &pattern.digitseqs[1],
-                    ],
+                    [&pattern.digitseqs[0], &center.into(), &pattern.digitseqs[1]],
                     self.base,
                 );
                 gcds[i] = gcd(gcds[i].clone(), value);
@@ -296,7 +284,7 @@ impl SearchContext {
         for (i, core) in pattern.cores.iter().enumerate() {
             for d in core.iter().copied() {
                 // Check whether x yy z contains a prime subword
-                let seq = pattern.clone().substitute_multiple(i, &[d, d]);
+                let seq = pattern.substitute_multiple(i, &[d, d]);
                 if let Some(p) = self.test_for_contained_prime(&seq) {
                     assert_ne!(&seq, p);
                     debug_println!("  {} contains a prime {}", seq, p);
@@ -306,8 +294,10 @@ impl SearchContext {
                     let mut pattern_1 = pattern.clone();
                     pattern_1.cores[i] = yless_core.clone();
                     let mut pattern_2 = pattern_1.clone();
-                    pattern_2.digitseqs.insert(i+1, d.into());
-                    pattern_2.cores.insert(i+1, yless_core);
+                    pattern_2.digitseqs.insert(i + 1, d.into());
+                    pattern_2.cores.insert(i + 1, yless_core);
+                    pattern_1.simplify();
+                    pattern_2.simplify();
 
                     debug_println!("  {} split into {} and {}", pattern, pattern_1, pattern_2);
                     return Some(vec![pattern_1, pattern_2]);

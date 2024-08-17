@@ -111,6 +111,26 @@ impl Pattern {
         self.digitseqs.iter().map(|seq| seq.0.len()).sum()
     }
 
+    pub fn simplify(&mut self) {
+        // Contract out any empty cores
+        debug_assert_eq!(self.digitseqs.len(), self.cores.len() + 1);
+
+        // Normal for loop won't work because we're mutating the thing
+        // we're iterating over.
+        let mut i = 0;
+        while let Some(core) = self.cores.get(i) {
+            if core.is_empty() {
+                // join x[]z into xz, and don't increment i, since
+                // we've skooched everything one to the left
+                let rhs = self.digitseqs.remove(i + 1);
+                self.digitseqs[i] += rhs;
+                self.cores.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+    }
+
     pub fn substitute(&self, slot: usize, digit: Digit) -> DigitSeq {
         self.substitute_multiple(slot, &[digit])
     }
