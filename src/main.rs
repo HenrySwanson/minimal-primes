@@ -484,42 +484,184 @@ fn is_substring(needle: &DigitSeq, haystack: &DigitSeq) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::io;
+
     use super::*;
 
-    const KNOWN_MINIMAL_SETS: [(u8, &str); 9]= [
-        (2, "10, 11"),
-        (3, "2, 10, 111"),
-        (4, "2, 3, 11"),
-        (5, "2, 3, 10, 111, 401, 414, 14444, 44441"),
-        (6, "2, 3, 5, 11, 4401, 4441, 40041"),
-        (7, "2, 3, 5, 10, 14, 16, 41, 61, 11111"),
-        (8, "2, 3, 5, 7, 111, 141, 161, 401, 661, 4611, 6101, 6441, 60411, 444641, 444444441"),
-        (9, "2, 3, 5, 7, 14, 18, 41, 81, 601, 661, 1011, 1101"),
-        (10, "2, 3, 5, 7, 11, 19, 41, 61, 89, 409, 449, 499, 881, 991, 6469, 6949, 9001, 9049, 9649, 9949, 60649, 666649, 946669, 60000049, 66000049, 66600049"),
+    enum Status {
+        /// Completely solved; all branches eliminated.
+        Complete,
+        /// Can get all the minimal primes, but there's some branches
+        /// we can't realize are composite.
+        StrayBranches,
+        /// Not solved.
+        Unsolved,
+        /// Base 0 and 1; not really relevant.
+        NotApplicable,
+    }
+
+    const CURRENT_STATUS: [Status; 31] = [
+        /* 0 */ Status::NotApplicable,
+        /* 1 */ Status::NotApplicable,
+        /* 2 */ Status::Complete,
+        /* 3 */ Status::Complete,
+        /* 4 */ Status::Complete,
+        /* 5 */ Status::Complete,
+        /* 6 */ Status::Complete,
+        /* 7 */ Status::Complete,
+        /* 8 */ Status::StrayBranches,
+        /* 9 */ Status::StrayBranches,
+        /* 10 */ Status::Complete,
+        /* 11 */ Status::Unsolved,
+        /* 12 */ Status::Complete,
+        /* 13 */ Status::Unsolved,
+        /* 14 */ Status::Unsolved,
+        /* 15 */ Status::Unsolved,
+        /* 16 */ Status::Unsolved,
+        /* 17 */ Status::Unsolved,
+        /* 18 */ Status::Unsolved,
+        /* 19 */ Status::Unsolved,
+        /* 20 */ Status::Unsolved,
+        /* 21 */ Status::Unsolved,
+        /* 22 */ Status::Unsolved,
+        /* 23 */ Status::Unsolved,
+        /* 24 */ Status::Unsolved,
+        /* 25 */ Status::Unsolved,
+        /* 26 */ Status::Unsolved,
+        /* 27 */ Status::Unsolved,
+        /* 28 */ Status::Unsolved,
+        /* 29 */ Status::Unsolved,
+        /* 30 */ Status::Unsolved,
     ];
 
     #[test]
     fn test_known_bases() {
-        for (base, output) in KNOWN_MINIMAL_SETS {
-            let mut ctx = SearchContext::new(base);
-
-            for _ in 0..12 {
-                ctx.search_one_level();
+        for (base, status) in CURRENT_STATUS.iter().enumerate() {
+            println!("Testing base {}", base);
+            let base = base as u8;
+            if base > 13 {
+                continue;
             }
+            let (max_weight, all_primes_found, no_stray_branches) = match status {
+                Status::Complete => {
+                    // Simulate it for the full duration
+                    let max_weight = get_max_weight(base);
+                    (max_weight, true, true)
+                }
+                Status::StrayBranches => {
+                    // Simulate it for the full duration
+                    let max_weight = get_max_weight(base);
+                    (max_weight, true, false)
+                }
+                Status::Unsolved => (10, false, false),
+                Status::NotApplicable => continue,
+            };
 
-            ctx.minimal_primes.sort_by_key(|(_, p)| p.clone());
-            let primes = ctx.minimal_primes.iter().map(|(seq, _)| seq).join(", ");
-            assert_eq!(primes, output);
+            // Calculate as many primes as we ask
+            let final_ctx = calculate(base, max_weight);
 
-            // Except for bases 8 and 9, everything should be solvable
-            if base != 8 && base != 9 {
+            // Check that we have the right primes
+            compare_primes(&final_ctx, all_primes_found);
+
+            // Check that we've eliminated all branches
+            if no_stray_branches {
                 assert!(
-                    ctx.frontier.is_empty(),
-                    "Found unexpected branches for base {}: {}",
-                    base,
-                    ctx.frontier.iter().join("\n")
+                    final_ctx.frontier.is_empty(),
+                    "{}",
+                    final_ctx.frontier.iter().format("\n")
                 );
             }
         }
+    }
+
+    fn calculate(base: u8, max_weight: usize) -> SearchContext {
+        let mut ctx = SearchContext::new(base);
+        while let Some(weight) = ctx.frontier.min_weight() {
+            if weight > max_weight {
+                break;
+            }
+            ctx.search_one_level();
+        }
+        ctx.minimal_primes.sort_by_key(|(_, p)| p.clone());
+        ctx
+    }
+
+    fn iter_ground_truth(base: u8) -> impl Iterator<Item = String> {
+        use io::BufRead;
+        let file_path = format!("mepn-data/minimal.{}.txt", base);
+        let file = std::fs::File::open(file_path).expect("open ground truth file");
+        io::BufReader::new(file)
+            .lines()
+            .map(|line| line.expect("read line"))
+    }
+
+    fn get_max_weight(base: u8) -> usize {
+        iter_ground_truth(base)
+            .map(|s| s.len())
+            .max()
+            .expect("nonempty ground truth")
+    }
+
+    fn compare_primes(ctx: &SearchContext, require_all: bool) {
+        let mut truth_iter = iter_ground_truth(ctx.base).peekable();
+        let mut iter = ctx
+            .minimal_primes
+            .iter()
+            .map(|(seq, _)| seq.to_string())
+            .peekable();
+
+        let mut fail = false;
+        loop {
+            // We want to consume both iterators until they're both gone.
+            //
+            // If there's a mismatch, we need to be intelligent about which
+            // iterator to increase (the one with the smaller prime.)
+            // It turns out to be simpler to combine th
+            let cmp = match (truth_iter.peek(), iter.peek()) {
+                // If we get two different primes, we only want to advance
+                // the iterator with the lesser prime, so that we can re-sync.
+                (Some(p_truth), Some(p_got)) => {
+                    // First compare them by length, then lexicographically;
+                    // otherwise 9 will compare larger than 10.
+                    p_truth
+                        .len()
+                        .cmp(&p_got.len())
+                        .then_with(|| p_truth.cmp(&p_got))
+                }
+                // It turns out to be easier to combine this case
+                // with the one above by treating None as the biggest
+                // prime.
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                // same
+                (Some(_), None) => std::cmp::Ordering::Less,
+                // both exhausted! break
+                (None, None) => break,
+            };
+            match cmp {
+                // truth < actual, so we skipped something we were
+                // supposed to see. this might be okay.
+                std::cmp::Ordering::Less => {
+                    let p = truth_iter.next().unwrap();
+                    if require_all {
+                        println!("Didn't see expected prime: {}", p);
+                        fail = true;
+                    }
+                }
+                // truth > actual, so there's something in actual that
+                // shouldn't be there. this is always a failure.
+                std::cmp::Ordering::Greater => {
+                    let p = iter.next().unwrap();
+                    println!("Got extra unexpected prime: {}", p);
+                    fail = true;
+                }
+                // all is well, just increment both iterators
+                std::cmp::Ordering::Equal => {
+                    iter.next();
+                    truth_iter.next();
+                }
+            }
+        }
+
+        assert!(!fail, "Some mismatches between primes");
     }
 }
