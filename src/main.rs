@@ -2,6 +2,7 @@ use clap::Parser;
 use data::{DigitSeq, Pattern};
 use itertools::Itertools;
 use num_bigint::BigUint;
+use num_prime::nt_funcs::is_prime;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -136,8 +137,9 @@ impl SearchContext {
                         debug_println!("  Discarding {}, contains prime {}", seq, p);
                     }
                     None => {
+                        debug_println!("  Testing for primality {}", seq);
                         let value = seq.value(self.base);
-                        if is_prime(&value) {
+                        if is_prime(&value, None).probably() {
                             debug_println!("  Discarding {}, is minimal prime", seq);
                             self.minimal_primes.push((seq, value));
                         } else {
@@ -305,36 +307,6 @@ impl SearchContext {
             }
         }
         None
-    }
-}
-
-fn is_prime(n: &BigUint) -> bool {
-    let two: BigUint = BigUint::from(2_u32);
-
-    // 0 and 1 are not prime, but 2 is
-    match n.cmp(&two) {
-        std::cmp::Ordering::Less => return false,
-        std::cmp::Ordering::Equal => return true,
-        std::cmp::Ordering::Greater => {}
-    }
-
-    // Check divisibility by 2
-    if !n.bit(0) {
-        return false;
-    }
-
-    // Now go up by 3, 5, 7, ...
-    let mut factor = BigUint::from(3_u32);
-    loop {
-        if &factor * &factor > *n {
-            return true;
-        }
-
-        if n % &factor == BigUint::ZERO {
-            return false;
-        }
-
-        factor += 2_u32;
     }
 }
 

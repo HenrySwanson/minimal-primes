@@ -9,3 +9,4 @@ edition = "2021"
 clap = { version = "4.5.15", features = ["derive"] }
 itertools = "0.13.0"
 num-bigint = "0.4.6"
+num-prime = { version = "0.4.4", features = ["big-int"] }
