@@ -191,14 +191,27 @@ impl SearchContext {
             // We want to explore all possible children with weight one more than this one.
             debug_println!(" Exploring {}", pattern);
 
-            // This should never already be prime
-            #[cfg(debug_assertions)]
-            {
-                let seq = pattern.contract();
-                assert!(!is_prime(&seq.value(self.base), None).probably());
+            // Test this for primality
+            // TODO: normally we've tested this already, in reduce_cores,
+            // but split_on_repeat can produce strings we've never tested :/
+            // What's a better way to avoid this redundancy?
+            let seq = pattern.contract();
+            match self.test_for_contained_prime(&seq) {
+                Some(p) => {
+                    assert_ne!(&seq, p);
+                    debug_println!("  Discarding {}, contains prime {}", pattern, p);
+                }
+                None => {
+                    debug_println!("  Testing for primality {}", seq);
+                    let value = seq.value(self.base);
+                    if is_prime(&value, None).probably() {
+                        debug_println!("  Discarding {}, contracts to minimal prime", pattern);
+                        self.minimal_primes.push((seq, value));
+                    }
+                }
             }
 
-            // First, we try to reduce the cores.
+            // Then, we try to reduce the cores.
             let mut pattern = self.reduce_cores(pattern);
             pattern.simplify();
             if pattern.cores.is_empty() {
@@ -431,6 +444,37 @@ impl SearchContext {
                     debug_println!("  {} split into {} and {}", pattern, pattern_1, pattern_2);
                     return Some(vec![pattern_1, pattern_2]);
                 }
+
+                // Check if xyyyz contains a prime subword
+                // TODO: generalize this!
+                let seq = pattern.substitute_multiple(i, &[d, d, d]);
+                if let Some(p) = self.test_for_contained_prime(&seq) {
+                    assert_ne!(&seq, p);
+                    debug_println!("  {} contains a prime {}", seq, p);
+
+                    // Split into three patterns, x(L-y)z, x(L-y)y(L-y)z, and x(L-y)y(L-y)y(L-y)z
+                    let yless_core: Vec<_> = core.iter().copied().filter(|x| *x != d).collect();
+                    let mut pattern_1 = pattern.clone();
+                    pattern_1.cores[i] = yless_core.clone();
+                    let mut pattern_2 = pattern_1.clone();
+                    pattern_2.digitseqs.insert(i + 1, d.into());
+                    pattern_2.cores.insert(i + 1, yless_core.clone());
+                    let mut pattern_3 = pattern_2.clone();
+                    pattern_3.digitseqs.insert(i + 2, d.into());
+                    pattern_3.cores.insert(i + 1, yless_core);
+                    pattern_1.simplify();
+                    pattern_2.simplify();
+                    pattern_3.simplify();
+
+                    debug_println!(
+                        "  {} split into {}, {}, and {}",
+                        pattern,
+                        pattern_1,
+                        pattern_2,
+                        pattern_3
+                    );
+                    return Some(vec![pattern_1, pattern_2, pattern_3]);
+                }
             }
         }
         None
@@ -537,7 +581,7 @@ mod tests {
     declare_test_for_base!(test_base_11, 11, Status::Unsolved);
     declare_test_for_base!(test_base_12, 12, Status::Complete);
     // declare_test_for_base!(test_base_13, 13, Status::Unsolved);
-    declare_test_for_base!(test_base_14, 14, Status::StrayBranches);
+    declare_test_for_base!(test_base_14, 14, Status::Complete);
     declare_test_for_base!(test_base_15, 15, Status::StrayBranches);
     // declare_test_for_base!(test_base_16, 16, Status::Complete);
     // declare_test_for_base!(test_base_17, 17, Status::Complete);
