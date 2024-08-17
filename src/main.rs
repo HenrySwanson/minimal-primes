@@ -191,6 +191,13 @@ impl SearchContext {
             // We want to explore all possible children with weight one more than this one.
             debug_println!(" Exploring {}", pattern);
 
+            // This should never already be prime
+            #[cfg(debug_assertions)]
+            {
+                let seq = pattern.contract();
+                assert!(!is_prime(&seq.value(self.base), None).probably());
+            }
+
             // First, we try to reduce the cores.
             let mut pattern = self.reduce_cores(pattern);
             pattern.simplify();
@@ -223,6 +230,17 @@ impl SearchContext {
             } else {
                 debug_println!("  Splitting {} right", pattern);
                 self.frontier.extend(pattern.split_right(slot));
+            }
+            // We also need to consider the case where the chosen core expands to
+            // the empty string. However, in the case where there's one core, this
+            // is pretty redundant with the work we're doing in reduce_core().
+            // For example: if we reduce a[xyz]c, we test the primality of axc, ayc
+            // and azc. So after we split, and get ax[xyz]c, there's no need to
+            // test ax[]c again.
+            if pattern.cores.len() > 1 {
+                pattern.cores[slot].clear();
+                pattern.simplify();
+                self.frontier.extend([pattern]);
             }
         }
 
@@ -496,81 +514,80 @@ mod tests {
         StrayBranches,
         /// Not solved.
         Unsolved,
-        /// Base 0 and 1; not really relevant.
-        NotApplicable,
     }
 
-    const CURRENT_STATUS: [Status; 31] = [
-        /* 0 */ Status::NotApplicable,
-        /* 1 */ Status::NotApplicable,
-        /* 2 */ Status::Complete,
-        /* 3 */ Status::Complete,
-        /* 4 */ Status::Complete,
-        /* 5 */ Status::Complete,
-        /* 6 */ Status::Complete,
-        /* 7 */ Status::Complete,
-        /* 8 */ Status::StrayBranches,
-        /* 9 */ Status::StrayBranches,
-        /* 10 */ Status::Complete,
-        /* 11 */ Status::Unsolved,
-        /* 12 */ Status::Complete,
-        /* 13 */ Status::Unsolved,
-        /* 14 */ Status::Unsolved,
-        /* 15 */ Status::Unsolved,
-        /* 16 */ Status::Unsolved,
-        /* 17 */ Status::Unsolved,
-        /* 18 */ Status::Unsolved,
-        /* 19 */ Status::Unsolved,
-        /* 20 */ Status::Unsolved,
-        /* 21 */ Status::Unsolved,
-        /* 22 */ Status::Unsolved,
-        /* 23 */ Status::Unsolved,
-        /* 24 */ Status::Unsolved,
-        /* 25 */ Status::Unsolved,
-        /* 26 */ Status::Unsolved,
-        /* 27 */ Status::Unsolved,
-        /* 28 */ Status::Unsolved,
-        /* 29 */ Status::Unsolved,
-        /* 30 */ Status::Unsolved,
-    ];
-
-    #[test]
-    fn test_known_bases() {
-        for (base, status) in CURRENT_STATUS.iter().enumerate() {
-            println!("Testing base {}", base);
-            let base = base as u8;
-            if base > 13 {
-                continue;
+    macro_rules! declare_test_for_base {
+        ($name:ident, $base:literal, $status:expr) => {
+            #[test]
+            fn $name() {
+                test_for_base($base, $status);
             }
-            let (max_weight, all_primes_found, no_stray_branches) = match status {
-                Status::Complete => {
-                    // Simulate it for the full duration
-                    let max_weight = get_max_weight(base);
-                    (max_weight, true, true)
-                }
-                Status::StrayBranches => {
-                    // Simulate it for the full duration
-                    let max_weight = get_max_weight(base);
-                    (max_weight, true, false)
-                }
-                Status::Unsolved => (10, false, false),
-                Status::NotApplicable => continue,
-            };
+        };
+    }
 
-            // Calculate as many primes as we ask
-            let final_ctx = calculate(base, max_weight);
+    declare_test_for_base!(test_base_2, 2, Status::Complete);
+    declare_test_for_base!(test_base_3, 3, Status::Complete);
+    declare_test_for_base!(test_base_4, 4, Status::Complete);
+    declare_test_for_base!(test_base_5, 5, Status::Complete);
+    declare_test_for_base!(test_base_6, 6, Status::Complete);
+    declare_test_for_base!(test_base_7, 7, Status::Complete);
+    declare_test_for_base!(test_base_8, 8, Status::StrayBranches);
+    declare_test_for_base!(test_base_9, 9, Status::StrayBranches);
+    declare_test_for_base!(test_base_10, 10, Status::Complete);
+    declare_test_for_base!(test_base_11, 11, Status::Unsolved);
+    declare_test_for_base!(test_base_12, 12, Status::Complete);
+    // declare_test_for_base!(test_base_13, 13, Status::Unsolved);
+    declare_test_for_base!(test_base_14, 14, Status::StrayBranches);
+    declare_test_for_base!(test_base_15, 15, Status::StrayBranches);
+    // declare_test_for_base!(test_base_16, 16, Status::Complete);
+    // declare_test_for_base!(test_base_17, 17, Status::Complete);
+    declare_test_for_base!(test_base_18, 18, Status::Complete);
+    // declare_test_for_base!(test_base_19, 19, Status::Complete);
+    // declare_test_for_base!(test_base_20, 20, Status::Complete);
+    // declare_test_for_base!(test_base_21, 21, Status::Complete);
+    // declare_test_for_base!(test_base_22, 22, Status::Complete);
+    // declare_test_for_base!(test_base_23, 23, Status::Complete);
+    // declare_test_for_base!(test_base_24, 24, Status::Complete);
+    // declare_test_for_base!(test_base_25, 25, Status::Complete);
+    // declare_test_for_base!(test_base_26, 26, Status::Complete);
+    // declare_test_for_base!(test_base_27, 27, Status::Complete);
+    // declare_test_for_base!(test_base_28, 28, Status::Complete);
+    // declare_test_for_base!(test_base_29, 29, Status::Complete);
+    // declare_test_for_base!(test_base_30, 30, Status::Complete);
 
-            // Check that we have the right primes
-            compare_primes(&final_ctx, all_primes_found);
-
-            // Check that we've eliminated all branches
-            if no_stray_branches {
-                assert!(
-                    final_ctx.frontier.is_empty(),
-                    "{}",
-                    final_ctx.frontier.iter().format("\n")
-                );
+    fn test_for_base(base: u8, status: Status) {
+        let (max_weight, all_primes_found, no_stray_branches) = match status {
+            Status::Complete => {
+                // Simulate it for the full duration
+                let max_weight = get_max_weight(base);
+                (max_weight, true, true)
             }
+            Status::StrayBranches => {
+                // Simulate it for the full duration
+                let max_weight = get_max_weight(base);
+                (max_weight, true, false)
+            }
+            Status::Unsolved => (10, false, false),
+        };
+
+        // Calculate as many primes as we ask
+        let final_ctx = calculate(base, max_weight);
+
+        // Check that we have the right primes
+        compare_primes(&final_ctx, all_primes_found);
+
+        // Check that we've eliminated all branches
+        if no_stray_branches {
+            assert!(
+                final_ctx.frontier.is_empty(),
+                "Some branches were not eliminated!\n{}",
+                final_ctx.frontier.iter().format("\n")
+            );
+        } else {
+            assert!(
+                !final_ctx.frontier.is_empty(),
+                "All branches were eliminated, this test should be marked Complete!"
+            )
         }
     }
 

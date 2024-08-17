@@ -131,6 +131,17 @@ impl Pattern {
         }
     }
 
+    pub fn contract(&self) -> DigitSeq {
+        DigitSeq(
+            self.digitseqs
+                .iter()
+                .map(|seq| &seq.0)
+                .flatten()
+                .copied()
+                .collect(),
+        )
+    }
+
     pub fn substitute(&self, slot: usize, digit: Digit) -> DigitSeq {
         self.substitute_multiple(slot, &[digit])
     }
