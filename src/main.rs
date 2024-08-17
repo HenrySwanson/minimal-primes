@@ -3,7 +3,6 @@ use data::{DigitSeq, Pattern};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_prime::nt_funcs::is_prime;
-use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 mod data;
@@ -25,9 +24,17 @@ struct Args {
     #[arg(default_value_t = 10)]
     base: u8,
 
-    /// How far to explore into a branch before we give up
-    #[arg(short, long, default_value_t = 10)]
-    cutoff: usize,
+    /// Stop exploring when patterns get above this weight.
+    /// If neither --max-weight or --max-iter is specified,
+    /// --max-weight defaults to 10.
+    #[arg(long)]
+    max_weight: Option<usize>,
+
+    /// Stop exploring after a specific number of iterations.
+    /// If neither --max-weight or --max-iter is specified,
+    /// --max-weight defaults to 10.
+    #[arg(long)]
+    max_iter: Option<usize>,
 
     /// Enable logging
     #[arg(long)]
@@ -35,18 +42,42 @@ struct Args {
 }
 
 fn main() {
-    let args = Args::parse();
+    let mut args = Args::parse();
+    if args.max_iter.is_none() && args.max_weight.is_none() {
+        args.max_weight = Some(10);
+    }
+
     LOGGING_ENABLED.store(args.log, Ordering::Relaxed);
 
     let mut ctx = SearchContext::new(args.base);
-    for i in 0..args.cutoff {
-        println!("Level {} - {} branches", i, ctx.queue.len());
+    while let Some(weight) = ctx.frontier.min_weight() {
+        if let Some(max) = args.max_weight {
+            if weight > max {
+                println!("Reached weight cutoff; stopping...");
+                break;
+            }
+        }
+
+        if let Some(max) = args.max_iter {
+            if ctx.iter >= max {
+                println!("Reached iteration cutoff; stopping...");
+                break;
+            }
+        }
+
+        println!(
+            "Iteration {} - Weight {} - {} branches",
+            ctx.iter,
+            weight,
+            ctx.frontier.len()
+        );
+
         ctx.search_one_level();
     }
 
     ctx.minimal_primes.sort_by_key(|(_, p)| p.clone());
     println!("---- BRANCHES REMAINING ----");
-    for pat in ctx.queue.iter() {
+    for pat in ctx.frontier.iter() {
         println!("{}", pat);
     }
     println!("---- MINIMAL PRIMES ({}) ----", ctx.minimal_primes.len());
@@ -60,9 +91,87 @@ fn main() {
 struct SearchContext {
     base: u8,
 
+    /// iteration counter; corresponds to the weight of the patterns
+    /// we're looking at
     iter: usize,
+    /// patterns we haven't explored yet
+    frontier: Frontier,
+    /// primes we've discovered so far, in two different formats
     minimal_primes: Vec<(DigitSeq, BigUint)>,
-    queue: VecDeque<Pattern>,
+}
+
+struct Frontier {
+    /// maps weight to pattern; used to ensure we're exploring the
+    /// search space in (non-strictly) increasing order.
+    /// items lower than `min_allowed_weight` must be empty
+    by_weight: Vec<Vec<Pattern>>,
+    /// the 'ratchet' that enforces that we can't backtrack to an
+    /// element of lower weight.
+    min_allowed_weight: usize,
+}
+
+impl Frontier {
+    pub fn new(base: u8) -> Self {
+        let initial_pattern = Pattern::any(base);
+        debug_assert_eq!(initial_pattern.weight(), 0);
+        Self {
+            by_weight: vec![vec![initial_pattern]],
+            min_allowed_weight: 0,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.by_weight.iter().map(|layer| layer.len()).sum()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_weight.iter().all(|layer| layer.is_empty())
+    }
+
+    /// Returns the minimum weight present in this collection. This can be
+    /// different from [self.min_allowed_weight], because that layer might
+    /// be empty (or even the layers above).
+    pub fn min_weight(&self) -> Option<usize> {
+        self.by_weight.iter().position(|layer| !layer.is_empty())
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Pattern> {
+        self.by_weight.iter().flat_map(|layer| layer)
+    }
+
+    /// Removes the patterns of the least weight from the structure.
+    /// Once this method is called, elements of weight < self.min_weight
+    /// should not be inserted! Elements with exactly the minimum weight
+    /// are allowed though (lateral exploration).
+    pub fn pop(&mut self) -> Option<Vec<Pattern>> {
+        for (i, layer) in self.by_weight.iter_mut().enumerate() {
+            if i < self.min_allowed_weight {
+                assert!(layer.is_empty())
+            }
+
+            // Take the first non-empty layer we see
+            if !layer.is_empty() {
+                return Some(std::mem::take(layer));
+            }
+        }
+        None
+    }
+
+    pub fn extend(&mut self, iter: impl IntoIterator<Item = Pattern>) {
+        for pat in iter {
+            let weight = pat.weight();
+            debug_assert!(weight >= self.min_allowed_weight);
+            loop {
+                match self.by_weight.get_mut(weight) {
+                    Some(layer) => {
+                        layer.push(pat);
+                        break;
+                    }
+                    None => self.by_weight.push(vec![]),
+                }
+            }
+        }
+    }
 }
 
 impl SearchContext {
@@ -70,13 +179,13 @@ impl SearchContext {
         Self {
             base,
             iter: 0,
+            frontier: Frontier::new(base),
             minimal_primes: vec![],
-            queue: vec![Pattern::any(base)].into(),
         }
     }
 
     pub fn search_one_level(&mut self) {
-        let old_queue = std::mem::take(&mut self.queue);
+        let old_queue = self.frontier.pop().unwrap_or_default();
         for pattern in old_queue {
             // Say our pattern is xL*z.
             // We want to explore all possible children with weight one more than this one.
@@ -99,7 +208,7 @@ impl SearchContext {
 
             // Let's see if we can split it in an interesting way
             if let Some(children) = self.split_on_repeat(&pattern) {
-                self.queue.extend(children);
+                self.frontier.extend(children);
                 continue;
             }
 
@@ -110,10 +219,10 @@ impl SearchContext {
             debug_assert!(!pattern.cores[slot].is_empty());
             if pattern.weight() == 1 {
                 debug_println!("  Splitting {} left", pattern);
-                self.queue.extend(VecDeque::from(pattern.split_left(slot)));
+                self.frontier.extend(pattern.split_left(slot));
             } else {
                 debug_println!("  Splitting {} right", pattern);
-                self.queue.extend(VecDeque::from(pattern.split_right(slot)));
+                self.frontier.extend(pattern.split_right(slot));
             }
         }
 
@@ -405,10 +514,10 @@ mod tests {
             // Except for bases 8 and 9, everything should be solvable
             if base != 8 && base != 9 {
                 assert!(
-                    ctx.queue.is_empty(),
+                    ctx.frontier.is_empty(),
                     "Found unexpected branches for base {}: {}",
                     base,
-                    ctx.queue.iter().join("\n")
+                    ctx.frontier.iter().join("\n")
                 );
             }
         }
