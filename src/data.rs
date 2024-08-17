@@ -112,12 +112,18 @@ impl Pattern {
     }
 
     pub fn substitute(self, slot: usize, digit: Digit) -> DigitSeq {
+        self.substitute_multiple(slot, &[digit])
+    }
+
+    pub fn substitute_multiple(self, slot: usize, digits: &[Digit]) -> DigitSeq {
         let mut output = DigitSeq::new();
         for (i, seg) in self.segments.into_iter().enumerate() {
             output += seg.fixed;
             if i == slot {
-                debug_assert!(seg.core.contains(&digit));
-                output += digit;
+                for d in digits {
+                    debug_assert!(seg.core.contains(d));
+                    output += *d;
+                }
             }
         }
         output

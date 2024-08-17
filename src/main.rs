@@ -1,5 +1,5 @@
 use clap::Parser;
-use data::{DigitSeq, Pattern};
+use data::{DigitSeq, Pattern, Segment};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use std::collections::VecDeque;
@@ -95,13 +95,32 @@ impl SearchContext {
                 continue;
             }
 
+            // Let's see if we can split it in an interesting way
+            if let Some(children) = self.split_on_repeat(&pattern) {
+                self.queue.extend(children);
+                continue;
+            }
+
             // If we couldn't eliminate the pattern, let's split it, left or right.
+            // Also, pick a different (nonempty) slot to do each time.
+            // TODO: this is messy! what can i do better?
+            let mut slot = 0;
+            let mut nonempty_count = 0;
+            for (i, seg) in pattern.segments.iter().enumerate().cycle() {
+                if !seg.core.is_empty() {
+                    nonempty_count += 1;
+                }
+                if nonempty_count >= self.iter {
+                    slot = i;
+                    break;
+                }
+            }
             if pattern.weight() == 1 {
                 debug_println!("  Splitting {} left", pattern);
-                self.queue.extend(VecDeque::from(pattern.split_left(0)));
+                self.queue.extend(VecDeque::from(pattern.split_left(slot)));
             } else {
                 debug_println!("  Splitting {} right", pattern);
-                self.queue.extend(VecDeque::from(pattern.split_right(0)));
+                self.queue.extend(VecDeque::from(pattern.split_right(slot)));
             }
         }
 
@@ -121,7 +140,7 @@ impl SearchContext {
 
                 match self.test_for_contained_prime(&seq) {
                     Some(p) => {
-                        assert_ne!(seq.0, p.0);
+                        assert_ne!(&seq, p);
                         debug_println!("  Discarding {}, contains prime {}", seq, p);
                     }
                     None => {
@@ -280,6 +299,37 @@ impl SearchContext {
         debug_println!("  {} is divisible by {}", pattern, gcds.iter().format(", "));
         Some(gcds)
     }
+
+    fn split_on_repeat(&self, pattern: &Pattern) -> Option<Vec<Pattern>> {
+        debug_println!(" Trying to split {}", pattern);
+        for (i, seg) in pattern.segments.iter().enumerate() {
+            for d in seg.core.iter().copied() {
+                // Check whether x yy z contains a prime subword
+                let seq = pattern.clone().substitute_multiple(i, &[d, d]);
+                if let Some(p) = self.test_for_contained_prime(&seq) {
+                    assert_ne!(&seq, p);
+                    debug_println!("  {} contains a prime {}", seq, p);
+
+                    // Split into two patterns, x(L-y)z and x(L-y)y(L-y)z
+                    let yless_core: Vec<_> = seg.core.iter().copied().filter(|x| *x != d).collect();
+                    let mut pattern_1 = pattern.clone();
+                    pattern_1.segments[i].core = yless_core.clone();
+                    let mut pattern_2 = pattern_1.clone();
+                    pattern_2.segments.insert(
+                        i + 1,
+                        Segment {
+                            fixed: d.into(),
+                            core: yless_core,
+                        },
+                    );
+
+                    debug_println!("  {} split into {} and {}", pattern, pattern_1, pattern_2);
+                    return Some(vec![pattern_1, pattern_2]);
+                }
+            }
+        }
+        None
+    }
 }
 
 fn is_prime(n: &BigUint) -> bool {
@@ -396,7 +446,7 @@ mod tests {
         for (base, output) in KNOWN_MINIMAL_SETS {
             let mut ctx = SearchContext::new(base);
 
-            for _ in 0..10 {
+            for _ in 0..12 {
                 ctx.search_one_level();
             }
 
