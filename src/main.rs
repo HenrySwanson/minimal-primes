@@ -3,9 +3,20 @@ use data::{DigitSeq, Pattern};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 mod data;
 mod tree_format;
+
+static LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
+
+macro_rules! debug_println {
+    ($($arg:tt)*) => {
+        if LOGGING_ENABLED.load(Ordering::Relaxed) {
+            println!($($arg)*);
+        }
+    };
+}
 
 #[derive(Parser)]
 struct Args {
@@ -16,10 +27,15 @@ struct Args {
     /// How far to explore into a branch before we give up
     #[arg(short, long, default_value_t = 10)]
     cutoff: usize,
+
+    /// Enable logging
+    #[arg(long)]
+    log: bool,
 }
 
 fn main() {
     let args = Args::parse();
+    LOGGING_ENABLED.store(args.log, Ordering::Relaxed);
 
     let mut ctx = SearchContext::new(args.base);
     for i in 0..args.cutoff {
@@ -61,6 +77,7 @@ impl SearchContext {
         for mut pattern in old_queue {
             // Say our pattern is xL*z.
             // We want to explore all possible children with weight one more than this one.
+            debug_println!(" Exploring {}", pattern);
 
             // First, we try to reduce the center, by seeing which elements of y ∈ L can
             // be substituted into the pattern.
@@ -75,10 +92,12 @@ impl SearchContext {
                 match self.test_for_contained_prime(&seq) {
                     Some(p) => {
                         assert_ne!(seq.0, p.0);
+                        debug_println!("  Discarding {}, contains prime {}", seq, p);
                     }
                     None => {
                         let value = seq.value(self.base);
                         if is_prime(&value) {
+                            debug_println!("  Discarding {}, is minimal prime", seq);
                             self.minimal_primes.push((seq, value));
                         } else {
                             allowed_digits.push(digit);
@@ -88,6 +107,11 @@ impl SearchContext {
             }
 
             // Now we've reduced the core, and have a new pattern.
+            debug_println!(
+                "  Reducing {} to {}",
+                pattern,
+                allowed_digits.iter().format("")
+            );
             pattern.segments[0].core = allowed_digits;
             if pattern.segments[0].core.is_empty() {
                 continue;
@@ -96,13 +120,16 @@ impl SearchContext {
             // Now, run some tests to see whether this pattern is guaranteed to
             // be composite.
             if self.test_for_perpetual_composite(&pattern) {
+                debug_println!("  Discarding {}, is always composite", pattern);
                 continue;
             }
 
             // If we couldn't eliminate the pattern, let's split it, left or right.
             if pattern.weight() == 1 {
+                debug_println!("  Splitting {} left", pattern);
                 self.queue.extend(VecDeque::from(pattern.split_left(0)));
             } else {
+                debug_println!("  Splitting {} right", pattern);
                 self.queue.extend(VecDeque::from(pattern.split_right(0)));
             }
         }
@@ -151,6 +178,7 @@ impl SearchContext {
         let gcd = gcd(d.0.into(), self.base.into());
         debug_assert!(gcd != BigUint::ZERO);
         if gcd != BigUint::from(1_u32) {
+            debug_println!("  {} has divisor {}", pattern, gcd);
             Some(gcd)
         } else {
             None
@@ -241,6 +269,7 @@ impl SearchContext {
         for g in &gcds {
             debug_assert_ne!(*g, one);
         }
+        debug_println!("  {} is divisible by {}", pattern, gcds.iter().format(", "));
         Some(gcds)
     }
 }
