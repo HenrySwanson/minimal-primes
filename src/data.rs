@@ -11,13 +11,9 @@ pub struct DigitSeq(pub Vec<Digit>);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pattern {
-    pub segments: Vec<Segment>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Segment {
-    pub fixed: DigitSeq,
-    pub core: Vec<Digit>,
+    // invariant: digitseqs.len() = cores.len() + 1
+    pub digitseqs: Vec<DigitSeq>,
+    pub cores: Vec<Vec<Digit>>,
 }
 
 impl DigitSeq {
@@ -79,6 +75,12 @@ impl std::ops::AddAssign for DigitSeq {
     }
 }
 
+impl std::ops::AddAssign<&DigitSeq> for DigitSeq {
+    fn add_assign(&mut self, rhs: &Self) {
+        self.0.extend(&rhs.0)
+    }
+}
+
 impl std::ops::AddAssign<Digit> for DigitSeq {
     fn add_assign(&mut self, rhs: Digit) {
         self.0.push(rhs)
@@ -100,28 +102,26 @@ impl From<Vec<Digit>> for DigitSeq {
 impl Pattern {
     pub fn any(base: u8) -> Self {
         Self {
-            segments: vec![Segment {
-                fixed: DigitSeq::new(),
-                core: (0..base).map(Digit).collect(),
-            }],
+            digitseqs: vec![DigitSeq::new(), DigitSeq::new()],
+            cores: vec![(0..base).map(Digit).collect()],
         }
     }
 
     pub fn weight(&self) -> usize {
-        self.segments.iter().map(|seg| seg.fixed.0.len()).sum()
+        self.digitseqs.iter().map(|seq| seq.0.len()).sum()
     }
 
-    pub fn substitute(self, slot: usize, digit: Digit) -> DigitSeq {
+    pub fn substitute(&self, slot: usize, digit: Digit) -> DigitSeq {
         self.substitute_multiple(slot, &[digit])
     }
 
-    pub fn substitute_multiple(self, slot: usize, digits: &[Digit]) -> DigitSeq {
+    pub fn substitute_multiple(&self, slot: usize, digits: &[Digit]) -> DigitSeq {
         let mut output = DigitSeq::new();
-        for (i, seg) in self.segments.into_iter().enumerate() {
-            output += seg.fixed;
+        for (i, seg) in self.digitseqs.iter().enumerate() {
+            output += seg;
             if i == slot {
                 for d in digits {
-                    debug_assert!(seg.core.contains(d));
+                    debug_assert!(self.cores[i].contains(d));
                     output += *d;
                 }
             }
@@ -130,39 +130,29 @@ impl Pattern {
     }
 
     pub fn split_left(&self, slot: usize) -> Vec<Self> {
-        let segment = &self.segments[slot];
-        segment
-            .core
+        self.cores[slot]
             .iter()
             .copied()
             // skip 0 if it'd be the first digit
-            .filter(|digit| !(digit.0 == 0 && slot == 0 && segment.fixed.0.is_empty()))
+            .filter(|digit| !(digit.0 == 0 && slot == 0 && self.digitseqs[0].0.is_empty()))
             .map(|digit| {
                 // Insert the new digit into the fixed part of this segment
                 let mut new = self.clone();
-                new.segments[slot].fixed += digit;
+                new.digitseqs[slot] += digit;
                 new
             })
             .collect()
     }
 
     pub fn split_right(&self, slot: usize) -> Vec<Self> {
-        let segment = &self.segments[slot];
-        segment
-            .core
+        self.cores[slot]
             .iter()
             .copied()
             .map(|digit| {
-                // Copy and insert another digit to the right of this pattern.
-                // This may involve creating a new segment.
+                // If the invariant is true, we'll definitely have an entry
+                // at slot + 1.
                 let mut new = self.clone();
-                match new.segments.get_mut(slot + 1) {
-                    Some(seg) => seg.fixed.0.insert(0, digit),
-                    None => new.segments.push(Segment {
-                        fixed: digit.into(),
-                        core: vec![],
-                    }),
-                }
+                new.digitseqs[slot + 1].0.insert(0, digit);
                 new
             })
             .collect()
@@ -191,9 +181,15 @@ impl std::fmt::Display for DigitSeq {
 
 impl std::fmt::Display for Pattern {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for seg in &self.segments {
-            write!(f, "{}[{}]*", seg.fixed, seg.core.iter().format(""))?
+        debug_assert_eq!(self.digitseqs.len(), self.cores.len() + 1);
+        for i in 0..self.cores.len() {
+            write!(
+                f,
+                "{}[{}]*",
+                self.digitseqs[i],
+                self.cores[i].iter().format("")
+            )?
         }
-        Ok(())
+        write!(f, "{}", self.digitseqs.last().expect("digitseqs nonempty"))
     }
 }

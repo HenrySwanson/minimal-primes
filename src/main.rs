@@ -1,5 +1,5 @@
 use clap::Parser;
-use data::{DigitSeq, Pattern, Segment};
+use data::{DigitSeq, Pattern};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use std::collections::VecDeque;
@@ -83,7 +83,7 @@ impl SearchContext {
 
             // First, we try to reduce the cores.
             let pattern = self.reduce_cores(pattern);
-            if pattern.segments.iter().all(|seg| seg.core.is_empty()) {
+            if pattern.cores.iter().all(|core| core.is_empty()) {
                 debug_println!("  {} was reduced to trivial string", pattern);
                 continue;
             }
@@ -106,8 +106,8 @@ impl SearchContext {
             // TODO: this is messy! what can i do better?
             let mut slot = 0;
             let mut nonempty_count = 0;
-            for (i, seg) in pattern.segments.iter().enumerate().cycle() {
-                if !seg.core.is_empty() {
+            for (i, core) in pattern.cores.iter().enumerate().cycle() {
+                if !core.is_empty() {
                     nonempty_count += 1;
                 }
                 if nonempty_count >= self.iter {
@@ -129,13 +129,13 @@ impl SearchContext {
 
     fn reduce_cores(&mut self, mut pattern: Pattern) -> Pattern {
         let old_pat = pattern.clone();
-        for (i, seg) in pattern.segments.iter_mut().enumerate() {
+        for (i, core) in pattern.cores.iter_mut().enumerate() {
             // Substitute elements from the core into the string to see if any
             // of them contain or are a prime.
             // NOTE: this is where we generate minimal primes of (weight + 1), so
             // next loop, those should all be available.
             let mut allowed_digits = vec![];
-            for digit in seg.core.iter().copied() {
+            for digit in core.iter().copied() {
                 let seq = old_pat.clone().substitute(i, digit);
 
                 match self.test_for_contained_prime(&seq) {
@@ -155,7 +155,7 @@ impl SearchContext {
                 }
             }
 
-            seg.core = allowed_digits;
+            *core = allowed_digits;
         }
         // Now we've reduced the core, and have a new pattern.
         debug_println!("  Reducing {} to {}", old_pat, pattern);
@@ -196,11 +196,8 @@ impl SearchContext {
 
     fn shares_factor_with_base(&self, pattern: &Pattern) -> Option<BigUint> {
         // Get the last digit of the pattern
-        let last_seg = pattern.segments.last()?;
-        if !last_seg.core.is_empty() {
-            return None;
-        }
-        let d = last_seg.fixed.0.last()?;
+        let last_seq = pattern.digitseqs.last().expect("digitseqs nonempty");
+        let d = last_seq.0.last()?;
 
         let gcd = gcd(d.0.into(), self.base.into());
         debug_assert!(gcd != BigUint::ZERO);
@@ -244,25 +241,20 @@ impl SearchContext {
         let one = BigUint::from(1_u32);
 
         // TODO: generalize
-        if pattern.segments.len() != 2 {
+        if pattern.cores.len() != 1 {
             return None;
         }
 
         let mut gcds = vec![BigUint::ZERO; stride];
         for i in 0..stride {
             // The smaller of the two sets: xL^iz
-            for center in pattern.segments[0]
-                .core
+            for center in pattern.cores[0]
                 .iter()
                 .copied()
                 .combinations_with_replacement(i)
             {
                 let value = DigitSeq::concat_value(
-                    [
-                        &pattern.segments[0].fixed,
-                        &center.into(),
-                        &pattern.segments[1].fixed,
-                    ],
+                    [&pattern.digitseqs[0], &center.into(), &pattern.digitseqs[1]],
                     self.base,
                 );
                 // Update the GCD. If we ever see a 1, it's always going to
@@ -273,17 +265,16 @@ impl SearchContext {
                 }
             }
             // The larger of the two sets: xL^(i+stride)z
-            for center in pattern.segments[0]
-                .core
+            for center in pattern.cores[0]
                 .iter()
                 .copied()
                 .combinations_with_replacement(i + stride)
             {
                 let value = DigitSeq::concat_value(
                     [
-                        &pattern.segments[0].fixed,
+                        &pattern.digitseqs[0],
                         &center.into(),
-                        &pattern.segments[1].fixed,
+                        &pattern.digitseqs[1],
                     ],
                     self.base,
                 );
@@ -302,8 +293,8 @@ impl SearchContext {
 
     fn split_on_repeat(&self, pattern: &Pattern) -> Option<Vec<Pattern>> {
         debug_println!(" Trying to split {}", pattern);
-        for (i, seg) in pattern.segments.iter().enumerate() {
-            for d in seg.core.iter().copied() {
+        for (i, core) in pattern.cores.iter().enumerate() {
+            for d in core.iter().copied() {
                 // Check whether x yy z contains a prime subword
                 let seq = pattern.clone().substitute_multiple(i, &[d, d]);
                 if let Some(p) = self.test_for_contained_prime(&seq) {
@@ -311,17 +302,12 @@ impl SearchContext {
                     debug_println!("  {} contains a prime {}", seq, p);
 
                     // Split into two patterns, x(L-y)z and x(L-y)y(L-y)z
-                    let yless_core: Vec<_> = seg.core.iter().copied().filter(|x| *x != d).collect();
+                    let yless_core: Vec<_> = core.iter().copied().filter(|x| *x != d).collect();
                     let mut pattern_1 = pattern.clone();
-                    pattern_1.segments[i].core = yless_core.clone();
+                    pattern_1.cores[i] = yless_core.clone();
                     let mut pattern_2 = pattern_1.clone();
-                    pattern_2.segments.insert(
-                        i + 1,
-                        Segment {
-                            fixed: d.into(),
-                            core: yless_core,
-                        },
-                    );
+                    pattern_2.digitseqs.insert(i+1, d.into());
+                    pattern_2.cores.insert(i+1, yless_core);
 
                     debug_println!("  {} split into {} and {}", pattern, pattern_1, pattern_2);
                     return Some(vec![pattern_1, pattern_2]);
