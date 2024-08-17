@@ -59,6 +59,7 @@ fn main() {
 struct SearchContext {
     base: u8,
 
+    iter: usize,
     minimal_primes: Vec<(DigitSeq, BigUint)>,
     queue: VecDeque<Pattern>,
 }
@@ -67,6 +68,7 @@ impl SearchContext {
     pub fn new(base: u8) -> Self {
         Self {
             base,
+            iter: 0,
             minimal_primes: vec![],
             queue: vec![Pattern::any(base)].into(),
         }
@@ -74,46 +76,15 @@ impl SearchContext {
 
     pub fn search_one_level(&mut self) {
         let old_queue = std::mem::take(&mut self.queue);
-        for mut pattern in old_queue {
+        for pattern in old_queue {
             // Say our pattern is xL*z.
             // We want to explore all possible children with weight one more than this one.
             debug_println!(" Exploring {}", pattern);
 
-            // First, we try to reduce the center, by seeing which elements of y ∈ L can
-            // be substituted into the pattern.
-            // If the resulting sequence contains or is a prime, we can eliminate that digit
-            // from L.
-            // NOTE: this is where we generate minimal primes of (weight + 1), so that they're
-            // all available for the next loop.
-            let mut allowed_digits = vec![];
-            for digit in pattern.segments[0].core.iter().copied() {
-                let seq = pattern.clone().substitute(0, digit);
-
-                match self.test_for_contained_prime(&seq) {
-                    Some(p) => {
-                        assert_ne!(seq.0, p.0);
-                        debug_println!("  Discarding {}, contains prime {}", seq, p);
-                    }
-                    None => {
-                        let value = seq.value(self.base);
-                        if is_prime(&value) {
-                            debug_println!("  Discarding {}, is minimal prime", seq);
-                            self.minimal_primes.push((seq, value));
-                        } else {
-                            allowed_digits.push(digit);
-                        }
-                    }
-                }
-            }
-
-            // Now we've reduced the core, and have a new pattern.
-            debug_println!(
-                "  Reducing {} to {}",
-                pattern,
-                allowed_digits.iter().format("")
-            );
-            pattern.segments[0].core = allowed_digits;
-            if pattern.segments[0].core.is_empty() {
+            // First, we try to reduce the cores.
+            let pattern = self.reduce_cores(pattern);
+            if pattern.segments.iter().all(|seg| seg.core.is_empty()) {
+                debug_println!("  {} was reduced to trivial string", pattern);
                 continue;
             }
 
@@ -133,6 +104,43 @@ impl SearchContext {
                 self.queue.extend(VecDeque::from(pattern.split_right(0)));
             }
         }
+
+        self.iter += 1;
+    }
+
+    fn reduce_cores(&mut self, mut pattern: Pattern) -> Pattern {
+        let old_pat = pattern.clone();
+        for (i, seg) in pattern.segments.iter_mut().enumerate() {
+            // Substitute elements from the core into the string to see if any
+            // of them contain or are a prime.
+            // NOTE: this is where we generate minimal primes of (weight + 1), so
+            // next loop, those should all be available.
+            let mut allowed_digits = vec![];
+            for digit in seg.core.iter().copied() {
+                let seq = old_pat.clone().substitute(i, digit);
+
+                match self.test_for_contained_prime(&seq) {
+                    Some(p) => {
+                        assert_ne!(seq.0, p.0);
+                        debug_println!("  Discarding {}, contains prime {}", seq, p);
+                    }
+                    None => {
+                        let value = seq.value(self.base);
+                        if is_prime(&value) {
+                            debug_println!("  Discarding {}, is minimal prime", seq);
+                            self.minimal_primes.push((seq, value));
+                        } else {
+                            allowed_digits.push(digit);
+                        }
+                    }
+                }
+            }
+
+            seg.core = allowed_digits;
+        }
+        // Now we've reduced the core, and have a new pattern.
+        debug_println!("  Reducing {} to {}", old_pat, pattern);
+        pattern
     }
 
     fn test_for_contained_prime(&self, seq: &DigitSeq) -> Option<&DigitSeq> {
