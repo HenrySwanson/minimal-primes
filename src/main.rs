@@ -227,7 +227,7 @@ impl SearchContext {
             }
 
             // Let's see if we can split it in an interesting way
-            if let Some(children) = self.split_on_repeat(&pattern) {
+            if let Some(children) = self.split_on_repeat(&pattern, 3) {
                 self.frontier.extend(children);
                 continue;
             }
@@ -421,59 +421,44 @@ impl SearchContext {
         Some(gcds)
     }
 
-    fn split_on_repeat(&self, pattern: &Pattern) -> Option<Vec<Pattern>> {
+    fn split_on_repeat(&self, pattern: &Pattern, max_repeats: usize) -> Option<Vec<Pattern>> {
         debug_println!(" Trying to split {}", pattern);
         for (i, core) in pattern.cores.iter().enumerate() {
             for d in core.iter().copied() {
-                // Check whether x yy z contains a prime subword
-                let seq = pattern.substitute_multiple(i, &[d, d]);
-                if let Some(p) = self.test_for_contained_prime(&seq) {
-                    assert_ne!(&seq, p);
-                    debug_println!("  {} contains a prime {}", seq, p);
+                for n in 2..=max_repeats {
+                    // Check whether x y^n z contains a prime subword
+                    let seq = pattern.substitute_multiple(i, std::iter::repeat(d).take(n));
+                    if let Some(p) = self.test_for_contained_prime(&seq) {
+                        assert_ne!(&seq, p);
+                        debug_println!("  {} contains a prime {}", seq, p);
 
-                    // Split into two patterns, x(L-y)z and x(L-y)y(L-y)z
-                    let yless_core: Vec<_> = core.iter().copied().filter(|x| *x != d).collect();
-                    let mut pattern_1 = pattern.clone();
-                    pattern_1.cores[i] = yless_core.clone();
-                    let mut pattern_2 = pattern_1.clone();
-                    pattern_2.digitseqs.insert(i + 1, d.into());
-                    pattern_2.cores.insert(i + 1, yless_core);
-                    pattern_1.simplify();
-                    pattern_2.simplify();
+                        // Split into n patterns, x (L-y) (y (L-y))^i z for i in 0..n
+                        let yless_core: Vec<_> = core.iter().copied().filter(|x| *x != d).collect();
+                        let mut first_child = pattern.clone();
+                        first_child.cores[i] = yless_core.clone();
 
-                    debug_println!("  {} split into {} and {}", pattern, pattern_1, pattern_2);
-                    return Some(vec![pattern_1, pattern_2]);
-                }
+                        let mut children = vec![first_child];
 
-                // Check if xyyyz contains a prime subword
-                // TODO: generalize this!
-                let seq = pattern.substitute_multiple(i, &[d, d, d]);
-                if let Some(p) = self.test_for_contained_prime(&seq) {
-                    assert_ne!(&seq, p);
-                    debug_println!("  {} contains a prime {}", seq, p);
+                        while children.len() < n {
+                            let mut new = children.last().unwrap().clone();
+                            new.digitseqs.insert(i + 1, d.into());
+                            new.cores.insert(i + 1, yless_core.clone());
+                            children.push(new);
+                        }
 
-                    // Split into three patterns, x(L-y)z, x(L-y)y(L-y)z, and x(L-y)y(L-y)y(L-y)z
-                    let yless_core: Vec<_> = core.iter().copied().filter(|x| *x != d).collect();
-                    let mut pattern_1 = pattern.clone();
-                    pattern_1.cores[i] = yless_core.clone();
-                    let mut pattern_2 = pattern_1.clone();
-                    pattern_2.digitseqs.insert(i + 1, d.into());
-                    pattern_2.cores.insert(i + 1, yless_core.clone());
-                    let mut pattern_3 = pattern_2.clone();
-                    pattern_3.digitseqs.insert(i + 2, d.into());
-                    pattern_3.cores.insert(i + 1, yless_core);
-                    pattern_1.simplify();
-                    pattern_2.simplify();
-                    pattern_3.simplify();
+                        // Simplify everything (don't do it while we're generating patterns),
+                        // since that'd mess with indices).
+                        for child in children.iter_mut() {
+                            child.simplify();
+                        }
 
-                    debug_println!(
-                        "  {} split into {}, {}, and {}",
-                        pattern,
-                        pattern_1,
-                        pattern_2,
-                        pattern_3
-                    );
-                    return Some(vec![pattern_1, pattern_2, pattern_3]);
+                        debug_println!(
+                            "  {} split into {}",
+                            pattern,
+                            children.iter().format(" and ")
+                        );
+                        return Some(children);
+                    }
                 }
             }
         }

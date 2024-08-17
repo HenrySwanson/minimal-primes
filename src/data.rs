@@ -143,19 +143,23 @@ impl Pattern {
     }
 
     pub fn substitute(&self, slot: usize, digit: Digit) -> DigitSeq {
-        self.substitute_multiple(slot, &[digit])
+        self.substitute_multiple(slot, [digit])
     }
 
-    pub fn substitute_multiple(&self, slot: usize, digits: &[Digit]) -> DigitSeq {
+    pub fn substitute_multiple(
+        &self,
+        slot: usize,
+        digits: impl IntoIterator<Item = Digit>,
+    ) -> DigitSeq {
         let mut output = DigitSeq::new();
-        for (i, seg) in self.digitseqs.iter().enumerate() {
-            output += seg;
-            if i == slot {
-                for d in digits {
-                    debug_assert!(self.cores[i].contains(d));
-                    output += *d;
-                }
-            }
+        for i in 0..=slot {
+            output += &self.digitseqs[i];
+        }
+        for d in digits {
+            output += d;
+        }
+        for i in (slot + 1)..self.digitseqs.len() {
+            output += &self.digitseqs[i];
         }
         output
     }
