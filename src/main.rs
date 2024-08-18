@@ -1,5 +1,5 @@
 use clap::Parser;
-use data::{DigitSeq, Pattern};
+use data::{Digit, DigitSeq, Pattern};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_prime::nt_funcs::is_prime;
@@ -325,6 +325,11 @@ impl SearchContext {
                 return true;
             }
         }
+
+        if let Some(_) = self.find_even_odd_factor(pattern) {
+            return true;
+        }
+
         false
     }
 
@@ -419,6 +424,93 @@ impl SearchContext {
         }
         debug_println!("  {} is divisible by {}", pattern, gcds.iter().format(", "));
         Some(gcds)
+    }
+
+    fn find_even_odd_factor(&self, pattern: &Pattern) -> Option<(BigUint, BigUint)> {
+        // Similar to find_perpetual_factor, but checks strings of even length and odd length separately.
+
+        // TODO: can this be generalized to more than two cores?
+        if pattern.cores.len() != 2 {
+            return None;
+        }
+
+        // TODO: generalize this!
+        fn foo(
+            initial_gcd: BigUint,
+            base: u8,
+            x: &DigitSeq,
+            a: &Vec<Digit>,
+            y: &DigitSeq,
+            b: &Vec<Digit>,
+            z: &DigitSeq,
+            a_repeat: usize,
+            b_repeat: usize,
+        ) -> BigUint {
+            let mut gcd_accum = initial_gcd;
+
+            for a_choices in a.iter().copied().combinations_with_replacement(a_repeat) {
+                for b_choices in b.iter().copied().combinations_with_replacement(b_repeat) {
+                    let mut seq = x.clone();
+                    seq += DigitSeq(a_choices.clone());
+                    seq += y;
+                    seq += DigitSeq(b_choices);
+                    seq += z;
+
+                    let n = seq.value(base);
+                    gcd_accum = gcd(gcd_accum, n);
+                    if gcd_accum == BigUint::from(1_u32) {
+                        return gcd_accum;
+                    }
+                }
+            }
+            gcd_accum
+        }
+
+        // Take the pattern xA*yB*z
+        // - even number of A+B: x(AA)*y(BB)*z, xA(AA)*yB(BB)*z
+        // -  odd number of A+B: xA(AA)*y(BB)*z, z(AA)*yB(BB)*z
+        let mut even_gcd = BigUint::ZERO;
+        let mut odd_gcd = BigUint::ZERO;
+
+        let bar = |gcd, repeat_a, repeat_b| {
+            foo(
+                gcd,
+                self.base,
+                &pattern.digitseqs[0],
+                &pattern.cores[0],
+                &pattern.digitseqs[1],
+                &pattern.cores[1],
+                &pattern.digitseqs[2],
+                repeat_a,
+                repeat_b,
+            )
+        };
+
+        even_gcd = bar(even_gcd, 0, 0);
+        even_gcd = bar(even_gcd, 2, 0);
+        even_gcd = bar(even_gcd, 0, 2);
+        even_gcd = bar(even_gcd, 1, 1);
+        even_gcd = bar(even_gcd, 1, 3);
+        even_gcd = bar(even_gcd, 3, 1);
+
+        odd_gcd = bar(odd_gcd, 1, 0);
+        odd_gcd = bar(odd_gcd, 3, 0);
+        odd_gcd = bar(odd_gcd, 1, 2);
+        odd_gcd = bar(odd_gcd, 0, 1);
+        odd_gcd = bar(odd_gcd, 2, 1);
+        odd_gcd = bar(odd_gcd, 0, 3);
+
+        if even_gcd > BigUint::from(1_u32) && odd_gcd > BigUint::from(1_u32) {
+            debug_println!(
+                "  {} is divisible by either {} or {}",
+                pattern,
+                even_gcd,
+                odd_gcd
+            );
+            return Some((even_gcd, odd_gcd));
+        }
+
+        None
     }
 
     fn split_on_repeat(&self, pattern: &Pattern, max_repeats: usize) -> Option<Vec<Pattern>> {

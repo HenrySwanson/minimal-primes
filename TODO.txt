@@ -1,3 +1,4 @@
-- Get rid of as many clone() as possible
-  - You should be able to get the value of (a + b) without needing to clone it!
-- gcd(ac, abc) is the same as gcd(ac, ab - a) if you're ignoring factors shared with the base
+- Highest priority is to figure out more divisors of things. Splitting doesn't help much.
+- Make Ctrl-C show the current situation
+- Pull the factor-finding methods into their own module (all they need is base!)
+- Add gcd_mut method

@@ -14,9 +14,9 @@ has_divisor(family f) -> bool
   - g2 = gcd(m, im, mmm) for all i≠m
   - this is similar to Corollary 6
 - two divisors (different approach)
-  - only works when there's two (nonempty) cores, i and j (i < j)
-  - g1 = gcd(∅, ii) for all k
-  - g2 = gcd(i, ikk) for all k
+  - focuses on two (nonempty) cores, i and j (i < j)
+  - g1 = gcd(∅, ii)
+  - g2 = gcd(i, ikk) for all k (including i)
   - g3 = gcd(j, jkk) for all k (temp2)
   - g4 = gcd(ij, iiij, ijjj) (temp3)
   - idk what this is
