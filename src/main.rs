@@ -146,7 +146,7 @@ impl Frontier {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Pattern> {
-        self.by_weight.iter().flat_map(|layer| layer)
+        self.by_weight.iter().flatten()
     }
 
     /// Removes the patterns of the least weight from the structure.
@@ -325,19 +325,31 @@ impl SearchContext {
         // in the comments for familiarity, unless specified otherwise.
 
         // p divides BASE (e.g., 2, 5)
-        if let Some(_) = shares_factor_with_base(self.base, pattern) {
+        if let Some(factor) = shares_factor_with_base(self.base, pattern) {
+            debug_println!("  {} has divisor {}", pattern, factor);
             return true;
         }
         // p does not divide BASE (e.g. 7)
         // -------------------------------
         // This is how we detect patterns like 4[6]9 being divisible by 7.
         for stride in 1..=2 {
-            if let Some(_) = find_perpetual_factor(self.base, pattern, stride) {
+            if let Some(factors) = find_perpetual_factor(self.base, pattern, stride) {
+                debug_println!(
+                    "  {} is divisible by {}",
+                    pattern,
+                    factors.iter().format(", ")
+                );
                 return true;
             }
         }
 
-        if let Some(_) = find_even_odd_factor(self.base, pattern) {
+        if let Some((even_factor, odd_factor)) = find_even_odd_factor(self.base, pattern) {
+            debug_println!(
+                "  {} is divisible by either {} or {}",
+                pattern,
+                even_factor,
+                odd_factor
+            );
             return true;
         }
 

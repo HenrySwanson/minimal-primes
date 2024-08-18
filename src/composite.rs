@@ -7,7 +7,6 @@ use num_bigint::BigUint;
 use crate::data::Digit;
 use crate::data::DigitSeq;
 use crate::data::Pattern;
-use crate::debug_println;
 
 /// Checks whether this pattern shares a factor with the base.
 /// Basically just checks the last digit.
@@ -19,7 +18,6 @@ pub fn shares_factor_with_base(base: u8, pattern: &Pattern) -> Option<BigUint> {
     let gcd = gcd(d.0.into(), base.into());
     debug_assert!(gcd != BigUint::ZERO);
     if gcd != big_one() {
-        debug_println!("  {} has divisor {}", pattern, gcd);
         Some(gcd)
     } else {
         None
@@ -46,7 +44,7 @@ pub fn find_perpetual_factor(base: u8, pattern: &Pattern, stride: usize) -> Opti
     }
 
     let mut gcds = vec![BigUint::ZERO; stride];
-    for i in 0..stride {
+    for (i, gcd_i) in gcds.iter_mut().enumerate() {
         // The smaller of the two sets: xL^iz
         for center in pattern.cores[0]
             .iter()
@@ -59,8 +57,8 @@ pub fn find_perpetual_factor(base: u8, pattern: &Pattern, stride: usize) -> Opti
             );
             // Update the GCD. If we ever see a 1, it's always going to
             // be that way, so bail out instantly.
-            gcds[i] = gcd(gcds[i].clone(), value);
-            if gcds[i] == one {
+            *gcd_i = gcd(gcd_i.clone(), value);
+            if *gcd_i == one {
                 return None;
             }
         }
@@ -74,8 +72,8 @@ pub fn find_perpetual_factor(base: u8, pattern: &Pattern, stride: usize) -> Opti
                 [&pattern.digitseqs[0], &center.into(), &pattern.digitseqs[1]],
                 base,
             );
-            gcds[i] = gcd(gcds[i].clone(), value);
-            if gcds[i] == one {
+            *gcd_i = gcd(gcd_i.clone(), value);
+            if *gcd_i == one {
                 return None;
             }
         }
@@ -83,7 +81,6 @@ pub fn find_perpetual_factor(base: u8, pattern: &Pattern, stride: usize) -> Opti
     for g in &gcds {
         debug_assert_ne!(*g, one);
     }
-    debug_println!("  {} is divisible by {}", pattern, gcds.iter().format(", "));
     Some(gcds)
 }
 
@@ -100,9 +97,9 @@ pub fn find_even_odd_factor(base: u8, pattern: &Pattern) -> Option<(BigUint, Big
         initial_gcd: BigUint,
         base: u8,
         x: &DigitSeq,
-        a: &Vec<Digit>,
+        a: &[Digit],
         y: &DigitSeq,
-        b: &Vec<Digit>,
+        b: &[Digit],
         z: &DigitSeq,
         a_repeat: usize,
         b_repeat: usize,
@@ -162,12 +159,6 @@ pub fn find_even_odd_factor(base: u8, pattern: &Pattern) -> Option<(BigUint, Big
     odd_gcd = bar(odd_gcd, 0, 3);
 
     if even_gcd > big_one() && odd_gcd > big_one() {
-        debug_println!(
-            "  {} is divisible by either {} or {}",
-            pattern,
-            even_gcd,
-            odd_gcd
-        );
         return Some((even_gcd, odd_gcd));
     }
 

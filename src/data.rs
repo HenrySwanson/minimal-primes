@@ -135,8 +135,7 @@ impl Pattern {
         DigitSeq(
             self.digitseqs
                 .iter()
-                .map(|seq| &seq.0)
-                .flatten()
+                .flat_map(|seq| &seq.0)
                 .copied()
                 .collect(),
         )
