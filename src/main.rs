@@ -1,12 +1,13 @@
 use clap::Parser;
-use data::{Digit, DigitSeq, Pattern};
+use composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
+use data::{DigitSeq, Pattern};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_prime::nt_funcs::is_prime;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
+mod composite;
 mod data;
-mod tree_format;
 
 static LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
@@ -14,11 +15,13 @@ const DEFAULT_MAX_WEIGHT: usize = 10;
 
 macro_rules! debug_println {
     ($($arg:tt)*) => {
-        if LOGGING_ENABLED.load(Ordering::Relaxed) {
+        if crate::LOGGING_ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
             println!($($arg)*);
         }
     };
 }
+
+pub(crate) use debug_println;
 
 #[derive(Parser)]
 struct Args {
@@ -49,7 +52,7 @@ fn main() {
         args.max_weight = Some(DEFAULT_MAX_WEIGHT);
     }
 
-    LOGGING_ENABLED.store(args.log, Ordering::Relaxed);
+    LOGGING_ENABLED.store(args.log, std::sync::atomic::Ordering::Relaxed);
 
     let mut ctx = SearchContext::new(args.base);
     while let Some(weight) = ctx.frontier.min_weight() {
@@ -322,203 +325,23 @@ impl SearchContext {
         // in the comments for familiarity, unless specified otherwise.
 
         // p divides BASE (e.g., 2, 5)
-        if let Some(_) = self.shares_factor_with_base(pattern) {
+        if let Some(_) = shares_factor_with_base(self.base, pattern) {
             return true;
         }
         // p does not divide BASE (e.g. 7)
         // -------------------------------
         // This is how we detect patterns like 4[6]9 being divisible by 7.
         for stride in 1..=2 {
-            if let Some(_) = self.find_perpetual_factor(pattern, stride) {
+            if let Some(_) = find_perpetual_factor(self.base, pattern, stride) {
                 return true;
             }
         }
 
-        if let Some(_) = self.find_even_odd_factor(pattern) {
+        if let Some(_) = find_even_odd_factor(self.base, pattern) {
             return true;
         }
 
         false
-    }
-
-    fn shares_factor_with_base(&self, pattern: &Pattern) -> Option<BigUint> {
-        // Get the last digit of the pattern
-        let last_seq = pattern.digitseqs.last().expect("digitseqs nonempty");
-        let d = last_seq.0.last()?;
-
-        let gcd = gcd(d.0.into(), self.base.into());
-        debug_assert!(gcd != BigUint::ZERO);
-        if gcd != BigUint::from(1_u32) {
-            debug_println!("  {} has divisor {}", pattern, gcd);
-            Some(gcd)
-        } else {
-            None
-        }
-    }
-
-    fn find_perpetual_factor(&self, pattern: &Pattern, stride: usize) -> Option<Vec<BigUint>> {
-        // If 49, 469, 4669, etc are all divisible by 7, it means that:
-        // - 49 is divisible by 7
-        // - 4666...6669 is equivalent to 49 mod 7 (they're both 0)
-        //
-        // For the second fact, it suffices to show that 49 and 469 are equivalent!
-        // If they are, then 10*(x-9)+69 maps them to 469 and 4669, making 49,
-        // 469, and 4669 equivalent.
-        //
-        // (It would also suffice to show that 4 and 46 are equivalent mod 7.)
-        //
-        // So we need to prove two facts:
-        // - 49 is divisible by 7
-        // = 469 is equivalent to 49 mod 7, i.e., it's divisible by 7
-        // - 4 and 46 are equivalent mod 7, i.e., 46 - 4 is divisible by 7
-        //
-        // More generally, for a pattern a[b]*c:
-        // - ac and abc are divisible by p
-        //
-        // Even better, we don't have to try a bunch of different p; what
-        // we're actually looking for is whether ac and abc have some
-        // non-trivial common factor, i.e., we can just use the GCD!
-        //
-        // For patterns with more than one digit in the center,
-        // we can try all of them individually and lump them into the same GCD.
-        // This is what will let us eliminate patterns like 2[369]1.
-        //
-        // Lastly, we can extend this idea to situations where ac, abbc, abbbbc,
-        // have one divisor, and abc, abbbc, abbbbbc, have a different one.
-        let one = BigUint::from(1_u32);
-
-        // TODO: generalize
-        if pattern.cores.len() != 1 {
-            return None;
-        }
-
-        let mut gcds = vec![BigUint::ZERO; stride];
-        for i in 0..stride {
-            // The smaller of the two sets: xL^iz
-            for center in pattern.cores[0]
-                .iter()
-                .copied()
-                .combinations_with_replacement(i)
-            {
-                let value = DigitSeq::concat_value(
-                    [&pattern.digitseqs[0], &center.into(), &pattern.digitseqs[1]],
-                    self.base,
-                );
-                // Update the GCD. If we ever see a 1, it's always going to
-                // be that way, so bail out instantly.
-                gcds[i] = gcd(gcds[i].clone(), value);
-                if gcds[i] == one {
-                    return None;
-                }
-            }
-            // The larger of the two sets: xL^(i+stride)z
-            for center in pattern.cores[0]
-                .iter()
-                .copied()
-                .combinations_with_replacement(i + stride)
-            {
-                let value = DigitSeq::concat_value(
-                    [&pattern.digitseqs[0], &center.into(), &pattern.digitseqs[1]],
-                    self.base,
-                );
-                gcds[i] = gcd(gcds[i].clone(), value);
-                if gcds[i] == one {
-                    return None;
-                }
-            }
-        }
-        for g in &gcds {
-            debug_assert_ne!(*g, one);
-        }
-        debug_println!("  {} is divisible by {}", pattern, gcds.iter().format(", "));
-        Some(gcds)
-    }
-
-    fn find_even_odd_factor(&self, pattern: &Pattern) -> Option<(BigUint, BigUint)> {
-        // Similar to find_perpetual_factor, but checks strings of even length and odd length separately.
-
-        // TODO: can this be generalized to more than two cores?
-        if pattern.cores.len() != 2 {
-            return None;
-        }
-
-        // TODO: generalize this!
-        fn foo(
-            initial_gcd: BigUint,
-            base: u8,
-            x: &DigitSeq,
-            a: &Vec<Digit>,
-            y: &DigitSeq,
-            b: &Vec<Digit>,
-            z: &DigitSeq,
-            a_repeat: usize,
-            b_repeat: usize,
-        ) -> BigUint {
-            let mut gcd_accum = initial_gcd;
-
-            for a_choices in a.iter().copied().combinations_with_replacement(a_repeat) {
-                for b_choices in b.iter().copied().combinations_with_replacement(b_repeat) {
-                    let mut seq = x.clone();
-                    seq += DigitSeq(a_choices.clone());
-                    seq += y;
-                    seq += DigitSeq(b_choices);
-                    seq += z;
-
-                    let n = seq.value(base);
-                    gcd_accum = gcd(gcd_accum, n);
-                    if gcd_accum == BigUint::from(1_u32) {
-                        return gcd_accum;
-                    }
-                }
-            }
-            gcd_accum
-        }
-
-        // Take the pattern xA*yB*z
-        // - even number of A+B: x(AA)*y(BB)*z, xA(AA)*yB(BB)*z
-        // -  odd number of A+B: xA(AA)*y(BB)*z, z(AA)*yB(BB)*z
-        let mut even_gcd = BigUint::ZERO;
-        let mut odd_gcd = BigUint::ZERO;
-
-        let bar = |gcd, repeat_a, repeat_b| {
-            foo(
-                gcd,
-                self.base,
-                &pattern.digitseqs[0],
-                &pattern.cores[0],
-                &pattern.digitseqs[1],
-                &pattern.cores[1],
-                &pattern.digitseqs[2],
-                repeat_a,
-                repeat_b,
-            )
-        };
-
-        even_gcd = bar(even_gcd, 0, 0);
-        even_gcd = bar(even_gcd, 2, 0);
-        even_gcd = bar(even_gcd, 0, 2);
-        even_gcd = bar(even_gcd, 1, 1);
-        even_gcd = bar(even_gcd, 1, 3);
-        even_gcd = bar(even_gcd, 3, 1);
-
-        odd_gcd = bar(odd_gcd, 1, 0);
-        odd_gcd = bar(odd_gcd, 3, 0);
-        odd_gcd = bar(odd_gcd, 1, 2);
-        odd_gcd = bar(odd_gcd, 0, 1);
-        odd_gcd = bar(odd_gcd, 2, 1);
-        odd_gcd = bar(odd_gcd, 0, 3);
-
-        if even_gcd > BigUint::from(1_u32) && odd_gcd > BigUint::from(1_u32) {
-            debug_println!(
-                "  {} is divisible by either {} or {}",
-                pattern,
-                even_gcd,
-                odd_gcd
-            );
-            return Some((even_gcd, odd_gcd));
-        }
-
-        None
     }
 
     fn split_on_repeat(&self, pattern: &Pattern, max_repeats: usize) -> Option<Vec<Pattern>> {
@@ -563,56 +386,6 @@ impl SearchContext {
             }
         }
         None
-    }
-}
-
-fn gcd(mut a: BigUint, mut b: BigUint) -> BigUint {
-    // Since we're working with a binary representation, it's more efficient
-    // to use this algorithm than the standard Euclidean one.
-
-    // First, pull out all the factors of 2.
-    // gcd(2^i a, 2^j b) = 2^k gcd(a, b) when a, b odd and k = min(i, j);
-    // But since x.trailing_zeros() is None when x is 0, take this opportunity
-    // to check for the edge case of a = 0 or b = 0.
-    let i = match a.trailing_zeros() {
-        Some(i) => i,
-        None => return b,
-    };
-    let j = match b.trailing_zeros() {
-        Some(j) => j,
-        None => return a,
-    };
-
-    // How many of those 2s do we want to keep?
-    let k = i.min(j);
-    a >>= i;
-    b >>= j;
-
-    loop {
-        // Now they're both odd
-        debug_assert!(a.bit(0));
-        debug_assert!(b.bit(0));
-
-        // Swap so a is larger
-        if a < b {
-            std::mem::swap(&mut a, &mut b);
-        }
-
-        // Subtract, just like with Euclid
-        // gcd(u, v) = gcd(u, v-u)
-        a -= &b;
-
-        // Now a is even; remove its 2s (again checking for the case of a = 0).
-        // gcd(2^i a, b) = gcd(a, b) when b is odd
-        match a.trailing_zeros() {
-            Some(i) => {
-                a >>= i;
-            }
-            None => {
-                // gcd(0, b) = b, then add in the 2^k we removed earlier
-                return b << k;
-            }
-        }
     }
 }
 
