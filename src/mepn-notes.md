@@ -16,8 +16,8 @@ has_divisor(family f) -> bool
 - two divisors (different approach)
   - focuses on two (nonempty) cores, i and j (i < j)
   - g1 = gcd(∅, ii)
-  - g2 = gcd(i, ikk) for all k (including i)
-  - g3 = gcd(j, jkk) for all k (temp2)
+  - g2 = gcd(i, iii, ikk) for all k (including i)
+  - g3 = gcd(j, jjj, jkk) for all k (temp2)
   - g4 = gcd(ij, iiij, ijjj) (temp3)
   - idk what this is
 - 3/4/5/... divisors

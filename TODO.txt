@@ -2,3 +2,4 @@
 - Make Ctrl-C show the current situation
 - Pull the factor-finding methods into their own module (all they need is base!)
 - Add gcd_mut method
+- Can I skip the "contains prime" test when I'm solving a simple family?

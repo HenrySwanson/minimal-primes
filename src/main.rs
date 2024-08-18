@@ -10,6 +10,8 @@ mod tree_format;
 
 static LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
+const DEFAULT_MAX_WEIGHT: usize = 10;
+
 macro_rules! debug_println {
     ($($arg:tt)*) => {
         if LOGGING_ENABLED.load(Ordering::Relaxed) {
@@ -44,7 +46,7 @@ struct Args {
 fn main() {
     let mut args = Args::parse();
     if args.max_iter.is_none() && args.max_weight.is_none() {
-        args.max_weight = Some(10);
+        args.max_weight = Some(DEFAULT_MAX_WEIGHT);
     }
 
     LOGGING_ENABLED.store(args.log, Ordering::Relaxed);
@@ -80,12 +82,17 @@ fn main() {
     for pat in ctx.frontier.iter() {
         println!("{}", pat);
     }
-    println!("---- MINIMAL PRIMES ({}) ----", ctx.minimal_primes.len());
+    println!("---- MINIMAL PRIMES ----");
     println!(
         "{}",
         ctx.minimal_primes.iter().map(|(seq, _)| seq).format(", ")
     );
     println!("------------");
+    println!(
+        "{} primes found, {} branches unresolved",
+        ctx.minimal_primes.len(),
+        ctx.frontier.len()
+    );
 }
 
 struct SearchContext {
@@ -207,6 +214,7 @@ impl SearchContext {
                     if is_prime(&value, None).probably() {
                         debug_println!("  Discarding {}, contracts to minimal prime", pattern);
                         self.minimal_primes.push((seq, value));
+                        continue;
                     }
                 }
             }
@@ -633,8 +641,8 @@ mod tests {
         /// Can get all the minimal primes, but there's some branches
         /// we can't realize are composite.
         StrayBranches,
-        /// Not solved.
-        Unsolved,
+        /// Not solved yet. Limit the number of iterations.
+        Unsolved(usize),
     }
 
     macro_rules! declare_test_for_base {
@@ -655,26 +663,28 @@ mod tests {
     declare_test_for_base!(test_base_8, 8, Status::StrayBranches);
     declare_test_for_base!(test_base_9, 9, Status::StrayBranches);
     declare_test_for_base!(test_base_10, 10, Status::Complete);
-    declare_test_for_base!(test_base_11, 11, Status::Unsolved);
+    declare_test_for_base!(test_base_11, 11, Status::Unsolved(10));
     declare_test_for_base!(test_base_12, 12, Status::Complete);
-    // declare_test_for_base!(test_base_13, 13, Status::Unsolved);
+    declare_test_for_base!(test_base_13, 13, Status::Unsolved(7));
     declare_test_for_base!(test_base_14, 14, Status::Complete);
-    declare_test_for_base!(test_base_15, 15, Status::StrayBranches);
-    // declare_test_for_base!(test_base_16, 16, Status::Complete);
-    // declare_test_for_base!(test_base_17, 17, Status::Complete);
+    declare_test_for_base!(test_base_15, 15, Status::Complete);
+    declare_test_for_base!(test_base_16, 16, Status::Unsolved(10));
+    declare_test_for_base!(test_base_17, 17, Status::Unsolved(4));
     declare_test_for_base!(test_base_18, 18, Status::Complete);
-    // declare_test_for_base!(test_base_19, 19, Status::Complete);
-    // declare_test_for_base!(test_base_20, 20, Status::Complete);
-    // declare_test_for_base!(test_base_21, 21, Status::Complete);
-    // declare_test_for_base!(test_base_22, 22, Status::Complete);
-    // declare_test_for_base!(test_base_23, 23, Status::Complete);
-    // declare_test_for_base!(test_base_24, 24, Status::Complete);
-    // declare_test_for_base!(test_base_25, 25, Status::Complete);
-    // declare_test_for_base!(test_base_26, 26, Status::Complete);
-    // declare_test_for_base!(test_base_27, 27, Status::Complete);
-    // declare_test_for_base!(test_base_28, 28, Status::Complete);
-    // declare_test_for_base!(test_base_29, 29, Status::Complete);
-    // declare_test_for_base!(test_base_30, 30, Status::Complete);
+    declare_test_for_base!(test_base_19, 19, Status::Unsolved(3));
+    // 20 is solvable, but requires --release to be practical
+    declare_test_for_base!(test_base_20, 20, Status::Unsolved(50));
+    declare_test_for_base!(test_base_21, 21, Status::Unsolved(4));
+    declare_test_for_base!(test_base_22, 22, Status::Unsolved(5));
+    declare_test_for_base!(test_base_23, 23, Status::Unsolved(3));
+    declare_test_for_base!(test_base_24, 24, Status::StrayBranches);
+    declare_test_for_base!(test_base_25, 25, Status::Unsolved(3));
+    declare_test_for_base!(test_base_26, 26, Status::Unsolved(3));
+    declare_test_for_base!(test_base_27, 27, Status::Unsolved(3));
+    declare_test_for_base!(test_base_28, 28, Status::Unsolved(3));
+    declare_test_for_base!(test_base_29, 29, Status::Unsolved(2));
+    // 30 is solvable, but takes too long, even with --release
+    declare_test_for_base!(test_base_30, 30, Status::Unsolved(50));
 
     fn test_for_base(base: u8, status: Status) {
         let (max_weight, all_primes_found, no_stray_branches) = match status {
@@ -688,7 +698,7 @@ mod tests {
                 let max_weight = get_max_weight(base);
                 (max_weight, true, false)
             }
-            Status::Unsolved => (10, false, false),
+            Status::Unsolved(max_weight) => (max_weight, false, false),
         };
 
         // Calculate as many primes as we ask
