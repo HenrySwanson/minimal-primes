@@ -42,41 +42,35 @@ pub fn find_perpetual_factor(base: u8, pattern: &Pattern, stride: usize) -> Opti
     if pattern.cores.len() != 1 {
         return None;
     }
+    let core = &pattern.cores[0];
 
-    let mut gcds = vec![BigUint::ZERO; stride];
-    for (i, gcd_i) in gcds.iter_mut().enumerate() {
-        // The smaller of the two sets: xL^iz
-        for center in pattern.cores[0]
-            .iter()
-            .copied()
-            .combinations_with_replacement(i)
-        {
-            let value = DigitSeq::concat_value(
-                [&pattern.digitseqs[0], &center.into(), &pattern.digitseqs[1]],
-                base,
-            );
-            // Update the GCD. If we ever see a 1, it's always going to
-            // be that way, so bail out instantly.
-            *gcd_i = gcd(gcd_i.clone(), value);
-            if *gcd_i == one {
-                return None;
-            }
+    let mut gcds = vec![];
+    for i in 0..stride {
+        let g = gcd_reduce(
+            // The smaller of the two sets: xL^iz
+            core.iter()
+                .copied()
+                .combinations_with_replacement(i)
+                .chain(
+                    // The larger of the two sets: xL^(i+stride)z
+                    core.iter()
+                        .copied()
+                        .combinations_with_replacement(i + stride),
+                )
+                .map(|center| {
+                    DigitSeq::concat_value(
+                        [&pattern.digitseqs[0], &center.into(), &pattern.digitseqs[1]],
+                        base,
+                    )
+                }),
+        );
+
+        // If any of the GCDs are 1, bail out immediately.
+        if g == big_one() {
+            return None;
         }
-        // The larger of the two sets: xL^(i+stride)z
-        for center in pattern.cores[0]
-            .iter()
-            .copied()
-            .combinations_with_replacement(i + stride)
-        {
-            let value = DigitSeq::concat_value(
-                [&pattern.digitseqs[0], &center.into(), &pattern.digitseqs[1]],
-                base,
-            );
-            *gcd_i = gcd(gcd_i.clone(), value);
-            if *gcd_i == one {
-                return None;
-            }
-        }
+
+        gcds.push(g);
     }
     for g in &gcds {
         debug_assert_ne!(*g, one);
@@ -92,47 +86,34 @@ pub fn find_even_odd_factor(base: u8, pattern: &Pattern) -> Option<(BigUint, Big
         return None;
     }
 
-    // TODO: generalize this!
-    fn foo(
-        initial_gcd: BigUint,
+    // Complicated, but actually does help quite a bit.
+    fn pattern_iter_helper<'pat>(
         base: u8,
-        x: &DigitSeq,
-        a: &[Digit],
-        y: &DigitSeq,
-        b: &[Digit],
-        z: &DigitSeq,
+        x: &'pat DigitSeq,
+        a: &'pat [Digit],
+        y: &'pat DigitSeq,
+        b: &'pat [Digit],
+        z: &'pat DigitSeq,
         a_repeat: usize,
         b_repeat: usize,
-    ) -> BigUint {
-        let mut gcd_accum = initial_gcd;
-
-        for a_choices in a.iter().copied().combinations_with_replacement(a_repeat) {
-            for b_choices in b.iter().copied().combinations_with_replacement(b_repeat) {
+    ) -> impl Iterator<Item = BigUint> + 'pat {
+        a.iter()
+            .copied()
+            .combinations_with_replacement(a_repeat)
+            .cartesian_product(b.iter().copied().combinations_with_replacement(b_repeat))
+            .map(move |(a_choices, b_choices)| {
                 let mut seq = x.clone();
                 seq += DigitSeq(a_choices.clone());
                 seq += y;
                 seq += DigitSeq(b_choices);
                 seq += z;
 
-                let n = seq.value(base);
-                gcd_accum = gcd(gcd_accum, n);
-                if gcd_accum == BigUint::from(1_u32) {
-                    return gcd_accum;
-                }
-            }
-        }
-        gcd_accum
+                seq.value(base)
+            })
     }
 
-    // Take the pattern xA*yB*z
-    // - even number of A+B: x(AA)*y(BB)*z, xA(AA)*yB(BB)*z
-    // -  odd number of A+B: xA(AA)*y(BB)*z, z(AA)*yB(BB)*z
-    let mut even_gcd = BigUint::ZERO;
-    let mut odd_gcd = BigUint::ZERO;
-
-    let bar = |gcd, repeat_a, repeat_b| {
-        foo(
-            gcd,
+    let bar = |&(repeat_a, repeat_b)| {
+        pattern_iter_helper(
             base,
             &pattern.digitseqs[0],
             &pattern.cores[0],
@@ -144,25 +125,27 @@ pub fn find_even_odd_factor(base: u8, pattern: &Pattern) -> Option<(BigUint, Big
         )
     };
 
-    even_gcd = bar(even_gcd, 0, 0);
-    even_gcd = bar(even_gcd, 2, 0);
-    even_gcd = bar(even_gcd, 0, 2);
-    even_gcd = bar(even_gcd, 1, 1);
-    even_gcd = bar(even_gcd, 1, 3);
-    even_gcd = bar(even_gcd, 3, 1);
+    // Take the pattern xA*yB*z
+    // - even number of A+B: x(AA)*y(BB)*z, xA(AA)*yB(BB)*z
+    // -  odd number of A+B: xA(AA)*y(BB)*z, z(AA)*yB(BB)*z
+    let even_repeats: [(usize, usize); 6] = [(0, 0), (2, 0), (0, 2), (1, 1), (1, 3), (3, 1)];
+    let even_gcd = gcd_reduce(even_repeats.iter().flat_map(bar));
 
-    odd_gcd = bar(odd_gcd, 1, 0);
-    odd_gcd = bar(odd_gcd, 3, 0);
-    odd_gcd = bar(odd_gcd, 1, 2);
-    odd_gcd = bar(odd_gcd, 0, 1);
-    odd_gcd = bar(odd_gcd, 2, 1);
-    odd_gcd = bar(odd_gcd, 0, 3);
-
-    if even_gcd > big_one() && odd_gcd > big_one() {
-        return Some((even_gcd, odd_gcd));
+    if even_gcd == big_one() {
+        return None;
     }
 
-    None
+    let odd_repeats: [(usize, usize); 6] = [(1, 0), (3, 0), (1, 2), (0, 1), (2, 1), (0, 3)];
+    let odd_gcd = gcd_reduce(odd_repeats.iter().flat_map(bar));
+
+    if odd_gcd == big_one() {
+        return None;
+    }
+
+    debug_assert_ne!(even_gcd, BigUint::ZERO);
+    debug_assert_ne!(odd_gcd, BigUint::ZERO);
+
+    Some((even_gcd, odd_gcd))
 }
 
 pub fn big_one() -> BigUint {
@@ -217,4 +200,16 @@ pub fn gcd(mut a: BigUint, mut b: BigUint) -> BigUint {
             }
         }
     }
+}
+
+pub fn gcd_reduce(numbers: impl IntoIterator<Item = BigUint>) -> BigUint {
+    let mut g = BigUint::ZERO;
+    for n in numbers {
+        g = gcd(g, n);
+        if g == big_one() {
+            // g will always be 1; break now and save some time
+            break;
+        }
+    }
+    g
 }

@@ -1,12 +1,11 @@
-- Highest priority is to figure out more divisors of things. Splitting doesn't help much.
 - Make Ctrl-C show the current situation
-- Add gcd_mut method
 - Can I skip the "contains prime" test when I'm solving a simple family?
 - The biguint class comes with a "from digits" method, use that maybe?
+- Consider bitvec for cores?
+- Next up, solve simple families?
 
 Unsolved families:
 - the last one in 8 is sum of cubes (2^3n + 1)
 - the last one in 9 is funky, it's (9^(n+1) - 1) / 8
   - half of those factor as difference of squares
   - the other are just divisible by 2
-- somehow in 16 i'm getting 0s at the beginning

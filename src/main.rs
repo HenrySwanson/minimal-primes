@@ -1,6 +1,6 @@
 use clap::Parser;
 use composite::{
-    big_one, find_even_odd_factor, find_perpetual_factor, gcd, shares_factor_with_base,
+    big_one, find_even_odd_factor, find_perpetual_factor, gcd_reduce, shares_factor_with_base,
 };
 use data::{DigitSeq, Pattern};
 use itertools::Itertools;
@@ -431,16 +431,18 @@ impl SearchContext {
         let contracted = pattern.contract().value(self.base);
 
         for d in pattern.cores[0].iter().copied() {
-            let mut g = contracted.clone();
-            // Try everything except this digit
-            for d2 in pattern.cores[0].iter().copied() {
-                if d == d2 {
-                    continue;
-                }
-                g = gcd(g, pattern.substitute(0, d2).value(self.base));
-            }
+            let g = gcd_reduce(
+                // We want to try "no digits" and "all digits except d"
+                std::iter::once(contracted.clone()).chain(
+                    pattern.cores[0]
+                        .iter()
+                        .copied()
+                        .filter(|d2| *d2 != d)
+                        .map(|d2| pattern.substitute(0, d2).value(self.base)),
+                ),
+            );
 
-            if g > big_one() {
+            if g != big_one() {
                 // Got a match! Return xLyLz
                 let mut new = pattern.clone();
                 let d_less_core = pattern.cores[0]
@@ -618,7 +620,7 @@ mod tests {
                     p_truth
                         .len()
                         .cmp(&p_got.len())
-                        .then_with(|| p_truth.cmp(&p_got))
+                        .then_with(|| p_truth.cmp(p_got))
                 }
                 // It turns out to be easier to combine this case
                 // with the one above by treating None as the biggest
