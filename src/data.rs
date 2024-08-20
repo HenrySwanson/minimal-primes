@@ -112,9 +112,9 @@ impl Pattern {
     }
 
     pub fn simplify(&mut self) {
-        // Contract out any empty cores
         debug_assert_eq!(self.digitseqs.len(), self.cores.len() + 1);
 
+        // Contract out any empty cores
         // Normal for loop won't work because we're mutating the thing
         // we're iterating over.
         let mut i = 0;
@@ -127,6 +127,15 @@ impl Pattern {
                 self.cores.remove(i);
             } else {
                 i += 1;
+            }
+        }
+
+        // Delete [0]* at the beginning of a pattern
+        if let Some(first_core) = self.cores.first() {
+            let first_seq = &self.digitseqs[0];
+            if first_seq.0.is_empty() && first_core.len() == 1 && first_core[0] == Digit(0) {
+                self.digitseqs.remove(0);
+                self.cores.remove(0);
             }
         }
     }
