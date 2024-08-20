@@ -9,3 +9,4 @@ Unsolved families:
 - the last one in 9 is funky, it's (9^(n+1) - 1) / 8
   - half of those factor as difference of squares
   - the other are just divisible by 2
+- somehow in 16 i'm getting 0s at the beginning

@@ -478,14 +478,15 @@ mod tests {
 
     use super::*;
 
+    // TODO: name exactly which branches can't be resolved
     enum Status {
         /// Completely solved; all branches eliminated.
         Complete,
         /// Can get all the minimal primes, but there's some branches
         /// we can't realize are composite.
-        StrayBranches,
+        StrayBranches { unresolved: usize },
         /// Not solved yet. Limit the number of iterations.
-        Unsolved(usize),
+        Unsolved { max_weight: usize },
     }
 
     macro_rules! declare_test_for_base {
@@ -503,65 +504,65 @@ mod tests {
     declare_test_for_base!(test_base_5, 5, Status::Complete);
     declare_test_for_base!(test_base_6, 6, Status::Complete);
     declare_test_for_base!(test_base_7, 7, Status::Complete);
-    declare_test_for_base!(test_base_8, 8, Status::StrayBranches);
-    declare_test_for_base!(test_base_9, 9, Status::StrayBranches);
+    declare_test_for_base!(test_base_8, 8, Status::StrayBranches { unresolved: 1 });
+    declare_test_for_base!(test_base_9, 9, Status::StrayBranches { unresolved: 1 });
     declare_test_for_base!(test_base_10, 10, Status::Complete);
-    declare_test_for_base!(test_base_11, 11, Status::Unsolved(10));
+    declare_test_for_base!(test_base_11, 11, Status::Complete);
     declare_test_for_base!(test_base_12, 12, Status::Complete);
-    declare_test_for_base!(test_base_13, 13, Status::Unsolved(7));
+    declare_test_for_base!(test_base_13, 13, Status::Unsolved { max_weight: 7 });
     declare_test_for_base!(test_base_14, 14, Status::Complete);
     declare_test_for_base!(test_base_15, 15, Status::Complete);
-    declare_test_for_base!(test_base_16, 16, Status::Unsolved(10));
-    declare_test_for_base!(test_base_17, 17, Status::Unsolved(4));
+    declare_test_for_base!(test_base_16, 16, Status::Unsolved { max_weight: 10 });
+    declare_test_for_base!(test_base_17, 17, Status::Unsolved { max_weight: 4 });
     declare_test_for_base!(test_base_18, 18, Status::Complete);
-    declare_test_for_base!(test_base_19, 19, Status::Unsolved(3));
+    declare_test_for_base!(test_base_19, 19, Status::Unsolved { max_weight: 3 });
     // 20 is solvable, but requires --release to be practical
-    declare_test_for_base!(test_base_20, 20, Status::Unsolved(50));
-    declare_test_for_base!(test_base_21, 21, Status::Unsolved(4));
-    declare_test_for_base!(test_base_22, 22, Status::Unsolved(5));
-    declare_test_for_base!(test_base_23, 23, Status::Unsolved(3));
-    declare_test_for_base!(test_base_24, 24, Status::StrayBranches);
-    declare_test_for_base!(test_base_25, 25, Status::Unsolved(3));
-    declare_test_for_base!(test_base_26, 26, Status::Unsolved(3));
-    declare_test_for_base!(test_base_27, 27, Status::Unsolved(3));
-    declare_test_for_base!(test_base_28, 28, Status::Unsolved(3));
-    declare_test_for_base!(test_base_29, 29, Status::Unsolved(2));
+    declare_test_for_base!(test_base_20, 20, Status::Unsolved { max_weight: 50 });
+    declare_test_for_base!(test_base_21, 21, Status::Unsolved { max_weight: 4 });
+    declare_test_for_base!(test_base_22, 22, Status::Unsolved { max_weight: 5 });
+    declare_test_for_base!(test_base_23, 23, Status::Unsolved { max_weight: 3 });
+    declare_test_for_base!(test_base_24, 24, Status::StrayBranches { unresolved: 1 });
+    declare_test_for_base!(test_base_25, 25, Status::Unsolved { max_weight: 3 });
+    declare_test_for_base!(test_base_26, 26, Status::Unsolved { max_weight: 3 });
+    declare_test_for_base!(test_base_27, 27, Status::Unsolved { max_weight: 3 });
+    declare_test_for_base!(test_base_28, 28, Status::Unsolved { max_weight: 3 });
+    declare_test_for_base!(test_base_29, 29, Status::Unsolved { max_weight: 2 });
     // 30 is solvable, but takes too long, even with --release
-    declare_test_for_base!(test_base_30, 30, Status::Unsolved(50));
+    declare_test_for_base!(test_base_30, 30, Status::Unsolved { max_weight: 50 });
 
     fn test_for_base(base: u8, status: Status) {
-        let (max_weight, all_primes_found, no_stray_branches) = match status {
+        match status {
             Status::Complete => {
                 // Simulate it for the full duration
                 let max_weight = get_max_weight(base);
-                (max_weight, true, true)
+                let final_ctx = calculate(base, max_weight);
+                compare_primes(&final_ctx, true);
+                assert!(
+                    final_ctx.frontier.is_empty(),
+                    "Some branches were not eliminated!\n{}",
+                    final_ctx.frontier.iter().format("\n")
+                );
             }
-            Status::StrayBranches => {
+            Status::StrayBranches { unresolved } => {
                 // Simulate it for the full duration
                 let max_weight = get_max_weight(base);
-                (max_weight, true, false)
+                let final_ctx = calculate(base, max_weight);
+                compare_primes(&final_ctx, false);
+                assert_eq!(
+                    final_ctx.frontier.len(),
+                    unresolved,
+                    "Didn't get the expected number of unsolved branches: {}",
+                    final_ctx.frontier.iter().format("\n")
+                );
             }
-            Status::Unsolved(max_weight) => (max_weight, false, false),
-        };
-
-        // Calculate as many primes as we ask
-        let final_ctx = calculate(base, max_weight);
-
-        // Check that we have the right primes
-        compare_primes(&final_ctx, all_primes_found);
-
-        // Check that we've eliminated all branches
-        if no_stray_branches {
-            assert!(
-                final_ctx.frontier.is_empty(),
-                "Some branches were not eliminated!\n{}",
-                final_ctx.frontier.iter().format("\n")
-            );
-        } else {
-            assert!(
-                !final_ctx.frontier.is_empty(),
-                "All branches were eliminated, this test should be marked Complete!"
-            )
+            Status::Unsolved { max_weight } => {
+                let final_ctx = calculate(base, max_weight);
+                compare_primes(&final_ctx, false);
+                assert!(
+                    !final_ctx.frontier.is_empty(),
+                    "All branches were eliminated, this test should be marked Complete!"
+                );
+            }
         }
     }
 
