@@ -1,5 +1,7 @@
 use clap::Parser;
-use composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
+use composite::{
+    big_one, find_even_odd_factor, find_perpetual_factor, gcd, shares_factor_with_base,
+};
 use data::{DigitSeq, Pattern};
 use itertools::Itertools;
 use num_bigint::BigUint;
@@ -243,6 +245,13 @@ impl SearchContext {
                 continue;
             }
 
+            if pattern.weight() > 6 {
+                if let Some(child) = self.split_on_necessary_digit(&pattern) {
+                    self.frontier.extend([child]);
+                    continue;
+                }
+            }
+
             // If we couldn't eliminate the pattern, let's split it, left or right.
             // We can't split on a non-empty core, but after we simplify, we shouldn't
             // have to worry about that.
@@ -395,6 +404,55 @@ impl SearchContext {
                         return Some(children);
                     }
                 }
+            }
+        }
+        None
+    }
+
+    fn split_on_necessary_digit(&self, pattern: &Pattern) -> Option<Pattern> {
+        // There's a case in base 11 (and probably others) where we have
+        // just one core, where all the digits except one are even, and so
+        // is the rest of the number.
+        // This tells me that we are required to have at least one of that digit,
+        // or else we'll forever be even.
+        // This function detects that situation and splits the pattern accordingly.
+        // TODO: generalize to multiple cores!
+        // TODO: generalize to multiple digits?
+        // TODO: does this belong in composite? not quite i think
+
+        if pattern.cores.len() != 1 {
+            return None;
+        }
+
+        if pattern.cores[0].len() <= 1 {
+            return None;
+        }
+
+        let contracted = pattern.contract().value(self.base);
+
+        for d in pattern.cores[0].iter().copied() {
+            let mut g = contracted.clone();
+            // Try everything except this digit
+            for d2 in pattern.cores[0].iter().copied() {
+                if d == d2 {
+                    continue;
+                }
+                g = gcd(g, pattern.substitute(0, d2).value(self.base));
+            }
+
+            if g > big_one() {
+                // Got a match! Return xLyLz
+                let mut new = pattern.clone();
+                let d_less_core = pattern.cores[0]
+                    .iter()
+                    .copied()
+                    .filter(|d2| *d2 != d)
+                    .collect();
+
+                new.digitseqs.insert(1, d.into());
+                new.cores.insert(1, d_less_core);
+                debug_println!("  {} must have a {}, transforming into {}", pattern, d, new);
+                return Some(new);
             }
         }
         None

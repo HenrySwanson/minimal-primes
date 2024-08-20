@@ -165,11 +165,11 @@ pub fn find_even_odd_factor(base: u8, pattern: &Pattern) -> Option<(BigUint, Big
     None
 }
 
-fn big_one() -> BigUint {
+pub fn big_one() -> BigUint {
     BigUint::from(1_u8)
 }
 
-fn gcd(mut a: BigUint, mut b: BigUint) -> BigUint {
+pub fn gcd(mut a: BigUint, mut b: BigUint) -> BigUint {
     // Since we're working with a binary representation, it's more efficient
     // to use this algorithm than the standard Euclidean one.
 
