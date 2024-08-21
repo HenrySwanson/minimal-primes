@@ -82,20 +82,18 @@ fn main() {
         ctx.search_one_level();
     }
 
-    ctx.minimal_primes.sort_by_key(|(_, p)| p.clone());
+    ctx.minimize_primes();
+    ctx.primes.sort_by_key(|(_, p)| p.clone());
     println!("---- BRANCHES REMAINING ----");
     for pat in ctx.frontier.iter() {
         println!("{}", pat);
     }
     println!("---- MINIMAL PRIMES ----");
-    println!(
-        "{}",
-        ctx.minimal_primes.iter().map(|(seq, _)| seq).format(", ")
-    );
+    println!("{}", ctx.primes.iter().map(|(seq, _)| seq).format(", "));
     println!("------------");
     println!(
         "{} primes found, {} branches unresolved",
-        ctx.minimal_primes.len(),
+        ctx.primes.len(),
         ctx.frontier.len()
     );
 }
@@ -109,7 +107,8 @@ struct SearchContext {
     /// patterns we haven't explored yet
     frontier: Frontier,
     /// primes we've discovered so far, in two different formats
-    minimal_primes: Vec<(DigitSeq, BigUint)>,
+    /// depending on the order we discovered these, they may not be minimal!
+    primes: Vec<(DigitSeq, BigUint)>,
 }
 
 struct Frontier {
@@ -192,8 +191,19 @@ impl SearchContext {
             base,
             iter: 0,
             frontier: Frontier::new(base),
-            minimal_primes: vec![],
+            primes: vec![],
         }
+    }
+
+    pub fn minimize_primes(&mut self) {
+        // TODO: this seems kind of ad-hoc. is there a better approach?
+        let minimized = self
+            .primes
+            .iter()
+            .filter(|(seq, _)| self.test_for_contained_prime(seq).is_none())
+            .cloned()
+            .collect();
+        self.primes = minimized;
     }
 
     pub fn search_one_level(&mut self) {
@@ -212,13 +222,14 @@ impl SearchContext {
                 Some(p) => {
                     assert_ne!(&seq, p);
                     debug_println!("  Discarding {}, contains prime {}", pattern, p);
+                    continue;
                 }
                 None => {
                     debug_println!("  Testing for primality {}", seq);
                     let value = seq.value(self.base);
                     if is_prime(&value, None).probably() {
-                        debug_println!("  Discarding {}, contracts to minimal prime", pattern);
-                        self.minimal_primes.push((seq, value));
+                        debug_println!("  Saving {}, contracts to prime", pattern);
+                        self.primes.push((seq, value));
                         continue;
                     }
                 }
@@ -245,7 +256,7 @@ impl SearchContext {
                 continue;
             }
 
-            if pattern.weight() > 6 {
+            if pattern.weight() >= 2 {
                 if let Some(child) = self.split_on_necessary_digit(&pattern) {
                     self.frontier.extend([child]);
                     continue;
@@ -300,8 +311,8 @@ impl SearchContext {
                         debug_println!("  Testing for primality {}", seq);
                         let value = seq.value(self.base);
                         if is_prime(&value, None).probably() {
-                            debug_println!("  Discarding {}, is minimal prime", seq);
-                            self.minimal_primes.push((seq, value));
+                            debug_println!("  Saving {}, is prime", seq);
+                            self.primes.push((seq, value));
                         } else {
                             allowed_digits.push(digit);
                         }
@@ -320,10 +331,10 @@ impl SearchContext {
         // We don't need to search for *all* possible primes, just the minimal
         // ones. And if we've been doing our job right, we should have a complete
         // list of them (up to a length limit).
-        self.minimal_primes
+        self.primes
             .iter()
             .map(|(subseq, _)| subseq)
-            .find(|subseq| is_substring(subseq, seq))
+            .find(|subseq| is_proper_substring(subseq, seq))
     }
 
     fn test_for_perpetual_composite(&self, pattern: &Pattern) -> bool {
@@ -461,7 +472,13 @@ impl SearchContext {
     }
 }
 
-fn is_substring(needle: &DigitSeq, haystack: &DigitSeq) -> bool {
+fn is_proper_substring(needle: &DigitSeq, haystack: &DigitSeq) -> bool {
+    // Save some time when the needle is too large, and also, rule out identical
+    // strings.
+    if needle.0.len() >= haystack.0.len() {
+        return false;
+    }
+
     let mut iter = haystack.0.iter().copied();
     for d in needle.0.iter().copied() {
         // Chomp iter until we find that digit
@@ -576,7 +593,8 @@ mod tests {
             }
             ctx.search_one_level();
         }
-        ctx.minimal_primes.sort_by_key(|(_, p)| p.clone());
+        ctx.minimize_primes();
+        ctx.primes.sort_by_key(|(_, p)| p.clone());
         ctx
     }
 
@@ -598,11 +616,7 @@ mod tests {
 
     fn compare_primes(ctx: &SearchContext, require_all: bool) {
         let mut truth_iter = iter_ground_truth(ctx.base).peekable();
-        let mut iter = ctx
-            .minimal_primes
-            .iter()
-            .map(|(seq, _)| seq.to_string())
-            .peekable();
+        let mut iter = ctx.primes.iter().map(|(seq, _)| seq.to_string()).peekable();
 
         let mut fail = false;
         loop {
