@@ -5,7 +5,9 @@ use itertools::Itertools;
 use math::{big_one, gcd_reduce};
 use num_bigint::BigUint;
 use num_prime::nt_funcs::is_prime;
+use std::cell::RefCell;
 use std::sync::atomic::AtomicBool;
+use std::time::{Duration, Instant};
 
 mod composite;
 mod data;
@@ -96,6 +98,40 @@ fn main() {
         ctx.primes.len(),
         ctx.frontier.len()
     );
+    println!("---- STATS ----");
+    println!(
+        "{} branches explored",
+        ctx.stats.borrow().num_branches_explored
+    );
+    println!(
+        "{} primality tests ({}ms)",
+        ctx.stats.borrow().num_primality_checks,
+        ctx.stats.borrow().duration_primality_checks.as_millis()
+    );
+    println!(
+        "{} substring tests ({}ms)",
+        ctx.stats.borrow().num_substring_checks,
+        ctx.stats.borrow().duration_substring_checks.as_millis()
+    );
+    println!(
+        "{} simple substring tests ({}ms)",
+        ctx.stats.borrow().num_simple_substring_checks,
+        ctx.stats
+            .borrow()
+            .duration_simple_substring_checks
+            .as_millis()
+    );
+}
+
+#[derive(Debug, Default)]
+struct Stats {
+    num_primality_checks: usize,
+    duration_primality_checks: Duration,
+    num_substring_checks: usize,
+    duration_substring_checks: Duration,
+    num_simple_substring_checks: usize,
+    duration_simple_substring_checks: Duration,
+    num_branches_explored: usize,
 }
 
 struct SearchContext {
@@ -109,6 +145,9 @@ struct SearchContext {
     /// primes we've discovered so far, in two different formats
     /// depending on the order we discovered these, they may not be minimal!
     primes: Vec<(DigitSeq, BigUint)>,
+
+    /// For potentially getting insight into what's going on
+    stats: RefCell<Stats>,
 }
 
 struct Frontier {
@@ -236,6 +275,7 @@ impl SearchContext {
             iter: 0,
             frontier: Frontier::new(base),
             primes: vec![],
+            stats: RefCell::new(Stats::default()),
         }
     }
 
@@ -265,6 +305,7 @@ impl SearchContext {
                     self.explore_simple_pattern(pattern)
                 }
             }
+            self.stats.borrow_mut().num_branches_explored += 1;
         }
         self.iter += 1;
     }
@@ -275,21 +316,18 @@ impl SearchContext {
         // but split_on_repeat can produce strings we've never tested :/
         // What's a better way to avoid this redundancy?
         let seq = pattern.contract();
-        match self.test_for_contained_prime(&seq) {
-            Some(p) => {
-                assert_ne!(&seq, p);
-                debug_println!("  Discarding {}, contains prime {}", pattern, p);
-                return;
-            }
-            None => {
-                debug_println!("  Testing for primality {}", seq);
-                let value = seq.value(self.base);
-                if is_prime(&value, None).probably() {
-                    debug_println!("  Saving {}, contracts to prime", pattern);
-                    self.primes.push((seq, value));
-                    return;
-                }
-            }
+        if let Some(p) = self.test_for_contained_prime(&seq) {
+            assert_ne!(&seq, p);
+            debug_println!("  Discarding {}, contains prime {}", pattern, p);
+            return;
+        }
+
+        debug_println!("  Testing for primality {}", seq);
+        let value = seq.value(self.base);
+        if self.test_for_prime(&value) {
+            debug_println!("  Saving {}, contracts to prime", pattern);
+            self.primes.push((seq, value));
+            return;
         }
 
         // Then, we try to reduce the cores.
@@ -370,12 +408,17 @@ impl SearchContext {
         // prime or not. Or contains another prime.
 
         // Test if it contains a prime
+        let start = Instant::now();
         for (prime, _) in &self.primes {
-            if is_substring_of_simple(&prime, &pattern) {
+            let result = is_substring_of_simple(&prime, &pattern);
+            self.stats.borrow_mut().num_simple_substring_checks += 1;
+            if result {
                 debug_println!("  Discarding {}, contains prime {}", pattern, prime);
+                self.stats.borrow_mut().duration_simple_substring_checks += start.elapsed();
                 return;
             }
         }
+        self.stats.borrow_mut().duration_simple_substring_checks += start.elapsed();
 
         // Test if it is a prime
         let mut value = BigUint::ZERO;
@@ -389,7 +432,7 @@ impl SearchContext {
             value = value * self.base + d.0;
         }
 
-        if is_prime(&value, None).probably() {
+        if self.test_for_prime(&value) {
             debug_println!("  Saving {}, is prime", pattern);
 
             let mut seq = pattern.before.clone();
@@ -417,21 +460,19 @@ impl SearchContext {
             for digit in core.iter().copied() {
                 let seq = old_pat.substitute(i, digit);
 
-                match self.test_for_contained_prime(&seq) {
-                    Some(p) => {
-                        assert_ne!(&seq, p);
-                        debug_println!("  Discarding {}, contains prime {}", seq, p);
-                    }
-                    None => {
-                        debug_println!("  Testing for primality {}", seq);
-                        let value = seq.value(self.base);
-                        if is_prime(&value, None).probably() {
-                            debug_println!("  Saving {}, is prime", seq);
-                            self.primes.push((seq, value));
-                        } else {
-                            allowed_digits.push(digit);
-                        }
-                    }
+                if let Some(p) = self.test_for_contained_prime(&seq) {
+                    assert_ne!(&seq, p);
+                    debug_println!("  Discarding {}, contains prime {}", seq, p);
+                    continue;
+                }
+
+                debug_println!("  Testing for primality {}", seq);
+                let value = seq.value(self.base);
+                if self.test_for_prime(&value) {
+                    debug_println!("  Saving {}, is prime", seq);
+                    self.primes.push((seq, value));
+                } else {
+                    allowed_digits.push(digit);
                 }
             }
 
@@ -443,13 +484,25 @@ impl SearchContext {
     }
 
     fn test_for_contained_prime(&self, seq: &DigitSeq) -> Option<&DigitSeq> {
+        let start = Instant::now();
         // We don't need to search for *all* possible primes, just the minimal
         // ones. And if we've been doing our job right, we should have a complete
         // list of them (up to a length limit).
-        self.primes
-            .iter()
-            .map(|(subseq, _)| subseq)
-            .find(|subseq| is_proper_substring(subseq, seq))
+        let result = self.primes.iter().map(|(subseq, _)| subseq).find(|subseq| {
+            self.stats.borrow_mut().num_substring_checks += 1;
+            is_proper_substring(subseq, seq)
+        });
+
+        self.stats.borrow_mut().duration_substring_checks += start.elapsed();
+        result
+    }
+
+    fn test_for_prime(&mut self, value: &BigUint) -> bool {
+        let start = Instant::now();
+        let result = is_prime(value, None).probably();
+        self.stats.borrow_mut().duration_primality_checks += start.elapsed();
+        self.stats.borrow_mut().num_primality_checks += 1;
+        result
     }
 
     fn test_for_perpetual_composite(&self, pattern: &Pattern) -> bool {
