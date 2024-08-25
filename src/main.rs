@@ -1,6 +1,6 @@
 use clap::Parser;
 use composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
-use data::{DigitSeq, Pattern};
+use data::{Digit, DigitSeq, Pattern};
 use itertools::Itertools;
 use math::{big_one, gcd_reduce};
 use num_bigint::BigUint;
@@ -115,10 +115,24 @@ struct Frontier {
     /// maps weight to pattern; used to ensure we're exploring the
     /// search space in (non-strictly) increasing order.
     /// items lower than `min_allowed_weight` must be empty
-    by_weight: Vec<Vec<Pattern>>,
+    by_weight: Vec<Vec<SearchNode>>,
     /// the 'ratchet' that enforces that we can't backtrack to an
     /// element of lower weight.
     min_allowed_weight: usize,
+}
+
+#[derive(Debug)]
+enum SearchNode {
+    Arbitrary(Pattern),
+    Simple(SimplePattern),
+}
+
+#[derive(Debug)]
+struct SimplePattern {
+    before: DigitSeq,
+    center: Digit,
+    num_repeats: usize,
+    after: DigitSeq,
 }
 
 impl Frontier {
@@ -126,7 +140,7 @@ impl Frontier {
         let initial_pattern = Pattern::any(base);
         debug_assert_eq!(initial_pattern.weight(), 0);
         Self {
-            by_weight: vec![vec![initial_pattern]],
+            by_weight: vec![vec![SearchNode::Arbitrary(initial_pattern)]],
             min_allowed_weight: 0,
         }
     }
@@ -146,7 +160,7 @@ impl Frontier {
         self.by_weight.iter().position(|layer| !layer.is_empty())
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Pattern> {
+    pub fn iter(&self) -> impl Iterator<Item = &SearchNode> {
         self.by_weight.iter().flatten()
     }
 
@@ -154,7 +168,7 @@ impl Frontier {
     /// Once this method is called, elements of weight < self.min_weight
     /// should not be inserted! Elements with exactly the minimum weight
     /// are allowed though (lateral exploration).
-    pub fn pop(&mut self) -> Option<Vec<Pattern>> {
+    pub fn pop(&mut self) -> Option<Vec<SearchNode>> {
         for (i, layer) in self.by_weight.iter_mut().enumerate() {
             if i < self.min_allowed_weight {
                 assert!(layer.is_empty())
@@ -170,17 +184,47 @@ impl Frontier {
 
     pub fn extend(&mut self, iter: impl IntoIterator<Item = Pattern>) {
         for pat in iter {
-            let weight = pat.weight();
-            debug_assert!(weight >= self.min_allowed_weight);
-            loop {
-                match self.by_weight.get_mut(weight) {
-                    Some(layer) => {
-                        layer.push(pat);
-                        break;
-                    }
-                    None => self.by_weight.push(vec![]),
-                }
+            let node = SearchNode::Arbitrary(pat);
+            self.put(node);
+        }
+    }
+
+    pub fn put(&mut self, node: SearchNode) {
+        let weight = match &node {
+            SearchNode::Arbitrary(pattern) => pattern.weight(),
+            SearchNode::Simple(simple) => {
+                simple.before.0.len() + simple.num_repeats + simple.after.0.len()
             }
+        };
+        debug_assert!(weight >= self.min_allowed_weight);
+
+        loop {
+            match self.by_weight.get_mut(weight) {
+                Some(layer) => {
+                    layer.push(node);
+                    break;
+                }
+                None => self.by_weight.push(vec![]),
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for SimplePattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}*{} -- x{}",
+            self.before, self.center, self.after, self.num_repeats
+        )
+    }
+}
+
+impl std::fmt::Display for SearchNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SearchNode::Arbitrary(p) => p.fmt(f),
+            SearchNode::Simple(p) => p.fmt(f),
         }
     }
 }
@@ -211,8 +255,16 @@ impl SearchContext {
         for pattern in old_queue {
             // Say our pattern is xL*z.
             // We want to explore all possible children with weight one more than this one.
-            debug_println!(" Exploring {}", pattern);
-            self.explore_pattern(pattern)
+            match pattern {
+                SearchNode::Arbitrary(pattern) => {
+                    debug_println!(" Exploring {}", pattern);
+                    self.explore_pattern(pattern)
+                }
+                SearchNode::Simple(pattern) => {
+                    debug_println!(" Exploring simple {}", pattern,);
+                    self.explore_simple_pattern(pattern)
+                }
+            }
         }
         self.iter += 1;
     }
@@ -255,6 +307,22 @@ impl SearchContext {
             return;
         }
 
+        // TODO: is this right?
+        // Check if this pattern is simple or not. If it is, we should
+        // re-enqueue it as such. (Note: this is after composite check!)
+        if pattern.cores.len() == 1 && pattern.cores[0].len() == 1 {
+            let after = pattern.digitseqs.pop().unwrap();
+            let before = pattern.digitseqs.pop().unwrap();
+            let node = SearchNode::Simple(SimplePattern {
+                before,
+                center: pattern.cores[0][0],
+                num_repeats: 0,
+                after,
+            });
+            self.frontier.put(node);
+            return;
+        }
+
         // Let's see if we can split it in an interesting way
         if let Some(children) = self.split_on_repeat(&pattern, 3) {
             self.frontier.extend(children);
@@ -291,6 +359,51 @@ impl SearchContext {
             pattern.simplify();
             self.frontier.extend([pattern]);
         }
+    }
+
+    fn explore_simple_pattern(&mut self, mut pattern: SimplePattern) {
+        // There's a lot less we can do here! We can't split anything,
+        // we can't reduce cores, etc, etc.
+        // Even composite testing isn't very useful here, since we
+        // can't get here without passing through a composite test.
+        // All we can do is add another digit and see if it becomes
+        // prime or not. Or contains another prime.
+
+        // Test if it contains a prime
+        for (prime, _) in &self.primes {
+            if is_substring_of_simple(&prime, &pattern) {
+                debug_println!("  Discarding {}, contains prime {}", pattern, prime);
+                return;
+            }
+        }
+
+        // Test if it is a prime
+        let mut value = BigUint::ZERO;
+        for d in &pattern.before.0 {
+            value = value * self.base + d.0;
+        }
+        for _ in 0..pattern.num_repeats {
+            value = value * self.base + pattern.center.0;
+        }
+        for d in &pattern.after.0 {
+            value = value * self.base + d.0;
+        }
+
+        if is_prime(&value, None).probably() {
+            debug_println!("  Saving {}, is prime", pattern);
+
+            let mut seq = pattern.before.clone();
+            for _ in 0..pattern.num_repeats {
+                seq += pattern.center;
+            }
+            seq += pattern.after;
+
+            self.primes.push((seq, value));
+            return;
+        }
+
+        pattern.num_repeats += 1;
+        self.frontier.put(SearchNode::Simple(pattern));
     }
 
     fn reduce_cores(&mut self, mut pattern: Pattern) -> Pattern {
@@ -496,6 +609,46 @@ fn is_proper_substring(needle: &DigitSeq, haystack: &DigitSeq) -> bool {
     true
 }
 
+fn is_substring_of_simple(needle: &DigitSeq, haystack: &SimplePattern) -> bool {
+    let mut needle_iter = needle.0.iter().copied().peekable();
+
+    // Three stages: go through before, then center, then after.
+    // Try to consume the whole needle.
+    for d in haystack.before.0.iter().copied() {
+        match needle_iter.peek() {
+            Some(d2) if d == *d2 => {
+                needle_iter.next();
+            }
+            Some(_) => {}
+            None => return true,
+        }
+    }
+
+    for _ in 0..haystack.num_repeats {
+        match needle_iter.peek() {
+            Some(d2) if haystack.center == *d2 => {
+                needle_iter.next();
+            }
+            // it's the same digit repeated, if it doesn't match
+            // right now, just leave
+            Some(_) => break,
+            None => return true,
+        }
+    }
+
+    for d in haystack.after.0.iter().copied() {
+        match needle_iter.peek() {
+            Some(d2) if d == *d2 => {
+                needle_iter.next();
+            }
+            Some(_) => {}
+            None => return true,
+        }
+    }
+
+    needle_iter.peek().is_none()
+}
+
 #[cfg(test)]
 mod tests {
     use std::io;
@@ -569,7 +722,7 @@ mod tests {
             }
             Status::StrayBranches { unresolved } => {
                 // Simulate it for the full duration
-                let max_weight = get_max_weight(base);
+                let max_weight = get_max_weight(base) + 1;
                 let final_ctx = calculate(base, max_weight);
                 compare_primes(&final_ctx, false);
                 assert_eq!(
