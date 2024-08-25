@@ -1,15 +1,15 @@
 use clap::Parser;
-use composite::{
-    big_one, find_even_odd_factor, find_perpetual_factor, gcd_reduce, shares_factor_with_base,
-};
+use composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
 use data::{DigitSeq, Pattern};
 use itertools::Itertools;
+use math::{big_one, gcd_reduce};
 use num_bigint::BigUint;
 use num_prime::nt_funcs::is_prime;
 use std::sync::atomic::AtomicBool;
 
 mod composite;
 mod data;
+mod math;
 
 static LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
@@ -197,7 +197,7 @@ impl SearchContext {
 
     pub fn minimize_primes(&mut self) {
         // TODO: this seems kind of ad-hoc. is there a better approach?
-        let minimized = self
+        let minimized: Vec<_> = self
             .primes
             .iter()
             .filter(|(seq, _)| self.test_for_contained_prime(seq).is_none())
@@ -212,83 +212,85 @@ impl SearchContext {
             // Say our pattern is xL*z.
             // We want to explore all possible children with weight one more than this one.
             debug_println!(" Exploring {}", pattern);
+            self.explore_pattern(pattern)
+        }
+        self.iter += 1;
+    }
 
-            // Test this for primality
-            // TODO: normally we've tested this already, in reduce_cores,
-            // but split_on_repeat can produce strings we've never tested :/
-            // What's a better way to avoid this redundancy?
-            let seq = pattern.contract();
-            match self.test_for_contained_prime(&seq) {
-                Some(p) => {
-                    assert_ne!(&seq, p);
-                    debug_println!("  Discarding {}, contains prime {}", pattern, p);
-                    continue;
+    fn explore_pattern(&mut self, pattern: Pattern) {
+        // Test this for primality
+        // TODO: normally we've tested this already, in reduce_cores,
+        // but split_on_repeat can produce strings we've never tested :/
+        // What's a better way to avoid this redundancy?
+        let seq = pattern.contract();
+        match self.test_for_contained_prime(&seq) {
+            Some(p) => {
+                assert_ne!(&seq, p);
+                debug_println!("  Discarding {}, contains prime {}", pattern, p);
+                return;
+            }
+            None => {
+                debug_println!("  Testing for primality {}", seq);
+                let value = seq.value(self.base);
+                if is_prime(&value, None).probably() {
+                    debug_println!("  Saving {}, contracts to prime", pattern);
+                    self.primes.push((seq, value));
+                    return;
                 }
-                None => {
-                    debug_println!("  Testing for primality {}", seq);
-                    let value = seq.value(self.base);
-                    if is_prime(&value, None).probably() {
-                        debug_println!("  Saving {}, contracts to prime", pattern);
-                        self.primes.push((seq, value));
-                        continue;
-                    }
-                }
-            }
-
-            // Then, we try to reduce the cores.
-            let mut pattern = self.reduce_cores(pattern);
-            pattern.simplify();
-            if pattern.cores.is_empty() {
-                debug_println!("  {} was reduced to trivial string", pattern);
-                continue;
-            }
-
-            // Now, run some tests to see whether this pattern is guaranteed to
-            // be composite.
-            if self.test_for_perpetual_composite(&pattern) {
-                debug_println!("  Discarding {}, is always composite", pattern);
-                continue;
-            }
-
-            // Let's see if we can split it in an interesting way
-            if let Some(children) = self.split_on_repeat(&pattern, 3) {
-                self.frontier.extend(children);
-                continue;
-            }
-
-            if pattern.weight() >= 2 {
-                if let Some(child) = self.split_on_necessary_digit(&pattern) {
-                    self.frontier.extend([child]);
-                    continue;
-                }
-            }
-
-            // If we couldn't eliminate the pattern, let's split it, left or right.
-            // We can't split on a non-empty core, but after we simplify, we shouldn't
-            // have to worry about that.
-            let slot = self.iter % pattern.cores.len();
-            debug_assert!(!pattern.cores[slot].is_empty());
-            if pattern.weight() == 1 {
-                debug_println!("  Splitting {} left", pattern);
-                self.frontier.extend(pattern.split_left(slot));
-            } else {
-                debug_println!("  Splitting {} right", pattern);
-                self.frontier.extend(pattern.split_right(slot));
-            }
-            // We also need to consider the case where the chosen core expands to
-            // the empty string. However, in the case where there's one core, this
-            // is pretty redundant with the work we're doing in reduce_core().
-            // For example: if we reduce a[xyz]c, we test the primality of axc, ayc
-            // and azc. So after we split, and get ax[xyz]c, there's no need to
-            // test ax[]c again.
-            if pattern.cores.len() > 1 {
-                pattern.cores[slot].clear();
-                pattern.simplify();
-                self.frontier.extend([pattern]);
             }
         }
 
-        self.iter += 1;
+        // Then, we try to reduce the cores.
+        let mut pattern = self.reduce_cores(pattern);
+        pattern.simplify();
+        if pattern.cores.is_empty() {
+            debug_println!("  {} was reduced to trivial string", pattern);
+            return;
+        }
+
+        // Now, run some tests to see whether this pattern is guaranteed to
+        // be composite.
+        if self.test_for_perpetual_composite(&pattern) {
+            debug_println!("  Discarding {}, is always composite", pattern);
+            return;
+        }
+
+        // Let's see if we can split it in an interesting way
+        if let Some(children) = self.split_on_repeat(&pattern, 3) {
+            self.frontier.extend(children);
+            return;
+        }
+
+        if pattern.weight() >= 2 {
+            if let Some(child) = self.split_on_necessary_digit(&pattern) {
+                self.frontier.extend([child]);
+                return;
+            }
+        }
+
+        // If we couldn't eliminate the pattern, let's split it, left or right.
+        // We can't split on a non-empty core, but after we simplify, we shouldn't
+        // have to worry about that.
+        let slot = self.iter % pattern.cores.len();
+        debug_assert!(!pattern.cores[slot].is_empty());
+        if pattern.weight() == 1 {
+            debug_println!("  Splitting {} left", pattern);
+            self.frontier.extend(pattern.split_left(slot));
+        } else {
+            debug_println!("  Splitting {} right", pattern);
+            self.frontier.extend(pattern.split_right(slot));
+        }
+        // We also need to consider the case where the chosen core expands to
+        // the empty string. However, in the case where there's one core, this
+        // is pretty redundant with the work we're doing in reduce_core().
+        // For example: if we reduce a[xyz]c, we test the primality of axc, ayc
+        // and azc. So after we split, and get ax[xyz]c, there's no need to
+        // test ax[]c again.
+        if pattern.cores.len() > 1 {
+            pattern.cores[slot].clear();
+            pattern.simplify();
+            self.frontier.extend([pattern]);
+        }
     }
 
     fn reduce_cores(&mut self, mut pattern: Pattern) -> Pattern {
@@ -482,9 +484,12 @@ fn is_proper_substring(needle: &DigitSeq, haystack: &DigitSeq) -> bool {
     let mut iter = haystack.0.iter().copied();
     for d in needle.0.iter().copied() {
         // Chomp iter until we find that digit
-        match iter.any(|d2| d == d2) {
-            true => {}
-            false => return false,
+        loop {
+            match iter.next() {
+                Some(d2) if d == d2 => break,
+                Some(_) => {}
+                None => return false,
+            }
         }
     }
     // If we got here, then hooray, this is a match!
