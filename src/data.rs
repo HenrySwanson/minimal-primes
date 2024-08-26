@@ -16,6 +16,14 @@ pub struct Pattern {
     pub cores: Vec<Vec<Digit>>,
 }
 
+#[derive(Debug)]
+pub struct SimplePattern {
+    pub before: DigitSeq,
+    pub center: Digit,
+    pub num_repeats: usize,
+    pub after: DigitSeq,
+}
+
 impl DigitSeq {
     pub fn new() -> Self {
         Self(vec![])
@@ -234,5 +242,15 @@ impl std::fmt::Display for Pattern {
             )?
         }
         write!(f, "{}", self.digitseqs.last().expect("digitseqs nonempty"))
+    }
+}
+
+impl std::fmt::Display for SimplePattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}*{} -- x{}",
+            self.before, self.center, self.after, self.num_repeats
+        )
     }
 }
