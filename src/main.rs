@@ -1,4 +1,5 @@
 use clap::Parser;
+use data::SimpleFamily;
 use itertools::Itertools;
 use search::SearchContext;
 use std::sync::atomic::AtomicBool;
@@ -28,7 +29,7 @@ struct Args {
     #[arg(default_value_t = 10)]
     base: u8,
 
-    /// Stop exploring when patterns get above this weight.
+    /// Stop exploring when families get above this weight.
     /// If neither --max-weight or --max-iter is specified,
     /// --max-weight defaults to 10.
     #[arg(long)]
@@ -82,8 +83,8 @@ fn main() {
     ctx.minimize_primes();
     ctx.primes.sort_by_key(|(_, p)| p.clone());
     println!("---- BRANCHES REMAINING ----");
-    for pat in ctx.frontier.iter() {
-        println!("{}", pat);
+    for f in ctx.frontier.iter() {
+        println!("{}", f);
     }
     println!("---- MINIMAL PRIMES ----");
     println!("{}", ctx.primes.iter().map(|(seq, _)| seq).format(", "));

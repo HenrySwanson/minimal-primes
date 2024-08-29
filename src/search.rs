@@ -6,7 +6,7 @@ use num_bigint::BigUint;
 use num_prime::nt_funcs::is_prime;
 
 use crate::composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
-use crate::data::{DigitSeq, Pattern, SimplePattern};
+use crate::data::{DigitSeq, Family, SimpleFamily};
 use crate::debug_println;
 use crate::math::{big_one, gcd_reduce};
 
@@ -24,10 +24,10 @@ pub struct Stats {
 pub struct SearchContext {
     pub base: u8,
 
-    /// iteration counter; corresponds to the weight of the patterns
+    /// iteration counter; corresponds to the weight of the families
     /// we're looking at
     pub iter: usize,
-    /// patterns we haven't explored yet
+    /// families we haven't explored yet
     pub frontier: Frontier,
     /// primes we've discovered so far, in two different formats
     /// depending on the order we discovered these, they may not be minimal!
@@ -38,7 +38,7 @@ pub struct SearchContext {
 }
 
 pub struct Frontier {
-    /// maps weight to pattern; used to ensure we're exploring the
+    /// maps weight to family; used to ensure we're exploring the
     /// search space in (non-strictly) increasing order.
     /// items lower than `min_allowed_weight` must be empty
     by_weight: Vec<Vec<SearchNode>>,
@@ -49,16 +49,16 @@ pub struct Frontier {
 
 #[derive(Debug)]
 pub enum SearchNode {
-    Arbitrary(Pattern),
-    Simple(SimplePattern),
+    Arbitrary(Family),
+    Simple(SimpleFamily),
 }
 
 impl Frontier {
     pub fn new(base: u8) -> Self {
-        let initial_pattern = Pattern::any(base);
-        debug_assert_eq!(initial_pattern.weight(), 0);
+        let initial_family = Family::any(base);
+        debug_assert_eq!(initial_family.weight(), 0);
         Self {
-            by_weight: vec![vec![SearchNode::Arbitrary(initial_pattern)]],
+            by_weight: vec![vec![SearchNode::Arbitrary(initial_family)]],
             min_allowed_weight: 0,
         }
     }
@@ -82,7 +82,7 @@ impl Frontier {
         self.by_weight.iter().flatten()
     }
 
-    /// Removes the patterns of the least weight from the structure.
+    /// Removes the families of the least weight from the structure.
     /// Once this method is called, elements of weight < self.min_weight
     /// should not be inserted! Elements with exactly the minimum weight
     /// are allowed though (lateral exploration).
@@ -100,16 +100,16 @@ impl Frontier {
         None
     }
 
-    pub fn extend(&mut self, iter: impl IntoIterator<Item = Pattern>) {
-        for pat in iter {
-            let node = SearchNode::Arbitrary(pat);
+    pub fn extend(&mut self, iter: impl IntoIterator<Item = Family>) {
+        for family in iter {
+            let node = SearchNode::Arbitrary(family);
             self.put(node);
         }
     }
 
     pub fn put(&mut self, node: SearchNode) {
         let weight = match &node {
-            SearchNode::Arbitrary(pattern) => pattern.weight(),
+            SearchNode::Arbitrary(family) => family.weight(),
             SearchNode::Simple(simple) => {
                 simple.before.0.len() + simple.num_repeats + simple.after.0.len()
             }
@@ -152,17 +152,17 @@ impl SearchContext {
 
     pub fn search_one_level(&mut self) {
         let old_queue = self.frontier.pop().unwrap_or_default();
-        for pattern in old_queue {
-            // Say our pattern is xL*z.
+        for family in old_queue {
+            // Say our family is xL*z.
             // We want to explore all possible children with weight one more than this one.
-            match pattern {
-                SearchNode::Arbitrary(pattern) => {
-                    debug_println!(" Exploring {}", pattern);
-                    self.explore_pattern(pattern)
+            match family {
+                SearchNode::Arbitrary(family) => {
+                    debug_println!(" Exploring {}", family);
+                    self.explore_family(family)
                 }
-                SearchNode::Simple(pattern) => {
-                    debug_println!(" Exploring simple {}", pattern,);
-                    self.explore_simple_pattern(pattern)
+                SearchNode::Simple(family) => {
+                    debug_println!(" Exploring simple {}", family,);
+                    self.explore_simple_family(family)
                 }
             }
             self.stats.borrow_mut().num_branches_explored += 1;
@@ -170,50 +170,50 @@ impl SearchContext {
         self.iter += 1;
     }
 
-    fn explore_pattern(&mut self, pattern: Pattern) {
+    fn explore_family(&mut self, family: Family) {
         // Test this for primality
         // TODO: normally we've tested this already, in reduce_cores,
         // but split_on_repeat can produce strings we've never tested :/
         // What's a better way to avoid this redundancy?
-        let seq = pattern.contract();
+        let seq = family.contract();
         if let Some(p) = self.test_for_contained_prime(&seq) {
             assert_ne!(&seq, p);
-            debug_println!("  Discarding {}, contains prime {}", pattern, p);
+            debug_println!("  Discarding {}, contains prime {}", family, p);
             return;
         }
 
         debug_println!("  Testing for primality {}", seq);
         let value = seq.value(self.base);
         if self.test_for_prime(&value) {
-            debug_println!("  Saving {}, contracts to prime", pattern);
+            debug_println!("  Saving {}, contracts to prime", family);
             self.primes.push((seq, value));
             return;
         }
 
         // Then, we try to reduce the cores.
-        let mut pattern = self.reduce_cores(pattern);
-        pattern.simplify();
-        if pattern.cores.is_empty() {
-            debug_println!("  {} was reduced to trivial string", pattern);
+        let mut family = self.reduce_cores(family);
+        family.simplify();
+        if family.cores.is_empty() {
+            debug_println!("  {} was reduced to trivial string", family);
             return;
         }
 
-        // Now, run some tests to see whether this pattern is guaranteed to
+        // Now, run some tests to see whether this family is guaranteed to
         // be composite.
-        if self.test_for_perpetual_composite(&pattern) {
-            debug_println!("  Discarding {}, is always composite", pattern);
+        if self.test_for_perpetual_composite(&family) {
+            debug_println!("  Discarding {}, is always composite", family);
             return;
         }
 
         // TODO: is this right?
-        // Check if this pattern is simple or not. If it is, we should
+        // Check if this family is simple or not. If it is, we should
         // re-enqueue it as such. (Note: this is after composite check!)
-        if pattern.cores.len() == 1 && pattern.cores[0].len() == 1 {
-            let after = pattern.digitseqs.pop().unwrap();
-            let before = pattern.digitseqs.pop().unwrap();
-            let node = SearchNode::Simple(SimplePattern {
+        if family.cores.len() == 1 && family.cores[0].len() == 1 {
+            let after = family.digitseqs.pop().unwrap();
+            let before = family.digitseqs.pop().unwrap();
+            let node = SearchNode::Simple(SimpleFamily {
                 before,
-                center: pattern.cores[0][0],
+                center: family.cores[0][0],
                 num_repeats: 0,
                 after,
             });
@@ -222,29 +222,29 @@ impl SearchContext {
         }
 
         // Let's see if we can split it in an interesting way
-        if let Some(children) = self.split_on_repeat(&pattern, 3) {
+        if let Some(children) = self.split_on_repeat(&family, 3) {
             self.frontier.extend(children);
             return;
         }
 
-        if pattern.weight() >= 2 {
-            if let Some(child) = self.split_on_necessary_digit(&pattern) {
+        if family.weight() >= 2 {
+            if let Some(child) = self.split_on_necessary_digit(&family) {
                 self.frontier.extend([child]);
                 return;
             }
         }
 
-        // If we couldn't eliminate the pattern, let's split it, left or right.
+        // If we couldn't eliminate the family, let's split it, left or right.
         // We can't split on a non-empty core, but after we simplify, we shouldn't
         // have to worry about that.
-        let slot = self.iter % pattern.cores.len();
-        debug_assert!(!pattern.cores[slot].is_empty());
-        if pattern.weight() == 1 {
-            debug_println!("  Splitting {} left", pattern);
-            self.frontier.extend(pattern.split_left(slot));
+        let slot = self.iter % family.cores.len();
+        debug_assert!(!family.cores[slot].is_empty());
+        if family.weight() == 1 {
+            debug_println!("  Splitting {} left", family);
+            self.frontier.extend(family.split_left(slot));
         } else {
-            debug_println!("  Splitting {} right", pattern);
-            self.frontier.extend(pattern.split_right(slot));
+            debug_println!("  Splitting {} right", family);
+            self.frontier.extend(family.split_right(slot));
         }
         // We also need to consider the case where the chosen core expands to
         // the empty string. However, in the case where there's one core, this
@@ -252,14 +252,14 @@ impl SearchContext {
         // For example: if we reduce a[xyz]c, we test the primality of axc, ayc
         // and azc. So after we split, and get ax[xyz]c, there's no need to
         // test ax[]c again.
-        if pattern.cores.len() > 1 {
-            pattern.cores[slot].clear();
-            pattern.simplify();
-            self.frontier.extend([pattern]);
+        if family.cores.len() > 1 {
+            family.cores[slot].clear();
+            family.simplify();
+            self.frontier.extend([family]);
         }
     }
 
-    fn explore_simple_pattern(&mut self, mut pattern: SimplePattern) {
+    fn explore_simple_family(&mut self, mut family: SimpleFamily) {
         // There's a lot less we can do here! We can't split anything,
         // we can't reduce cores, etc, etc.
         // Even composite testing isn't very useful here, since we
@@ -270,10 +270,10 @@ impl SearchContext {
         // Test if it contains a prime
         let start = Instant::now();
         for (prime, _) in &self.primes {
-            let result = is_substring_of_simple(&prime, &pattern);
+            let result = is_substring_of_simple(&prime, &family);
             self.stats.borrow_mut().num_simple_substring_checks += 1;
             if result {
-                debug_println!("  Discarding {}, contains prime {}", pattern, prime);
+                debug_println!("  Discarding {}, contains prime {}", family, prime);
                 self.stats.borrow_mut().duration_simple_substring_checks += start.elapsed();
                 return;
             }
@@ -282,43 +282,43 @@ impl SearchContext {
 
         // Test if it is a prime
         let mut value = BigUint::ZERO;
-        for d in &pattern.before.0 {
+        for d in &family.before.0 {
             value = value * self.base + d.0;
         }
-        for _ in 0..pattern.num_repeats {
-            value = value * self.base + pattern.center.0;
+        for _ in 0..family.num_repeats {
+            value = value * self.base + family.center.0;
         }
-        for d in &pattern.after.0 {
+        for d in &family.after.0 {
             value = value * self.base + d.0;
         }
 
         if self.test_for_prime(&value) {
-            debug_println!("  Saving {}, is prime", pattern);
+            debug_println!("  Saving {}, is prime", family);
 
-            let mut seq = pattern.before.clone();
-            for _ in 0..pattern.num_repeats {
-                seq += pattern.center;
+            let mut seq = family.before.clone();
+            for _ in 0..family.num_repeats {
+                seq += family.center;
             }
-            seq += pattern.after;
+            seq += family.after;
 
             self.primes.push((seq, value));
             return;
         }
 
-        pattern.num_repeats += 1;
-        self.frontier.put(SearchNode::Simple(pattern));
+        family.num_repeats += 1;
+        self.frontier.put(SearchNode::Simple(family));
     }
 
-    fn reduce_cores(&mut self, mut pattern: Pattern) -> Pattern {
-        let old_pat = pattern.clone();
-        for (i, core) in pattern.cores.iter_mut().enumerate() {
+    fn reduce_cores(&mut self, mut family: Family) -> Family {
+        let old_family = family.clone();
+        for (i, core) in family.cores.iter_mut().enumerate() {
             // Substitute elements from the core into the string to see if any
             // of them contain or are a prime.
             // NOTE: this is where we generate minimal primes of (weight + 1), so
             // next loop, those should all be available.
             let mut allowed_digits = vec![];
             for digit in core.iter().copied() {
-                let seq = old_pat.substitute(i, digit);
+                let seq = old_family.substitute(i, digit);
 
                 if let Some(p) = self.test_for_contained_prime(&seq) {
                     assert_ne!(&seq, p);
@@ -338,9 +338,9 @@ impl SearchContext {
 
             *core = allowed_digits;
         }
-        // Now we've reduced the core, and have a new pattern.
-        debug_println!("  Reducing {} to {}", old_pat, pattern);
-        pattern
+        // Now we've reduced the core, and have a new family.
+        debug_println!("  Reducing {} to {}", old_family, family);
+        family
     }
 
     fn test_for_contained_prime(&self, seq: &DigitSeq) -> Option<&DigitSeq> {
@@ -365,36 +365,36 @@ impl SearchContext {
         result
     }
 
-    fn test_for_perpetual_composite(&self, pattern: &Pattern) -> bool {
-        // This function is used to eliminate patterns that will always result
+    fn test_for_perpetual_composite(&self, family: &Family) -> bool {
+        // This function is used to eliminate families that will always result
         // in composite numbers, letting us cut off infinite branches of the
         // search space.
         // There are a few possible ways this can happen. We'll use base 10
         // in the comments for familiarity, unless specified otherwise.
 
         // p divides BASE (e.g., 2, 5)
-        if let Some(factor) = shares_factor_with_base(self.base, pattern) {
-            debug_println!("  {} has divisor {}", pattern, factor);
+        if let Some(factor) = shares_factor_with_base(self.base, family) {
+            debug_println!("  {} has divisor {}", family, factor);
             return true;
         }
         // p does not divide BASE (e.g. 7)
         // -------------------------------
-        // This is how we detect patterns like 4[6]9 being divisible by 7.
+        // This is how we detect families like 4[6]9 being divisible by 7.
         for stride in 1..=2 {
-            if let Some(factors) = find_perpetual_factor(self.base, pattern, stride) {
+            if let Some(factors) = find_perpetual_factor(self.base, family, stride) {
                 debug_println!(
                     "  {} is divisible by {}",
-                    pattern,
+                    family,
                     factors.iter().format(", ")
                 );
                 return true;
             }
         }
 
-        if let Some((even_factor, odd_factor)) = find_even_odd_factor(self.base, pattern) {
+        if let Some((even_factor, odd_factor)) = find_even_odd_factor(self.base, family) {
             debug_println!(
                 "  {} is divisible by either {} or {}",
-                pattern,
+                family,
                 even_factor,
                 odd_factor
             );
@@ -404,20 +404,20 @@ impl SearchContext {
         false
     }
 
-    fn split_on_repeat(&self, pattern: &Pattern, max_repeats: usize) -> Option<Vec<Pattern>> {
-        debug_println!(" Trying to split {}", pattern);
-        for (i, core) in pattern.cores.iter().enumerate() {
+    fn split_on_repeat(&self, family: &Family, max_repeats: usize) -> Option<Vec<Family>> {
+        debug_println!(" Trying to split {}", family);
+        for (i, core) in family.cores.iter().enumerate() {
             for d in core.iter().copied() {
                 for n in 2..=max_repeats {
                     // Check whether x y^n z contains a prime subword
-                    let seq = pattern.substitute_multiple(i, std::iter::repeat(d).take(n));
+                    let seq = family.substitute_multiple(i, std::iter::repeat(d).take(n));
                     if let Some(p) = self.test_for_contained_prime(&seq) {
                         assert_ne!(&seq, p);
                         debug_println!("  {} contains a prime {}", seq, p);
 
-                        // Split into n patterns, x (L-y) (y (L-y))^i z for i in 0..n
+                        // Split into n families, x (L-y) (y (L-y))^i z for i in 0..n
                         let yless_core: Vec<_> = core.iter().copied().filter(|x| *x != d).collect();
-                        let mut first_child = pattern.clone();
+                        let mut first_child = family.clone();
                         first_child.cores[i] = yless_core.clone();
 
                         let mut children = vec![first_child];
@@ -429,7 +429,7 @@ impl SearchContext {
                             children.push(new);
                         }
 
-                        // Simplify everything (don't do it while we're generating patterns),
+                        // Simplify everything (don't do it while we're generating families),
                         // since that'd mess with indices).
                         for child in children.iter_mut() {
                             child.simplify();
@@ -437,7 +437,7 @@ impl SearchContext {
 
                         debug_println!(
                             "  {} split into {}",
-                            pattern,
+                            family,
                             children.iter().format(" and ")
                         );
                         return Some(children);
@@ -448,43 +448,43 @@ impl SearchContext {
         None
     }
 
-    fn split_on_necessary_digit(&self, pattern: &Pattern) -> Option<Pattern> {
+    fn split_on_necessary_digit(&self, family: &Family) -> Option<Family> {
         // There's a case in base 11 (and probably others) where we have
         // just one core, where all the digits except one are even, and so
         // is the rest of the number.
         // This tells me that we are required to have at least one of that digit,
         // or else we'll forever be even.
-        // This function detects that situation and splits the pattern accordingly.
+        // This function detects that situation and splits the family accordingly.
         // TODO: generalize to multiple cores!
         // TODO: generalize to multiple digits?
         // TODO: does this belong in composite? not quite i think
 
-        if pattern.cores.len() != 1 {
+        if family.cores.len() != 1 {
             return None;
         }
 
-        if pattern.cores[0].len() <= 1 {
+        if family.cores[0].len() <= 1 {
             return None;
         }
 
-        let contracted = pattern.contract().value(self.base);
+        let contracted = family.contract().value(self.base);
 
-        for d in pattern.cores[0].iter().copied() {
+        for d in family.cores[0].iter().copied() {
             let g = gcd_reduce(
                 // We want to try "no digits" and "all digits except d"
                 std::iter::once(contracted.clone()).chain(
-                    pattern.cores[0]
+                    family.cores[0]
                         .iter()
                         .copied()
                         .filter(|d2| *d2 != d)
-                        .map(|d2| pattern.substitute(0, d2).value(self.base)),
+                        .map(|d2| family.substitute(0, d2).value(self.base)),
                 ),
             );
 
             if g != big_one() {
                 // Got a match! Return xLyLz
-                let mut new = pattern.clone();
-                let d_less_core = pattern.cores[0]
+                let mut new = family.clone();
+                let d_less_core = family.cores[0]
                     .iter()
                     .copied()
                     .filter(|d2| *d2 != d)
@@ -492,7 +492,7 @@ impl SearchContext {
 
                 new.digitseqs.insert(1, d.into());
                 new.cores.insert(1, d_less_core);
-                debug_println!("  {} must have a {}, transforming into {}", pattern, d, new);
+                debug_println!("  {} must have a {}, transforming into {}", family, d, new);
                 return Some(new);
             }
         }
@@ -522,7 +522,7 @@ fn is_proper_substring(needle: &DigitSeq, haystack: &DigitSeq) -> bool {
     true
 }
 
-fn is_substring_of_simple(needle: &DigitSeq, haystack: &SimplePattern) -> bool {
+fn is_substring_of_simple(needle: &DigitSeq, haystack: &SimpleFamily) -> bool {
     let mut needle_iter = needle.0.iter().copied().peekable();
 
     // Three stages: go through before, then center, then after.

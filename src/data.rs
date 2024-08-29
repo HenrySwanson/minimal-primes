@@ -10,14 +10,14 @@ pub struct Digit(pub u8);
 pub struct DigitSeq(pub Vec<Digit>);
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Pattern {
+pub struct Family {
     // invariant: digitseqs.len() = cores.len() + 1
     pub digitseqs: Vec<DigitSeq>,
     pub cores: Vec<Vec<Digit>>,
 }
 
 #[derive(Debug)]
-pub struct SimplePattern {
+pub struct SimpleFamily {
     pub before: DigitSeq,
     pub center: Digit,
     pub num_repeats: usize,
@@ -107,7 +107,7 @@ impl From<Vec<Digit>> for DigitSeq {
     }
 }
 
-impl Pattern {
+impl Family {
     pub fn any(base: u8) -> Self {
         Self {
             digitseqs: vec![DigitSeq::new(), DigitSeq::new()],
@@ -138,7 +138,7 @@ impl Pattern {
             }
         }
 
-        // Delete [0]* at the beginning of a pattern
+        // Delete [0]* at the beginning of a family
         if let Some(first_core) = self.cores.first() {
             let first_seq = &self.digitseqs[0];
             if first_seq.0.is_empty() && first_core.len() == 1 && first_core[0] == Digit(0) {
@@ -230,7 +230,7 @@ impl std::fmt::Display for DigitSeq {
     }
 }
 
-impl std::fmt::Display for Pattern {
+impl std::fmt::Display for Family {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         debug_assert_eq!(self.digitseqs.len(), self.cores.len() + 1);
         for i in 0..self.cores.len() {
@@ -245,7 +245,7 @@ impl std::fmt::Display for Pattern {
     }
 }
 
-impl std::fmt::Display for SimplePattern {
+impl std::fmt::Display for SimpleFamily {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,

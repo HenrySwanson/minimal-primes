@@ -21,7 +21,7 @@ has_divisor(family f) -> bool
   - g4 = gcd(ij, iiij, ijjj) (temp3)
   - idk what this is
 - 3/4/5/... divisors
-  - only works with one nonempty core, so our pattern is xLz
+  - only works with one nonempty core, so our family is xLz
   - example with 3: check gcd(xz, xL^3z), gcd(xLz, xL^4z), and gcd(xL^2z, xL^5z)
 - TODO: check sq and cube divisors
 - TODO: something with residues?
@@ -31,7 +31,7 @@ split(family f, char insplit, out list unsolved) -> bool
 - if insplit=0, add to list (split=0) and return false
 - for i in 2...5
   - check if x_1 ... x_i y y ... x_n contains a prime
-  - if so, split the pattern, add the children to the list (split=2), and return true
+  - if so, split the family, add the children to the list (split=2), and return true
 - TODO: there's something about splitting and gcds?
 - if all that fails, add to list with split=1, return false
 
@@ -53,7 +53,7 @@ explore(family f, bool side, int pos, out list unsolved)
 explores the pos-th (nonempty) core in f
 - pos is interpreted mod number of cores in f
 - for each y in L_i
-  - produces child patterns where x_i L_i is replaced with x_i y L_i or x_i L_i y, depending on side
+  - produces child families where x_i L_i is replaced with x_i y L_i or x_i L_i y, depending on side
   - 1 is split left, 0 is split right (not that it matters)
 - those are all added to list (split=1)
 - so is the child with L_i deleted entirely (split=1)  

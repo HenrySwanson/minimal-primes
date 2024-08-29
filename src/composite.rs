@@ -1,4 +1,4 @@
-//! This module is used to check whether patterns are always composite,
+//! This module is used to check whether families are always composite,
 //! letting us discard the whole branch.
 
 use itertools::Itertools;
@@ -6,16 +6,16 @@ use num_bigint::BigUint;
 
 use crate::data::Digit;
 use crate::data::DigitSeq;
-use crate::data::Pattern;
+use crate::data::Family;
 use crate::math::big_one;
 use crate::math::gcd;
 use crate::math::gcd_reduce;
 
-/// Checks whether this pattern shares a factor with the base.
+/// Checks whether this family shares a factor with the base.
 /// Basically just checks the last digit.
-pub fn shares_factor_with_base(base: u8, pattern: &Pattern) -> Option<BigUint> {
-    // Get the last digit of the pattern
-    let last_seq = pattern.digitseqs.last().expect("digitseqs nonempty");
+pub fn shares_factor_with_base(base: u8, family: &Family) -> Option<BigUint> {
+    // Get the last digit of the family
+    let last_seq = family.digitseqs.last().expect("digitseqs nonempty");
     let d = last_seq.0.last()?;
 
     let gcd = gcd(d.0.into(), base.into());
@@ -27,7 +27,7 @@ pub fn shares_factor_with_base(base: u8, pattern: &Pattern) -> Option<BigUint> {
     }
 }
 
-/// Given a pattern of the shape xLz, checks whether there are any "periodic"
+/// Given a family of the shape xLz, checks whether there are any "periodic"
 /// factors, up to the given limit.
 ///
 /// For a period n, a periodic factor sequence is a list of numbers f_1, ..., f_n
@@ -38,14 +38,14 @@ pub fn shares_factor_with_base(base: u8, pattern: &Pattern) -> Option<BigUint> {
 /// and M divides xLz, xLLLz, xL^5z, ....
 ///
 /// TODO: period one but allow multiple cores
-pub fn find_perpetual_factor(base: u8, pattern: &Pattern, stride: usize) -> Option<Vec<BigUint>> {
+pub fn find_perpetual_factor(base: u8, family: &Family, stride: usize) -> Option<Vec<BigUint>> {
     let one = BigUint::from(1_u32);
 
     // TODO: generalize
-    if pattern.cores.len() != 1 {
+    if family.cores.len() != 1 {
         return None;
     }
-    let core = &pattern.cores[0];
+    let core = &family.cores[0];
 
     let mut gcds = vec![];
     for i in 0..stride {
@@ -62,7 +62,7 @@ pub fn find_perpetual_factor(base: u8, pattern: &Pattern, stride: usize) -> Opti
                 )
                 .map(|center| {
                     DigitSeq::concat_value(
-                        [&pattern.digitseqs[0], &center.into(), &pattern.digitseqs[1]],
+                        [&family.digitseqs[0], &center.into(), &family.digitseqs[1]],
                         base,
                     )
                 }),
@@ -81,25 +81,25 @@ pub fn find_perpetual_factor(base: u8, pattern: &Pattern, stride: usize) -> Opti
     Some(gcds)
 }
 
-pub fn find_even_odd_factor(base: u8, pattern: &Pattern) -> Option<(BigUint, BigUint)> {
+pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUint)> {
     // Similar to find_perpetual_factor, but checks strings of even length and odd length separately.
 
     // TODO: can this be generalized to more than two cores?
-    if pattern.cores.len() != 2 {
+    if family.cores.len() != 2 {
         return None;
     }
 
     // Complicated, but actually does help quite a bit.
-    fn pattern_iter_helper<'pat>(
+    fn family_iter_helper<'f>(
         base: u8,
-        x: &'pat DigitSeq,
-        a: &'pat [Digit],
-        y: &'pat DigitSeq,
-        b: &'pat [Digit],
-        z: &'pat DigitSeq,
+        x: &'f DigitSeq,
+        a: &'f [Digit],
+        y: &'f DigitSeq,
+        b: &'f [Digit],
+        z: &'f DigitSeq,
         a_repeat: usize,
         b_repeat: usize,
-    ) -> impl Iterator<Item = BigUint> + 'pat {
+    ) -> impl Iterator<Item = BigUint> + 'f {
         a.iter()
             .copied()
             .combinations_with_replacement(a_repeat)
@@ -116,19 +116,19 @@ pub fn find_even_odd_factor(base: u8, pattern: &Pattern) -> Option<(BigUint, Big
     }
 
     let bar = |&(repeat_a, repeat_b)| {
-        pattern_iter_helper(
+        family_iter_helper(
             base,
-            &pattern.digitseqs[0],
-            &pattern.cores[0],
-            &pattern.digitseqs[1],
-            &pattern.cores[1],
-            &pattern.digitseqs[2],
+            &family.digitseqs[0],
+            &family.cores[0],
+            &family.digitseqs[1],
+            &family.cores[1],
+            &family.digitseqs[2],
             repeat_a,
             repeat_b,
         )
     };
 
-    // Take the pattern xA*yB*z
+    // Take the family xA*yB*z
     // - even number of A+B: x(AA)*y(BB)*z, xA(AA)*yB(BB)*z
     // -  odd number of A+B: xA(AA)*y(BB)*z, z(AA)*yB(BB)*z
     let even_repeats: [(usize, usize); 6] = [(0, 0), (2, 0), (0, 2), (1, 1), (1, 3), (3, 1)];
