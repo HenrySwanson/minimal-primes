@@ -1,7 +1,6 @@
 use clap::Parser;
-use data::SimpleFamily;
 use itertools::Itertools;
-use search::SearchContext;
+use search::search_for_simple_families;
 use std::sync::atomic::AtomicBool;
 
 mod composite;
@@ -54,34 +53,8 @@ fn main() {
 
     LOGGING_ENABLED.store(args.log, std::sync::atomic::Ordering::Relaxed);
 
-    let mut ctx = SearchContext::new(args.base);
-    while let Some(weight) = ctx.frontier.min_weight() {
-        if let Some(max) = args.max_weight {
-            if weight > max {
-                println!("Reached weight cutoff; stopping...");
-                break;
-            }
-        }
+    let ctx = search_for_simple_families(args.base, args.max_weight, args.max_iter);
 
-        if let Some(max) = args.max_iter {
-            if ctx.iter >= max {
-                println!("Reached iteration cutoff; stopping...");
-                break;
-            }
-        }
-
-        println!(
-            "Iteration {} - Weight {} - {} branches",
-            ctx.iter,
-            weight,
-            ctx.frontier.len()
-        );
-
-        ctx.search_one_level();
-    }
-
-    ctx.minimize_primes();
-    ctx.primes.sort_by_key(|(_, p)| p.clone());
     println!("---- BRANCHES REMAINING ----");
     for f in ctx.frontier.iter() {
         println!("{}", f);
@@ -122,6 +95,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use std::io;
+
+    use search::SearchContext;
 
     use super::*;
 
@@ -214,16 +189,7 @@ mod tests {
     }
 
     fn calculate(base: u8, max_weight: usize) -> SearchContext {
-        let mut ctx = SearchContext::new(base);
-        while let Some(weight) = ctx.frontier.min_weight() {
-            if weight > max_weight {
-                break;
-            }
-            ctx.search_one_level();
-        }
-        ctx.minimize_primes();
-        ctx.primes.sort_by_key(|(_, p)| p.clone());
-        ctx
+        search_for_simple_families(base, Some(max_weight), None)
     }
 
     fn iter_ground_truth(base: u8) -> impl Iterator<Item = String> {

@@ -10,6 +10,42 @@ use crate::data::{DigitSeq, Family, SimpleFamily};
 use crate::debug_println;
 use crate::math::{big_one, gcd_reduce};
 
+pub fn search_for_simple_families(
+    base: u8,
+    max_weight: Option<usize>,
+    max_iter: Option<usize>,
+) -> SearchContext {
+    let mut ctx = SearchContext::new(base);
+    while let Some(weight) = ctx.frontier.min_weight() {
+        if let Some(max) = max_weight {
+            if weight > max {
+                println!("Reached weight cutoff; stopping...");
+                break;
+            }
+        }
+
+        if let Some(max) = max_iter {
+            if ctx.iter >= max {
+                println!("Reached iteration cutoff; stopping...");
+                break;
+            }
+        }
+
+        println!(
+            "Iteration {} - Weight {} - {} branches",
+            ctx.iter,
+            weight,
+            ctx.frontier.len()
+        );
+
+        ctx.search_one_level();
+    }
+
+    ctx.minimize_primes();
+    ctx.primes.sort_by_key(|(_, p)| p.clone());
+    ctx
+}
+
 #[derive(Debug, Default)]
 pub struct Stats {
     pub num_primality_checks: usize,
@@ -270,7 +306,7 @@ impl SearchContext {
         // Test if it contains a prime
         let start = Instant::now();
         for (prime, _) in &self.primes {
-            let result = is_substring_of_simple(&prime, &family);
+            let result = is_substring_of_simple(prime, &family);
             self.stats.borrow_mut().num_simple_substring_checks += 1;
             if result {
                 debug_println!("  Discarding {}, contains prime {}", family, prime);
