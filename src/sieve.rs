@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use bitvec::prelude::BitVec;
+use num_bigint::BigUint;
 use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
+use num_prime::buffer::{NaiveBuffer, PrimeBufferExt};
 
 #[derive(Debug)]
 pub struct Sequence {
@@ -36,6 +38,8 @@ impl Sequence {
 
         // It's possible the term we're about to eliminate is actually p itself.
         // Let's avoid that, if so.
+        // TODO: actually, this should report a prime immediately! not that that'll
+        // happen in the interesting cases, but still!
         if self.check_term_equal(base, p, start) {
             idx += spacing;
         }
@@ -47,7 +51,10 @@ impl Sequence {
     }
 
     fn check_term_equal(&self, base: u64, p: u64, n: usize) -> bool {
-        let mut x = p - self.c;
+        let mut x = match p.checked_sub(self.c) {
+            Some(x) => x,
+            None => return false,
+        };
 
         if x % self.k != 0 {
             return false;
@@ -65,7 +72,56 @@ impl Sequence {
     }
 }
 
-pub fn baby_step_giant_step(
+pub fn find_first_prime(
+    base: u8,
+    k: u64,
+    c: u64,
+    n_lo: usize,
+    n_hi: usize,
+) -> Option<(usize, BigUint)> {
+    let n_range = n_hi - n_lo;
+    let mut seq = Sequence::new(k, c, n_lo, n_hi);
+
+    // Decide how many steps for baby-step giant-step
+    let num_baby_steps = (n_range as f64).sqrt() as usize;
+    let num_giant_steps = n_range.div_ceil(num_baby_steps);
+
+    // Decide how many primes to search
+    // TODO: how many?
+    let max_p = 1000000;
+
+    // Now go and eliminate a bunch of terms
+    let mut prime_buffer = NaiveBuffer::new();
+    for p in prime_buffer.primes(max_p) {
+        baby_step_giant_step(base.into(), *p, num_baby_steps, num_giant_steps, &mut seq);
+    }
+
+    // Lastly, iterate through the remaining numbers and see if they're prime
+    println!(
+        "{}/{} remaining",
+        seq.n_bitvec.count_ones(),
+        seq.n_bitvec.len()
+    );
+    for i in seq.n_bitvec.iter_ones() {
+        println!("Start computing #{}", i);
+
+        // TODO: re-use the previous computation?
+        let exponent = seq.n_lo + i;
+        let bn = BigUint::from(base).pow(exponent as u32);
+        let value = seq.k * bn + c;
+        println!("Start checking #{}", i);
+
+        if prime_buffer.is_prime(&value, None).probably() {
+            return Some((exponent, value));
+        }
+
+        println!("Done checking #{}", i);
+    }
+
+    None
+}
+
+fn baby_step_giant_step(
     base: u64,
     p: u64,
     num_baby_steps: usize,
@@ -106,21 +162,38 @@ pub fn baby_step_giant_step(
     }
 
     // Otherwise, we'll do some giant steps
-    // TODO: look for repeats
     let m: u64 = num_baby_steps.try_into().unwrap();
     let bm = binv.powm(m, &p);
     let mut ckb = ck;
+
+    // We know that the order divides p-1, so worst-case scenario,
+    // we can use that as the order.
+    let mut order: usize = (p - 1).try_into().unwrap();
+    let mut first_solution: Option<usize> = None;
+
     for i in 0..num_giant_steps {
         if let Some(j) = baby_table.get(&ckb) {
-            // (-c/k)b^(im) = b^(L+j), so we eliminate L+im+j
+            // Found a solution! (-c/k)b^(im) = b^(L+j), so we eliminate L+im+j
             let exp = seq.n_lo + i * num_baby_steps + j;
-            // We know that the order divides p-1
-            seq.eliminate_multiple(p, base, exp, (p - 1).try_into().unwrap());
-            break;
+
+            // Is this the first or second solution we've found?
+            match first_solution {
+                Some(n) => {
+                    // Great! Two solutions tell us the order of b mod p.
+                    assert!(exp > n);
+                    order = exp - n;
+                    break;
+                }
+                None => first_solution = Some(exp),
+            }
         }
 
         // Bump ckb
         ckb = ckb.mulm(bm, &p);
+    }
+
+    if let Some(exp) = first_solution {
+        seq.eliminate_multiple(p, base, exp, order);
     }
 }
 
@@ -152,7 +225,6 @@ fn baby_steps(
 #[cfg(test)]
 mod tests {
     use num_bigint::BigUint;
-    use num_prime::nt_funcs::{is_prime, primes};
 
     use super::*;
 
@@ -162,20 +234,42 @@ mod tests {
         // 5*2^n+1
         let base = 2;
         let n_range = 100;
+        let max_p = 100;
+
         let mut seq = Sequence::new(5, 1, 0, n_range);
-        for p in primes(100) {
-            baby_step_giant_step(base, p, 10, 10, &mut seq);
+        let mut prime_buffer = NaiveBuffer::new();
+        for p in prime_buffer.primes(max_p) {
+            baby_step_giant_step(base, *p, 10, 10, &mut seq);
         }
 
         for i in 0..n_range {
-            let p = BigUint::from(base).pow(i.try_into().unwrap()) * seq.k + seq.c;
+            // Check every remaining element in the sequence
+            let elt = BigUint::from(base).pow(i.try_into().unwrap()) * seq.k + seq.c;
             let is_remaining = seq.check_n(i);
-            let is_prime = is_prime(&p, None).probably();
+            let is_prime = prime_buffer.is_prime(&elt, None).probably();
+
+            // If it's prime, we must not eliminate it.
             if is_prime {
                 assert!(
                     is_remaining,
                     "{} = {}*{}^{}+{} is prime, but was removed from the list",
-                    p, seq.k, base, i, seq.c
+                    elt, seq.k, base, i, seq.c
+                );
+            // If it's composite, we might have eliminated it. Specifically,
+            // if it has small factors, we should have been able to eliminate it.
+            } else if is_remaining {
+                // Conversely, if we didn't eliminate it, it should not have small factors.
+                let factors = prime_buffer.factorize(elt.clone());
+                let min_factor = factors.keys().min().expect("at least one factor");
+                assert!(
+                    min_factor >= &max_p.into(),
+                    "{} = {}*{}^{}+{} has unexpected small factor {}",
+                    elt,
+                    seq.k,
+                    base,
+                    i,
+                    seq.c,
+                    min_factor
                 );
             }
         }
@@ -187,5 +281,27 @@ mod tests {
             "Expected to eliminate more options, there are {} remaining",
             num_remaining
         );
+    }
+
+    #[test]
+    fn test_prime_finding() {
+        // Let's test some sequences where we already know the answer :)
+        // We're looking for n = (# digits - # of digits in the first part).
+
+        // Base 17: A0*1 is first prime at 1357 digits.
+        // Sequence is 10*17^n+1, n>=1
+        let x = find_first_prime(17, 10, 1, 1, 2000);
+        assert_eq!(x.unwrap().0, 1357 - 1);
+
+        // Base 23: E0*KLE is first prime at 1658 digits.
+        // Sequence is 14*23^n+11077, n>=3
+        let x = find_first_prime(23, 14, 11077, 3, 2000);
+        assert_eq!(x.unwrap().0, 1658 - 1);
+
+        // Base 13: 80*111 is first prime at at 32021 digits.
+        // Sequence is 8*13^n+183, n>=3
+        // This takes too long.
+        // let x = find_first_prime(13, 8, 183, 3, 40000).unwrap();
+        // assert_eq!(x.0, 32021 - 1);
     }
 }
