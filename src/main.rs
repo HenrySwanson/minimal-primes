@@ -7,6 +7,7 @@ mod composite;
 mod data;
 mod math;
 mod search;
+mod sieve;
 
 static LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
