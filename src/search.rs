@@ -14,6 +14,7 @@ pub fn search_for_simple_families(
     base: u8,
     max_weight: Option<usize>,
     max_iter: Option<usize>,
+    stop_when_simple: bool,
 ) -> SearchContext {
     let mut ctx = SearchContext::new(base);
     while let Some(weight) = ctx.frontier.min_weight() {
@@ -27,6 +28,17 @@ pub fn search_for_simple_families(
         if let Some(max) = max_iter {
             if ctx.iter >= max {
                 println!("Reached iteration cutoff; stopping...");
+                break;
+            }
+        }
+
+        if stop_when_simple {
+            if ctx
+                .frontier
+                .iter()
+                .all(|f| matches!(f, SearchNode::Simple(_)))
+            {
+                println!("All remaining families are simple; stopping...");
                 break;
             }
         }

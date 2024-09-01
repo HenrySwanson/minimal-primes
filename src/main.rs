@@ -11,8 +11,6 @@ mod sieve;
 
 static LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
-const DEFAULT_MAX_WEIGHT: usize = 10;
-
 macro_rules! debug_println {
     ($($arg:tt)*) => {
         if crate::LOGGING_ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
@@ -25,36 +23,81 @@ pub(crate) use debug_println;
 
 #[derive(Parser)]
 struct Args {
-    /// Base, e.g., decimal, binary, etc.
-    #[arg(default_value_t = 10)]
-    base: u8,
-
-    /// Stop exploring when families get above this weight.
-    /// If neither --max-weight or --max-iter is specified,
-    /// --max-weight defaults to 10.
-    #[arg(long)]
-    max_weight: Option<usize>,
-
-    /// Stop exploring after a specific number of iterations.
-    /// If neither --max-weight or --max-iter is specified,
-    /// --max-weight defaults to 10.
-    #[arg(long)]
-    max_iter: Option<usize>,
+    /// What to do
+    #[command(subcommand)]
+    command: Command,
 
     /// Enable logging
     #[arg(long)]
     log: bool,
 }
 
-fn main() {
-    let mut args = Args::parse();
-    if args.max_iter.is_none() && args.max_weight.is_none() {
-        args.max_weight = Some(DEFAULT_MAX_WEIGHT);
-    }
+#[derive(clap::Subcommand)]
+enum Command {
+    /// Searches for minimal primes in the given base.
+    Search(SearchArgs),
+    /// Sieves through a sequence of the form k b^n + c.
+    Sieve(SieveArgs),
+}
 
+#[derive(clap::Args)]
+struct SearchArgs {
+    /// Base, e.g., decimal, binary, etc.
+    #[arg(default_value_t = 10)]
+    base: u8,
+
+    /// Stop exploring when families get above this weight.
+    #[arg(long)]
+    max_weight: Option<usize>,
+
+    /// Stop exploring after a specific number of iterations.
+    #[arg(long)]
+    max_iter: Option<usize>,
+
+    /// Stop exploring after all remaining families are simple.
+    #[arg(long)]
+    stop_when_simple: bool,
+}
+
+#[derive(clap::Args)]
+struct SieveArgs {
+    /// Base, e.g., decimal, binary, etc.
+    base: u8,
+
+    /// k
+    k: u64,
+
+    /// c
+    c: u64,
+
+    /// lower bound for n
+    n_lo: usize,
+
+    /// upper bound for n
+    n_hi: usize,
+
+    /// max p to sieve with
+    #[arg(default_value_t = 10_000_000)]
+    p_max: u64,
+}
+
+fn main() {
+    let args = Args::parse();
     LOGGING_ENABLED.store(args.log, std::sync::atomic::Ordering::Relaxed);
 
-    let ctx = search_for_simple_families(args.base, args.max_weight, args.max_iter);
+    match args.command {
+        Command::Search(cmd) => {
+            do_search(cmd);
+        }
+        Command::Sieve(cmd) => {
+            do_sieve(cmd);
+        }
+    }
+}
+
+fn do_search(cmd: SearchArgs) {
+    let ctx =
+        search_for_simple_families(cmd.base, cmd.max_weight, cmd.max_iter, cmd.stop_when_simple);
 
     println!("---- BRANCHES REMAINING ----");
     for f in ctx.frontier.iter() {
@@ -91,6 +134,11 @@ fn main() {
             .duration_simple_substring_checks
             .as_millis()
     );
+}
+
+fn do_sieve(cmd: SieveArgs) {
+    let x = sieve::find_first_prime(cmd.base, cmd.k, cmd.c, cmd.n_lo, cmd.n_hi, cmd.p_max).unwrap();
+    println!("{}, {}", x.0, x.1);
 }
 
 #[cfg(test)]
@@ -190,7 +238,7 @@ mod tests {
     }
 
     fn calculate(base: u8, max_weight: usize) -> SearchContext {
-        search_for_simple_families(base, Some(max_weight), None)
+        search_for_simple_families(base, Some(max_weight), None, false)
     }
 
     fn iter_ground_truth(base: u8) -> impl Iterator<Item = String> {

@@ -78,6 +78,8 @@ pub fn find_first_prime(
     c: u64,
     n_lo: usize,
     n_hi: usize,
+    // TODO: how many? can i decide from "outside"?
+    p_max: u64,
 ) -> Option<(usize, BigUint)> {
     let n_range = n_hi - n_lo;
     let mut seq = Sequence::new(k, c, n_lo, n_hi);
@@ -86,13 +88,9 @@ pub fn find_first_prime(
     let num_baby_steps = (n_range as f64).sqrt() as usize;
     let num_giant_steps = n_range.div_ceil(num_baby_steps);
 
-    // Decide how many primes to search
-    // TODO: how many?
-    let max_p = 1000000;
-
     // Now go and eliminate a bunch of terms
     let mut prime_buffer = NaiveBuffer::new();
-    for p in prime_buffer.primes(max_p) {
+    for p in prime_buffer.primes(p_max) {
         baby_step_giant_step(base.into(), *p, num_baby_steps, num_giant_steps, &mut seq);
     }
 
@@ -103,19 +101,19 @@ pub fn find_first_prime(
         seq.n_bitvec.len()
     );
     for i in seq.n_bitvec.iter_ones() {
-        println!("Start computing #{}", i);
+        let exponent = seq.n_lo + i;
+        println!("Start computing #{}", exponent);
 
         // TODO: re-use the previous computation?
-        let exponent = seq.n_lo + i;
         let bn = BigUint::from(base).pow(exponent as u32);
         let value = seq.k * bn + c;
-        println!("Start checking #{}", i);
+        println!("Start checking #{}", exponent);
 
         if prime_buffer.is_prime(&value, None).probably() {
             return Some((exponent, value));
         }
 
-        println!("Done checking #{}", i);
+        println!("Done checking #{}", exponent);
     }
 
     None
@@ -244,7 +242,8 @@ mod tests {
 
         for i in 0..n_range {
             // Check every remaining element in the sequence
-            let elt = BigUint::from(base).pow(i.try_into().unwrap()) * seq.k + seq.c;
+            let exp = seq.n_lo + i;
+            let elt = BigUint::from(base).pow(exp.try_into().unwrap()) * seq.k + seq.c;
             let is_remaining = seq.check_n(i);
             let is_prime = prime_buffer.is_prime(&elt, None).probably();
 
@@ -253,7 +252,7 @@ mod tests {
                 assert!(
                     is_remaining,
                     "{} = {}*{}^{}+{} is prime, but was removed from the list",
-                    elt, seq.k, base, i, seq.c
+                    elt, seq.k, base, exp, seq.c
                 );
             // If it's composite, we might have eliminated it. Specifically,
             // if it has small factors, we should have been able to eliminate it.
@@ -267,7 +266,7 @@ mod tests {
                     elt,
                     seq.k,
                     base,
-                    i,
+                    seq.n_lo + i,
                     seq.c,
                     min_factor
                 );
@@ -290,12 +289,12 @@ mod tests {
 
         // Base 17: A0*1 is first prime at 1357 digits.
         // Sequence is 10*17^n+1, n>=1
-        let x = find_first_prime(17, 10, 1, 1, 2000);
+        let x = find_first_prime(17, 10, 1, 1, 2000, 100_000);
         assert_eq!(x.unwrap().0, 1357 - 1);
 
         // Base 23: E0*KLE is first prime at 1658 digits.
         // Sequence is 14*23^n+11077, n>=3
-        let x = find_first_prime(23, 14, 11077, 3, 2000);
+        let x = find_first_prime(23, 14, 11077, 3, 2000, 100_000);
         assert_eq!(x.unwrap().0, 1658 - 1);
 
         // Base 13: 80*111 is first prime at at 32021 digits.
