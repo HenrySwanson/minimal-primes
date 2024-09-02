@@ -2,10 +2,9 @@ use clap::Parser;
 use data_structures::CandidateSequences;
 use itertools::Itertools;
 use num_bigint::{BigInt, BigUint};
-use search::{is_substring_of_simple, search_for_simple_families};
+use search::{is_substring_of_simple, search_for_simple_families, SearchContext};
 use sequences::{Digit, DigitSeq};
-use sieve::Sequence;
-use std::{sync::atomic::AtomicBool, usize};
+use std::{ops::ControlFlow, sync::atomic::AtomicBool, usize};
 
 mod composite;
 mod data_structures;
@@ -43,8 +42,6 @@ enum Command {
     Search(SearchArgs),
     /// Sieves through a sequence of the form k b^n + c.
     Sieve(SieveArgs),
-    /// Do both search and sieve!
-    Full(FullArgs),
 }
 
 #[derive(clap::Args)]
@@ -60,9 +57,17 @@ struct SearchArgs {
     #[arg(long)]
     max_iter: Option<usize>,
 
-    /// Stop exploring after all remaining families are simple.
+    /// Switch over to sieving after all remaining families are simple.
     #[arg(long)]
-    stop_when_simple: bool,
+    with_sieve: bool,
+
+    /// upper bound for n
+    #[arg(long, default_value_t = 5_000)]
+    n_hi: usize,
+
+    /// max p to sieve with
+    #[arg(long, default_value_t = 1_000_000)]
+    p_max: u64,
 }
 
 #[derive(clap::Args)]
@@ -87,20 +92,6 @@ struct SieveArgs {
     p_max: u64,
 }
 
-#[derive(clap::Args)]
-struct FullArgs {
-    #[clap(flatten)]
-    search_args: SearchArgs,
-
-    /// upper bound for n
-    #[arg(default_value_t = 5_000)]
-    n_hi: usize,
-
-    /// max p to sieve with
-    #[arg(default_value_t = 1_000_000)]
-    p_max: u64,
-}
-
 fn main() {
     let args = Args::parse();
     LOGGING_ENABLED.store(args.log, std::sync::atomic::Ordering::Relaxed);
@@ -112,57 +103,122 @@ fn main() {
         Command::Sieve(cmd) => {
             do_sieve(&cmd);
         }
-        Command::Full(cmd) => {
-            do_full(&cmd);
-        }
     }
 }
 
-fn do_full(cmd: &FullArgs) -> (CandidateSequences, Vec<search::SearchNode>) {
-    let mut ctx = do_search(&cmd.search_args);
+fn do_search(cmd: &SearchArgs) -> (CandidateSequences, Vec<search::SearchNode>) {
+    let mut ctx = first_stage(cmd);
+
+    if !cmd.with_sieve {
+        return (ctx.primes, ctx.frontier.iter().cloned().collect());
+    }
 
     if !ctx.frontier.all_simple() {
         println!("Not all remaining branches are simple! Must bail out now.");
         return (ctx.primes, ctx.frontier.iter().cloned().collect());
     }
 
+    while intermediate_stage(&mut ctx).is_continue() {}
+
+    let (primes, unsolved) = second_stage(cmd, ctx);
+
+    println!(
+        "Final set of primes ({}): {}",
+        primes.len(),
+        primes.iter().format(", ")
+    );
+    println!("{} branches unsolved", unsolved.len());
+    for x in &unsolved {
+        println!("{}", x);
+    }
+
+    (primes, unsolved)
+}
+
+fn first_stage(cmd: &SearchArgs) -> search::SearchContext {
+    let ctx = search_for_simple_families(cmd.base, cmd.max_weight, cmd.max_iter, cmd.with_sieve);
+
+    println!("---- BRANCHES REMAINING ----");
+    for f in ctx.frontier.iter() {
+        println!("{}", f);
+    }
+    println!("---- MINIMAL PRIMES ----");
+    println!("{}", ctx.primes.iter().format(", "));
+    println!("------------");
+    println!(
+        "{} primes found, {} branches unresolved",
+        ctx.primes.len(),
+        ctx.frontier.len()
+    );
+    println!("---- STATS ----");
+    println!(
+        "{} branches explored",
+        ctx.stats.borrow().num_branches_explored
+    );
+    println!(
+        "{} primality tests ({}ms)",
+        ctx.stats.borrow().num_primality_checks,
+        ctx.stats.borrow().duration_primality_checks.as_millis()
+    );
+    println!(
+        "{} substring tests ({}ms)",
+        ctx.stats.borrow().num_substring_checks,
+        ctx.stats.borrow().duration_substring_checks.as_millis()
+    );
+    println!(
+        "{} simple substring tests ({}ms)",
+        ctx.stats.borrow().num_simple_substring_checks,
+        ctx.stats
+            .borrow()
+            .duration_simple_substring_checks
+            .as_millis()
+    );
+
+    ctx
+}
+
+fn intermediate_stage(ctx: &mut SearchContext) -> ControlFlow<(), ()> {
     println!("---- INTERMEDIARY PHASE ----");
     // It's possible that a simple family can only be expanded a finite amount
     // before it conflicts with a known minimal prime. If so, we should not
     // jump right to sieving, but should instead continue normal searching.
 
-    loop {
-        // Check if any family is potentially able to contain any prime.
-        let should_loop = ctx.frontier.iter().any(|family| {
-            let simple = match family {
-                search::SearchNode::Simple(s) => s,
-                _ => unreachable!("found non-simple family after all_simple()"),
-            };
+    // Check if any family is potentially able to contain any prime.
+    let should_search = ctx.frontier.iter().any(|family| {
+        let simple = match family {
+            search::SearchNode::Simple(s) => s,
+            _ => unreachable!("found non-simple family after all_simple()"),
+        };
 
-            ctx.primes
-                .iter()
-                .any(|p| match is_substring_of_simple(p, simple) {
-                    search::SubstringResult::Never => false,
-                    search::SubstringResult::Yes => true,
-                    search::SubstringResult::Eventually(_) => true,
-                })
-        });
+        ctx.primes
+            .iter()
+            .any(|p| match is_substring_of_simple(p, simple) {
+                search::SubstringResult::Never => false,
+                search::SubstringResult::Yes => true,
+                search::SubstringResult::Eventually(_) => true,
+            })
+    });
 
-        if should_loop {
-            println!(
-                "Searching one extra round: iter={}, num primes={}, num_branches={}",
-                ctx.iter,
-                ctx.primes.len(),
-                ctx.frontier.len()
-            );
-            ctx.search_one_level();
-        } else {
-            break;
-        }
+    if should_search {
+        println!(
+            "Searching one extra round: iter={}, num primes={}, num_branches={}",
+            ctx.iter,
+            ctx.primes.len(),
+            ctx.frontier.len()
+        );
+        ctx.search_one_level();
+        ControlFlow::Continue(())
+    } else {
+        ControlFlow::Break(())
     }
+}
 
+fn second_stage(
+    cmd: &SearchArgs,
+    ctx: SearchContext,
+) -> (CandidateSequences, Vec<search::SearchNode>) {
     println!("---- SIEVING PHASE ----");
-    let base = cmd.search_args.base;
+    let base = ctx.base;
     let mut primes = ctx.primes;
     let mut unsolved_branches = vec![];
     let mut remaining_branches: Vec<_> = ctx
@@ -213,6 +269,14 @@ fn do_full(cmd: &FullArgs) -> (CandidateSequences, Vec<search::SearchNode>) {
             }
 
             let hi = std::cmp::min(lo + len, cmd.n_hi);
+
+            // Do we give up on this sequence?
+            if lo >= hi {
+                println!("Reached limit on n for {}", simple);
+                unsolved_branches.push(search::SearchNode::Simple(simple.clone()));
+                break;
+            }
+
             println!(
                 "Investigating family {} -> ({}*{}^n+{})/{} for n from {} to {}",
                 simple, k, base, c, d, lo, hi,
@@ -226,67 +290,14 @@ fn do_full(cmd: &FullArgs) -> (CandidateSequences, Vec<search::SearchNode>) {
                 }
                 None => {
                     println!("Unable to find prime in the given range: {}", simple);
-                    // Do we give up on this sequence?
-                    if hi == cmd.n_hi {
-                        unsolved_branches.push(search::SearchNode::Simple(simple.clone()));
-                    } else {
-                        remaining_branches.push((simple, (k, c, d, hi, len * 2)))
-                    }
+                    remaining_branches.push((simple, (k, c, d, hi, len * 2)))
                 }
             }
         }
     }
 
     primes.sort();
-    println!(
-        "Final set of primes ({}): {}",
-        primes.len(),
-        primes.iter().format(", ")
-    );
     (primes, unsolved_branches)
-}
-
-fn do_search(cmd: &SearchArgs) -> search::SearchContext {
-    let ctx =
-        search_for_simple_families(cmd.base, cmd.max_weight, cmd.max_iter, cmd.stop_when_simple);
-
-    println!("---- BRANCHES REMAINING ----");
-    for f in ctx.frontier.iter() {
-        println!("{}", f);
-    }
-    println!("---- MINIMAL PRIMES ----");
-    println!("{}", ctx.primes.iter().format(", "));
-    println!("------------");
-    println!(
-        "{} primes found, {} branches unresolved",
-        ctx.primes.len(),
-        ctx.frontier.len()
-    );
-    println!("---- STATS ----");
-    println!(
-        "{} branches explored",
-        ctx.stats.borrow().num_branches_explored
-    );
-    println!(
-        "{} primality tests ({}ms)",
-        ctx.stats.borrow().num_primality_checks,
-        ctx.stats.borrow().duration_primality_checks.as_millis()
-    );
-    println!(
-        "{} substring tests ({}ms)",
-        ctx.stats.borrow().num_substring_checks,
-        ctx.stats.borrow().duration_substring_checks.as_millis()
-    );
-    println!(
-        "{} simple substring tests ({}ms)",
-        ctx.stats.borrow().num_simple_substring_checks,
-        ctx.stats
-            .borrow()
-            .duration_simple_substring_checks
-            .as_millis()
-    );
-
-    ctx
 }
 
 fn do_sieve(cmd: &SieveArgs) {
@@ -398,13 +409,11 @@ mod tests {
         base: u8,
         max_weight: usize,
     ) -> (CandidateSequences, Vec<search::SearchNode>) {
-        do_full(&FullArgs {
-            search_args: SearchArgs {
-                base,
-                max_weight: Some(max_weight),
-                max_iter: None,
-                stop_when_simple: true,
-            },
+        do_search(&SearchArgs {
+            base,
+            max_weight: Some(max_weight),
+            max_iter: None,
+            with_sieve: true,
             n_hi: 5000,
             p_max: 1_000_000,
         })
