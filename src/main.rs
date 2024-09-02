@@ -2,7 +2,6 @@ use clap::Parser;
 use data_structures::CandidateSequences;
 use itertools::Itertools;
 use num_bigint::{BigInt, BigUint};
-use num_prime::nt_funcs::is_prime;
 use search::{is_substring_of_simple, search_for_simple_families};
 use sequences::{Digit, DigitSeq};
 use std::{sync::atomic::AtomicBool, usize};
@@ -119,25 +118,57 @@ fn main() {
 }
 
 fn do_full(cmd: &FullArgs) -> (CandidateSequences, Vec<search::SearchNode>) {
-    let ctx = do_search(&cmd.search_args);
-    let mut primes = ctx.primes;
-    let mut leftover_branches = vec![];
+    let mut ctx = do_search(&cmd.search_args);
 
     if !ctx.frontier.all_simple() {
         println!("Not all remaining branches are simple! Must bail out now.");
-        return (primes, ctx.frontier.iter().cloned().collect());
+        return (ctx.primes, ctx.frontier.iter().cloned().collect());
+    }
+
+    println!("---- INTERMEDIARY PHASE ----");
+    // It's possible that a simple family can only be expanded a finite amount
+    // before it conflicts with a known minimal prime. If so, we should not
+    // jump right to sieving, but should instead continue normal searching.
+
+    loop {
+        // Check if any family is potentially able to contain any prime.
+        let should_loop = ctx.frontier.iter().any(|family| {
+            let simple = match family {
+                search::SearchNode::Simple(s) => s,
+                _ => unreachable!("found non-simple family after all_simple()"),
+            };
+
+            ctx.primes
+                .iter()
+                .any(|p| match is_substring_of_simple(p, simple) {
+                    search::SubstringResult::Never => false,
+                    search::SubstringResult::Yes => true,
+                    search::SubstringResult::Eventually(_) => true,
+                })
+        });
+
+        if should_loop {
+            println!(
+                "Searching one extra round: iter={}, num primes={}, num_branches={}",
+                ctx.iter,
+                ctx.primes.len(),
+                ctx.frontier.len()
+            );
+            ctx.search_one_level();
+        } else {
+            break;
+        }
     }
 
     println!("---- SIEVING PHASE ----");
+    let mut primes = ctx.primes;
+    let mut leftover_branches = vec![];
 
     // TODO: sieve them all at the same time!
-    'family: for family in ctx.frontier.iter().cloned() {
+    for family in ctx.frontier.iter().cloned() {
         let simple = match &family {
             search::SearchNode::Simple(x) => x,
-            _ => {
-                leftover_branches.push(family);
-                continue;
-            }
+            _ => unreachable!("found non-simple family after all_simple()"),
         };
 
         // Compute the sequence for this family: xy*z
@@ -168,48 +199,6 @@ fn do_full(cmd: &FullArgs) -> (CandidateSequences, Vec<search::SearchNode>) {
                 continue;
             }
         };
-
-        // It's possible that a simple family can only be expanded a finite amount
-        // before it conflicts with a known minimal prime.
-        // Figure out what that range is.
-        let mut n_limit = None;
-        for p in primes.iter() {
-            match is_substring_of_simple(&p, simple) {
-                search::SubstringResult::Yes => {
-                    println!(
-                        "simple family {} already contained a substring {}, instant discard",
-                        simple, p
-                    );
-                    continue 'family;
-                }
-                search::SubstringResult::Never => {}
-                search::SubstringResult::Eventually(n) => {
-                    println!("{} will contain {} at {} repeats", simple, p, n);
-                    n_limit = Some(match n_limit {
-                        Some(n_limit) => std::cmp::max(n_limit, n),
-                        None => n,
-                    })
-                }
-            }
-        }
-
-        if let Some(n_limit) = n_limit {
-            // Just test them directly
-            for n in simple.num_repeats..n_limit {
-                let value = simple.value_with(base, n);
-                if is_prime(&value, None).probably() {
-                    let seq = simple.sequence_with(n);
-                    println!("Found prime {}", seq);
-                    primes.insert(seq);
-                    continue 'family;
-                }
-            }
-
-            // Nothing? Then this branch will contain a prime and we should
-            // quash it.
-            println!("{} did not become prime before containing a prime", simple);
-            continue 'family;
-        }
 
         // Great, we have a sequence! Sieve it and see what we can get :)
         let n_lo = simple.num_repeats;
