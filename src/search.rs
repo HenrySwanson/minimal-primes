@@ -7,9 +7,10 @@ use num_prime::nt_funcs::is_prime;
 use num_traits::One;
 
 use crate::composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
-use crate::data::{DigitSeq, Family, SimpleFamily};
+use crate::data_structures::{is_proper_substring, CandidateSequences, Frontier, Weight};
 use crate::debug_println;
 use crate::math::gcd_reduce;
+use crate::sequences::{DigitSeq, Family, SimpleFamily};
 
 pub fn search_for_simple_families(
     base: u8,
@@ -50,8 +51,7 @@ pub fn search_for_simple_families(
         ctx.search_one_level();
     }
 
-    ctx.minimize_primes();
-    ctx.primes.sort_by_key(|(_, p)| p.clone());
+    ctx.primes.sort();
     ctx
 }
 
@@ -73,23 +73,13 @@ pub struct SearchContext {
     /// we're looking at
     pub iter: usize,
     /// families we haven't explored yet
-    pub frontier: Frontier,
+    pub frontier: Frontier<SearchNode>,
     /// primes we've discovered so far, in two different formats
     /// depending on the order we discovered these, they may not be minimal!
-    pub primes: Vec<(DigitSeq, BigUint)>,
+    pub primes: CandidateSequences,
 
     /// For potentially getting insight into what's going on
     pub stats: RefCell<Stats>,
-}
-
-pub struct Frontier {
-    /// maps weight to family; used to ensure we're exploring the
-    /// search space in (non-strictly) increasing order.
-    /// items lower than `min_allowed_weight` must be empty
-    by_weight: Vec<Vec<SearchNode>>,
-    /// the 'ratchet' that enforces that we can't backtrack to an
-    /// element of lower weight.
-    min_allowed_weight: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -98,105 +88,34 @@ pub enum SearchNode {
     Simple(SimpleFamily),
 }
 
-impl Frontier {
-    pub fn new(base: u8) -> Self {
-        let initial_family = Family::any(base);
-        debug_assert_eq!(initial_family.weight(), 0);
-        Self {
-            by_weight: vec![vec![SearchNode::Arbitrary(initial_family)]],
-            min_allowed_weight: 0,
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.by_weight.iter().map(|layer| layer.len()).sum()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.by_weight.iter().all(|layer| layer.is_empty())
-    }
-
-    /// Returns the minimum weight present in this collection. This can be
-    /// different from [self.min_allowed_weight], because that layer might
-    /// be empty (or even the layers above).
-    pub fn min_weight(&self) -> Option<usize> {
-        self.by_weight.iter().position(|layer| !layer.is_empty())
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &SearchNode> {
-        self.by_weight.iter().flatten()
-    }
-
-    /// Removes the families of the least weight from the structure.
-    /// Once this method is called, elements of weight < self.min_weight
-    /// should not be inserted! Elements with exactly the minimum weight
-    /// are allowed though (lateral exploration).
-    pub fn pop(&mut self) -> Option<Vec<SearchNode>> {
-        for (i, layer) in self.by_weight.iter_mut().enumerate() {
-            if i < self.min_allowed_weight {
-                assert!(layer.is_empty())
-            }
-
-            // Take the first non-empty layer we see
-            if !layer.is_empty() {
-                return Some(std::mem::take(layer));
-            }
-        }
-        None
-    }
-
-    pub fn extend(&mut self, iter: impl IntoIterator<Item = Family>) {
-        for family in iter {
-            let node = SearchNode::Arbitrary(family);
-            self.put(node);
-        }
-    }
-
-    pub fn put(&mut self, node: SearchNode) {
-        let weight = match &node {
-            SearchNode::Arbitrary(family) => family.weight(),
-            SearchNode::Simple(simple) => {
-                simple.before.0.len() + simple.num_repeats + simple.after.0.len()
-            }
-        };
-        debug_assert!(weight >= self.min_allowed_weight);
-
-        loop {
-            match self.by_weight.get_mut(weight) {
-                Some(layer) => {
-                    layer.push(node);
-                    break;
-                }
-                None => self.by_weight.push(vec![]),
-            }
-        }
-    }
-
+impl Frontier<SearchNode> {
     pub fn all_simple(&self) -> bool {
         self.iter().all(|f| matches!(f, SearchNode::Simple(_)))
     }
 }
 
+impl Weight for SearchNode {
+    fn weight(&self) -> usize {
+        match self {
+            SearchNode::Arbitrary(x) => x.weight(),
+            SearchNode::Simple(x) => x.before.0.len() + x.num_repeats + x.after.0.len(),
+        }
+    }
+}
+
 impl SearchContext {
     pub fn new(base: u8) -> Self {
+        let initial_family = Family::any(base);
+        let mut frontier = Frontier::new();
+        frontier.put(SearchNode::Arbitrary(initial_family));
+
         Self {
             base,
             iter: 0,
-            frontier: Frontier::new(base),
-            primes: vec![],
+            frontier,
+            primes: CandidateSequences::new(),
             stats: RefCell::new(Stats::default()),
         }
-    }
-
-    pub fn minimize_primes(&mut self) {
-        // TODO: this seems kind of ad-hoc. is there a better approach?
-        let minimized: Vec<_> = self
-            .primes
-            .iter()
-            .filter(|(seq, _)| self.test_for_contained_prime(seq).is_none())
-            .cloned()
-            .collect();
-        self.primes = minimized;
     }
 
     pub fn search_one_level(&mut self) {
@@ -235,7 +154,7 @@ impl SearchContext {
         let value = seq.value(self.base);
         if self.test_for_prime(&value) {
             debug_println!("  Saving {}, contracts to prime", family);
-            self.primes.push((seq, value));
+            self.primes.insert(seq);
             return;
         }
 
@@ -268,13 +187,14 @@ impl SearchContext {
 
         // Let's see if we can split it in an interesting way
         if let Some(children) = self.split_on_repeat(&family, 3) {
-            self.frontier.extend(children);
+            self.frontier
+                .extend(children.into_iter().map(SearchNode::Arbitrary));
             return;
         }
 
         if family.weight() >= 2 {
             if let Some(child) = self.split_on_necessary_digit(&family) {
-                self.frontier.extend([child]);
+                self.frontier.put(SearchNode::Arbitrary(child));
                 return;
             }
         }
@@ -284,13 +204,16 @@ impl SearchContext {
         // have to worry about that.
         let slot = self.iter % family.cores.len();
         debug_assert!(!family.cores[slot].is_empty());
-        if family.weight() == 1 {
+        let children = if family.weight() == 1 {
             debug_println!("  Splitting {} left", family);
-            self.frontier.extend(family.split_left(slot));
+            family.split_left(slot)
         } else {
             debug_println!("  Splitting {} right", family);
-            self.frontier.extend(family.split_right(slot));
-        }
+            family.split_right(slot)
+        };
+        self.frontier
+            .extend(children.into_iter().map(SearchNode::Arbitrary));
+
         // We also need to consider the case where the chosen core expands to
         // the empty string. However, in the case where there's one core, this
         // is pretty redundant with the work we're doing in reduce_core().
@@ -300,7 +223,7 @@ impl SearchContext {
         if family.cores.len() > 1 {
             family.cores[slot].clear();
             family.simplify();
-            self.frontier.extend([family]);
+            self.frontier.put(SearchNode::Arbitrary(family));
         }
     }
 
@@ -314,7 +237,7 @@ impl SearchContext {
 
         // Test if it contains a prime
         let start = Instant::now();
-        for (prime, _) in &self.primes {
+        for prime in self.primes.iter() {
             let result = is_substring_of_simple(prime, &family);
             self.stats.borrow_mut().num_simple_substring_checks += 1;
             if let SubstringResult::Yes = result {
@@ -337,7 +260,7 @@ impl SearchContext {
             }
             seq += family.after;
 
-            self.primes.push((seq, value));
+            self.primes.insert(seq);
             return;
         }
 
@@ -366,7 +289,7 @@ impl SearchContext {
                 let value = seq.value(self.base);
                 if self.test_for_prime(&value) {
                     debug_println!("  Saving {}, is prime", seq);
-                    self.primes.push((seq, value));
+                    self.primes.insert(seq);
                 } else {
                     allowed_digits.push(digit);
                 }
@@ -384,7 +307,7 @@ impl SearchContext {
         // We don't need to search for *all* possible primes, just the minimal
         // ones. And if we've been doing our job right, we should have a complete
         // list of them (up to a length limit).
-        let result = self.primes.iter().map(|(subseq, _)| subseq).find(|subseq| {
+        let result = self.primes.iter().find(|subseq| {
             self.stats.borrow_mut().num_substring_checks += 1;
             is_proper_substring(subseq, seq)
         });
@@ -534,28 +457,6 @@ impl SearchContext {
         }
         None
     }
-}
-
-fn is_proper_substring(needle: &DigitSeq, haystack: &DigitSeq) -> bool {
-    // Save some time when the needle is too large, and also, rule out identical
-    // strings.
-    if needle.0.len() >= haystack.0.len() {
-        return false;
-    }
-
-    let mut iter = haystack.0.iter().copied();
-    for d in needle.0.iter().copied() {
-        // Chomp iter until we find that digit
-        loop {
-            match iter.next() {
-                Some(d2) if d == d2 => break,
-                Some(_) => {}
-                None => return false,
-            }
-        }
-    }
-    // If we got here, then hooray, this is a match!
-    true
 }
 
 pub enum SubstringResult {

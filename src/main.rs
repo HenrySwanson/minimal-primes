@@ -1,15 +1,17 @@
 use clap::Parser;
-use data::{Digit, DigitSeq};
+use data_structures::CandidateSequences;
 use itertools::Itertools;
 use num_bigint::{BigInt, BigUint};
 use num_prime::nt_funcs::is_prime;
 use search::{is_substring_of_simple, search_for_simple_families};
+use sequences::{Digit, DigitSeq};
 use std::{sync::atomic::AtomicBool, usize};
 
 mod composite;
-mod data;
+mod data_structures;
 mod math;
 mod search;
+mod sequences;
 mod sieve;
 
 static LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -116,7 +118,7 @@ fn main() {
     }
 }
 
-fn do_full(cmd: &FullArgs) -> (Vec<(DigitSeq, BigUint)>, Vec<search::SearchNode>) {
+fn do_full(cmd: &FullArgs) -> (CandidateSequences, Vec<search::SearchNode>) {
     let ctx = do_search(&cmd.search_args);
     let mut primes = ctx.primes;
     let mut leftover_branches = vec![];
@@ -171,7 +173,7 @@ fn do_full(cmd: &FullArgs) -> (Vec<(DigitSeq, BigUint)>, Vec<search::SearchNode>
         // before it conflicts with a known minimal prime.
         // Figure out what that range is.
         let mut n_limit = None;
-        for (p, _) in &primes {
+        for p in primes.iter() {
             match is_substring_of_simple(&p, simple) {
                 search::SubstringResult::Yes => {
                     println!(
@@ -198,7 +200,7 @@ fn do_full(cmd: &FullArgs) -> (Vec<(DigitSeq, BigUint)>, Vec<search::SearchNode>
                 if is_prime(&value, None).probably() {
                     let seq = simple.sequence_with(n);
                     println!("Found prime {}", seq);
-                    primes.push((seq, value));
+                    primes.insert(seq);
                     continue 'family;
                 }
             }
@@ -221,7 +223,7 @@ fn do_full(cmd: &FullArgs) -> (Vec<(DigitSeq, BigUint)>, Vec<search::SearchNode>
                 let digitseq =
                     DigitSeq(p.to_radix_be(base.into()).into_iter().map(Digit).collect());
                 println!("Found prime at exponent {}: {}", i, digitseq);
-                primes.push((digitseq, p));
+                primes.insert(digitseq);
             }
             None => {
                 println!("Unable to find prime in the given range: {}", simple);
@@ -230,11 +232,11 @@ fn do_full(cmd: &FullArgs) -> (Vec<(DigitSeq, BigUint)>, Vec<search::SearchNode>
         }
     }
 
-    primes.sort_by_key(|(_, p)| p.clone());
+    primes.sort();
     println!(
         "Final set of primes ({}): {}",
         primes.len(),
-        primes.iter().map(|(seq, _)| seq).format(", ")
+        primes.iter().format(", ")
     );
     (primes, leftover_branches)
 }
@@ -248,7 +250,7 @@ fn do_search(cmd: &SearchArgs) -> search::SearchContext {
         println!("{}", f);
     }
     println!("---- MINIMAL PRIMES ----");
-    println!("{}", ctx.primes.iter().map(|(seq, _)| seq).format(", "));
+    println!("{}", ctx.primes.iter().format(", "));
     println!("------------");
     println!(
         "{} primes found, {} branches unresolved",
@@ -406,7 +408,7 @@ mod tests {
 
     fn compare_primes(ctx: &SearchContext, require_all: bool) {
         let mut truth_iter = iter_ground_truth(ctx.base).peekable();
-        let mut iter = ctx.primes.iter().map(|(seq, _)| seq.to_string()).peekable();
+        let mut iter = ctx.primes.iter().map(|seq| seq.to_string()).peekable();
 
         let mut fail = false;
         loop {

@@ -3,10 +3,10 @@ use std::fmt::Write;
 use itertools::Itertools;
 use num_bigint::BigUint;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Digit(pub u8);
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DigitSeq(pub Vec<Digit>);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -271,6 +271,22 @@ impl TryFrom<Family> for SimpleFamily {
             num_repeats,
             after,
         })
+    }
+}
+
+impl Ord for DigitSeq {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // First compare length; the longer one is larger
+        self.0.len().cmp(&other.0.len()).then_with(|| {
+            // If they're equal length, sort lexicographically
+            self.0.cmp(&other.0)
+        })
+    }
+}
+
+impl PartialOrd for DigitSeq {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(&other))
     }
 }
 
