@@ -1,5 +1,7 @@
 use clap::Parser;
+use data::{Digit, DigitSeq};
 use itertools::Itertools;
+use num_bigint::{BigInt, BigUint};
 use search::search_for_simple_families;
 use std::sync::atomic::AtomicBool;
 
@@ -38,12 +40,13 @@ enum Command {
     Search(SearchArgs),
     /// Sieves through a sequence of the form k b^n + c.
     Sieve(SieveArgs),
+    /// Do both search and sieve!
+    Full(FullArgs),
 }
 
 #[derive(clap::Args)]
 struct SearchArgs {
     /// Base, e.g., decimal, binary, etc.
-    #[arg(default_value_t = 10)]
     base: u8,
 
     /// Stop exploring when families get above this weight.
@@ -81,21 +84,112 @@ struct SieveArgs {
     p_max: u64,
 }
 
+#[derive(clap::Args)]
+struct FullArgs {
+    #[clap(flatten)]
+    search_args: SearchArgs,
+
+    /// upper bound for n
+    #[arg(default_value_t = 5_000)]
+    n_hi: usize,
+
+    /// max p to sieve with
+    #[arg(default_value_t = 1_000_000)]
+    p_max: u64,
+}
+
 fn main() {
     let args = Args::parse();
     LOGGING_ENABLED.store(args.log, std::sync::atomic::Ordering::Relaxed);
 
     match args.command {
         Command::Search(cmd) => {
-            do_search(cmd);
+            do_search(&cmd);
         }
         Command::Sieve(cmd) => {
-            do_sieve(cmd);
+            do_sieve(&cmd);
+        }
+        Command::Full(cmd) => {
+            do_full(&cmd);
         }
     }
 }
 
-fn do_search(cmd: SearchArgs) {
+fn do_full(cmd: &FullArgs) -> (Vec<(DigitSeq, BigUint)>, Vec<search::SearchNode>) {
+    let ctx = do_search(&cmd.search_args);
+
+    println!("---- SIEVING PHASE ----");
+
+    let mut primes = ctx.primes;
+    let mut leftover_branches = vec![];
+
+    // TODO: sieve them all at the same time!
+    for family in ctx.frontier.iter().cloned() {
+        let simple = match &family {
+            search::SearchNode::Simple(x) => x,
+            _ => {
+                leftover_branches.push(family);
+                continue;
+            }
+        };
+
+        // Compute the sequence for this family: xy*z
+        let base = cmd.search_args.base;
+        let x = simple.before.value(base);
+        let y = simple.center.0;
+        let z = simple.after.value(base);
+
+        let b_z = BigUint::from(base).pow(simple.after.0.len() as u32);
+        let d = u64::from(base) - 1;
+        let k = (x * d + y) * &b_z;
+        let c = BigInt::from(d * z) - BigInt::from(y * b_z);
+
+        // Try to fit it into the appropriate ranges
+        let k = match u64::try_from(k) {
+            Ok(k) => k,
+            Err(e) => {
+                println!("Can't convert {} to u64", e.into_original());
+                leftover_branches.push(family);
+                continue;
+            }
+        };
+        let c = match i64::try_from(c) {
+            Ok(c) => c,
+            Err(e) => {
+                println!("Can't convert {} to i64", e.into_original());
+                leftover_branches.push(family);
+                continue;
+            }
+        };
+
+        // Great, we have a sequence! Sieve it and see what we can get :)
+        println!(
+            "Investigating family {} -> ({}*{}^n+{})/{}",
+            simple, k, base, c, d
+        );
+        match sieve::find_first_prime(base, k, c, d, simple.num_repeats, cmd.n_hi, cmd.p_max) {
+            Some((i, p)) => {
+                let digitseq =
+                    DigitSeq(p.to_radix_be(base.into()).into_iter().map(Digit).collect());
+                println!("Found prime at exponent {}: {}", i, digitseq);
+                primes.push((digitseq, p));
+            }
+            None => {
+                println!("Unable to find prime in the given range: {}", simple);
+                leftover_branches.push(family);
+            }
+        }
+    }
+
+    println!(
+        "Final set of primes ({}): {}",
+        primes.len(),
+        primes.iter().map(|(seq, _)| seq).format(", ")
+    );
+    (primes, leftover_branches)
+}
+
+fn do_search(cmd: &SearchArgs) -> search::SearchContext {
     let ctx =
         search_for_simple_families(cmd.base, cmd.max_weight, cmd.max_iter, cmd.stop_when_simple);
 
@@ -134,9 +228,11 @@ fn do_search(cmd: SearchArgs) {
             .duration_simple_substring_checks
             .as_millis()
     );
+
+    ctx
 }
 
-fn do_sieve(cmd: SieveArgs) {
+fn do_sieve(cmd: &SieveArgs) {
     let x =
         sieve::find_first_prime(cmd.base, cmd.k, cmd.c, 1, cmd.n_lo, cmd.n_hi, cmd.p_max).unwrap();
     println!("{}, {}", x.0, x.1);

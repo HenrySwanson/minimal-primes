@@ -34,11 +34,7 @@ pub fn search_for_simple_families(
         }
 
         if stop_when_simple {
-            if ctx
-                .frontier
-                .iter()
-                .all(|f| matches!(f, SearchNode::Simple(_)))
-            {
+            if ctx.frontier.all_simple() {
                 println!("All remaining families are simple; stopping...");
                 break;
             }
@@ -96,7 +92,7 @@ pub struct Frontier {
     min_allowed_weight: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SearchNode {
     Arbitrary(Family),
     Simple(SimpleFamily),
@@ -174,6 +170,10 @@ impl Frontier {
                 None => self.by_weight.push(vec![]),
             }
         }
+    }
+
+    pub fn all_simple(&self) -> bool {
+        self.iter().all(|f| matches!(f, SearchNode::Simple(_)))
     }
 }
 

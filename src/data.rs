@@ -16,7 +16,7 @@ pub struct Family {
     pub cores: Vec<Vec<Digit>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SimpleFamily {
     pub before: DigitSeq,
     pub center: Digit,

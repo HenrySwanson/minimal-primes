@@ -79,21 +79,24 @@ impl Sequence {
     }
 
     fn check_term_equal(&self, base: u64, p: u64, n: usize) -> bool {
-        let mut x = match p.checked_add_signed(-self.c) {
-            Some(x) => x,
-            None => return false,
-        };
+        let mut x = u128::from(p);
+        x *= u128::from(self.d);
+        if self.c > 0 {
+            x -= u128::from(self.c.unsigned_abs());
+        } else {
+            x += u128::from(self.c.unsigned_abs());
+        }
 
-        if x % self.k != 0 {
+        if x % u128::from(self.k) != 0 {
             return false;
         }
-        x /= self.k;
+        x /= u128::from(self.k);
 
         for _ in 0..n {
-            if x % base != 0 {
+            if x % u128::from(base) != 0 {
                 return false;
             }
-            x /= base;
+            x /= u128::from(base);
         }
 
         x == 1
