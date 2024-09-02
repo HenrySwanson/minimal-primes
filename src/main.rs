@@ -4,6 +4,7 @@ use itertools::Itertools;
 use num_bigint::{BigInt, BigUint};
 use search::{is_substring_of_simple, search_for_simple_families};
 use sequences::{Digit, DigitSeq};
+use sieve::Sequence;
 use std::{sync::atomic::AtomicBool, usize};
 
 mod composite;
@@ -161,62 +162,77 @@ fn do_full(cmd: &FullArgs) -> (CandidateSequences, Vec<search::SearchNode>) {
     }
 
     println!("---- SIEVING PHASE ----");
+    let base = cmd.search_args.base;
     let mut primes = ctx.primes;
-    let mut leftover_branches = vec![];
+    let mut unsolved_branches = vec![];
+    let mut remaining_branches: Vec<_> = ctx
+        .frontier
+        .iter()
+        .map(|family| {
+            let simple = match &family {
+                search::SearchNode::Simple(x) => x,
+                _ => unreachable!("found non-simple family after all_simple()"),
+            };
 
+            // Compute the sequence for this family: xy*z
+            let x = simple.before.value(base);
+            let y = simple.center.0;
+            let z = simple.after.value(base);
+
+            let b_z = BigUint::from(base).pow(simple.after.0.len() as u32);
+            let d = u64::from(base) - 1;
+            let k = (x * d + y) * &b_z;
+            let c = BigInt::from(d * z) - BigInt::from(y * b_z);
+
+            // Try to fit it into the appropriate ranges
+            let k = u64::try_from(k)
+                .unwrap_or_else(|e| panic!("Can't convert {} to u64", e.into_original()));
+            let c = i64::try_from(c)
+                .unwrap_or_else(|e| panic!("Can't convert {} to i64", e.into_original()));
+
+            (simple, (k, c, d, simple.num_repeats, 16))
+        })
+        .collect();
+
+    // Okay, now we have a collection of simple familes, and the sequences
+    // they correspond to. Let's do some sieving.
     // TODO: sieve them all at the same time!
-    for family in ctx.frontier.iter().cloned() {
-        let simple = match &family {
-            search::SearchNode::Simple(x) => x,
-            _ => unreachable!("found non-simple family after all_simple()"),
-        };
-
-        // Compute the sequence for this family: xy*z
-        let base = cmd.search_args.base;
-        let x = simple.before.value(base);
-        let y = simple.center.0;
-        let z = simple.after.value(base);
-
-        let b_z = BigUint::from(base).pow(simple.after.0.len() as u32);
-        let d = u64::from(base) - 1;
-        let k = (x * d + y) * &b_z;
-        let c = BigInt::from(d * z) - BigInt::from(y * b_z);
-
-        // Try to fit it into the appropriate ranges
-        let k = match u64::try_from(k) {
-            Ok(k) => k,
-            Err(e) => {
-                println!("Can't convert {} to u64", e.into_original());
-                leftover_branches.push(family);
+    while !remaining_branches.is_empty() {
+        for (simple, (k, c, d, lo, len)) in std::mem::take(&mut remaining_branches) {
+            // Real quick, check if this can be eliminated via a minimal prime
+            if let Some(p) = primes
+                .iter()
+                .find(|p| match is_substring_of_simple(p, simple) {
+                    search::SubstringResult::Never => false,
+                    search::SubstringResult::Eventually(n) => lo >= n,
+                    search::SubstringResult::Yes => true,
+                })
+            {
+                println!("{} can be eliminated, since it contains {}", simple, p);
                 continue;
             }
-        };
-        let c = match i64::try_from(c) {
-            Ok(c) => c,
-            Err(e) => {
-                println!("Can't convert {} to i64", e.into_original());
-                leftover_branches.push(family);
-                continue;
-            }
-        };
 
-        // Great, we have a sequence! Sieve it and see what we can get :)
-        let n_lo = simple.num_repeats;
-        let n_hi = cmd.n_hi;
-        println!(
-            "Investigating family {} -> ({}*{}^n+{})/{} for n from {} to {}",
-            simple, k, base, c, d, n_lo, n_hi,
-        );
-        match sieve::find_first_prime(base, k, c, d, n_lo, n_hi, cmd.p_max) {
-            Some((i, p)) => {
-                let digitseq =
-                    DigitSeq(p.to_radix_be(base.into()).into_iter().map(Digit).collect());
-                println!("Found prime at exponent {}: {}", i, digitseq);
-                primes.insert(digitseq);
-            }
-            None => {
-                println!("Unable to find prime in the given range: {}", simple);
-                leftover_branches.push(family);
+            let hi = std::cmp::min(lo + len, cmd.n_hi);
+            println!(
+                "Investigating family {} -> ({}*{}^n+{})/{} for n from {} to {}",
+                simple, k, base, c, d, lo, hi,
+            );
+            match sieve::find_first_prime(base, k, c, d, lo, hi, cmd.p_max) {
+                Some((i, p)) => {
+                    let digitseq =
+                        DigitSeq(p.to_radix_be(base.into()).into_iter().map(Digit).collect());
+                    println!("Found prime at exponent {}: {}", i, digitseq);
+                    primes.insert(digitseq);
+                }
+                None => {
+                    println!("Unable to find prime in the given range: {}", simple);
+                    // Do we give up on this sequence?
+                    if hi == cmd.n_hi {
+                        unsolved_branches.push(search::SearchNode::Simple(simple.clone()));
+                    } else {
+                        remaining_branches.push((simple, (k, c, d, hi, len * 2)))
+                    }
+                }
             }
         }
     }
@@ -227,7 +243,7 @@ fn do_full(cmd: &FullArgs) -> (CandidateSequences, Vec<search::SearchNode>) {
         primes.len(),
         primes.iter().format(", ")
     );
-    (primes, leftover_branches)
+    (primes, unsolved_branches)
 }
 
 fn do_search(cmd: &SearchArgs) -> search::SearchContext {
@@ -282,8 +298,6 @@ fn do_sieve(cmd: &SieveArgs) {
 #[cfg(test)]
 mod tests {
     use std::io;
-
-    use search::SearchContext;
 
     use super::*;
 
@@ -344,39 +358,56 @@ mod tests {
             Status::Complete => {
                 // Simulate it for the full duration
                 let max_weight = get_max_weight(base);
-                let final_ctx = calculate(base, max_weight);
-                compare_primes(&final_ctx, true);
+                let (primes, frontier) = calculate_full(base, max_weight);
+                compare_primes(base, &primes, true);
                 assert!(
-                    final_ctx.frontier.is_empty(),
+                    frontier.is_empty(),
                     "Some branches were not eliminated!\n{}",
-                    final_ctx.frontier.iter().format("\n")
+                    frontier.iter().format("\n")
                 );
             }
             Status::StrayBranches { unresolved } => {
                 // Simulate it for the full duration
                 let max_weight = get_max_weight(base) + 1;
-                let final_ctx = calculate(base, max_weight);
-                compare_primes(&final_ctx, false);
+                let (primes, frontier) = calculate(base, max_weight);
+                compare_primes(base, &primes, false);
                 assert_eq!(
-                    final_ctx.frontier.len(),
+                    frontier.len(),
                     unresolved,
                     "Didn't get the expected number of unsolved branches: {}",
-                    final_ctx.frontier.iter().format("\n")
+                    frontier.iter().format("\n")
                 );
             }
             Status::Unsolved { max_weight } => {
-                let final_ctx = calculate(base, max_weight);
-                compare_primes(&final_ctx, false);
+                let (primes, frontier) = calculate(base, max_weight);
+                compare_primes(base, &primes, false);
                 assert!(
-                    !final_ctx.frontier.is_empty(),
+                    !frontier.is_empty(),
                     "All branches were eliminated, this test should be marked Complete!"
                 );
             }
         }
     }
 
-    fn calculate(base: u8, max_weight: usize) -> SearchContext {
-        search_for_simple_families(base, Some(max_weight), None, false)
+    fn calculate(base: u8, max_weight: usize) -> (CandidateSequences, Vec<search::SearchNode>) {
+        let ctx = search_for_simple_families(base, Some(max_weight), None, false);
+        (ctx.primes, ctx.frontier.iter().cloned().collect())
+    }
+
+    fn calculate_full(
+        base: u8,
+        max_weight: usize,
+    ) -> (CandidateSequences, Vec<search::SearchNode>) {
+        do_full(&FullArgs {
+            search_args: SearchArgs {
+                base,
+                max_weight: Some(max_weight),
+                max_iter: None,
+                stop_when_simple: true,
+            },
+            n_hi: 5000,
+            p_max: 1_000_000,
+        })
     }
 
     fn iter_ground_truth(base: u8) -> impl Iterator<Item = String> {
@@ -395,9 +426,9 @@ mod tests {
             .expect("nonempty ground truth")
     }
 
-    fn compare_primes(ctx: &SearchContext, require_all: bool) {
-        let mut truth_iter = iter_ground_truth(ctx.base).peekable();
-        let mut iter = ctx.primes.iter().map(|seq| seq.to_string()).peekable();
+    fn compare_primes(base: u8, primes: &CandidateSequences, require_all: bool) {
+        let mut truth_iter = iter_ground_truth(base).peekable();
+        let mut iter = primes.iter().map(|seq| seq.to_string()).peekable();
 
         let mut fail = false;
         loop {
