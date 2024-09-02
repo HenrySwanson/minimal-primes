@@ -210,6 +210,35 @@ impl Family {
     }
 }
 
+impl SimpleFamily {
+    pub fn sequence_with(&self, n: usize) -> DigitSeq {
+        let mut seq = self.before.clone();
+        for _ in 0..n {
+            seq += self.center;
+        }
+        seq += &self.after;
+        seq
+    }
+
+    pub fn value(&self, base: u8) -> BigUint {
+        self.value_with(base, self.num_repeats)
+    }
+
+    pub fn value_with(&self, base: u8, n: usize) -> BigUint {
+        let mut value = BigUint::ZERO;
+        for d in &self.before.0 {
+            value = value * base + d.0;
+        }
+        for _ in 0..n {
+            value = value * base + self.center.0;
+        }
+        for d in &self.after.0 {
+            value = value * base + d.0;
+        }
+        value
+    }
+}
+
 impl TryFrom<Family> for SimpleFamily {
     type Error = Family;
 

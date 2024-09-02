@@ -317,7 +317,7 @@ impl SearchContext {
         for (prime, _) in &self.primes {
             let result = is_substring_of_simple(prime, &family);
             self.stats.borrow_mut().num_simple_substring_checks += 1;
-            if result {
+            if let SubstringResult::Yes = result {
                 debug_println!("  Discarding {}, contains prime {}", family, prime);
                 self.stats.borrow_mut().duration_simple_substring_checks += start.elapsed();
                 return;
@@ -326,16 +326,7 @@ impl SearchContext {
         self.stats.borrow_mut().duration_simple_substring_checks += start.elapsed();
 
         // Test if it is a prime
-        let mut value = BigUint::ZERO;
-        for d in &family.before.0 {
-            value = value * self.base + d.0;
-        }
-        for _ in 0..family.num_repeats {
-            value = value * self.base + family.center.0;
-        }
-        for d in &family.after.0 {
-            value = value * self.base + d.0;
-        }
+        let value = family.value(self.base);
 
         if self.test_for_prime(&value) {
             debug_println!("  Saving {}, is prime", family);
@@ -567,8 +558,15 @@ fn is_proper_substring(needle: &DigitSeq, haystack: &DigitSeq) -> bool {
     true
 }
 
-fn is_substring_of_simple(needle: &DigitSeq, haystack: &SimpleFamily) -> bool {
+pub enum SubstringResult {
+    Yes,
+    Never,
+    Eventually(usize),
+}
+
+pub fn is_substring_of_simple(needle: &DigitSeq, haystack: &SimpleFamily) -> SubstringResult {
     let mut needle_iter = needle.0.iter().copied().peekable();
+    let mut repeats_required = 0;
 
     // Three stages: go through before, then center, then after.
     // Try to consume the whole needle.
@@ -578,19 +576,22 @@ fn is_substring_of_simple(needle: &DigitSeq, haystack: &SimpleFamily) -> bool {
                 needle_iter.next();
             }
             Some(_) => {}
-            None => return true,
+            None => break,
         }
     }
 
-    for _ in 0..haystack.num_repeats {
+    // For the center, consume as many digits as we can, even if it's
+    // more than we currently have.
+    loop {
         match needle_iter.peek() {
             Some(d2) if haystack.center == *d2 => {
+                repeats_required += 1;
                 needle_iter.next();
             }
-            // it's the same digit repeated, if it doesn't match
-            // right now, just leave
+            // different digit, time to leave
             Some(_) => break,
-            None => return true,
+            // done with the needle!
+            None => break,
         }
     }
 
@@ -600,11 +601,17 @@ fn is_substring_of_simple(needle: &DigitSeq, haystack: &SimpleFamily) -> bool {
                 needle_iter.next();
             }
             Some(_) => {}
-            None => return true,
+            None => break,
         }
     }
 
-    needle_iter.peek().is_none()
+    if needle_iter.peek().is_some() {
+        SubstringResult::Never
+    } else if repeats_required <= haystack.num_repeats {
+        SubstringResult::Yes
+    } else {
+        SubstringResult::Eventually(repeats_required)
+    }
 }
 
 impl std::fmt::Display for SearchNode {

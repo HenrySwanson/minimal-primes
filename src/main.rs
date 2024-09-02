@@ -2,8 +2,9 @@ use clap::Parser;
 use data::{Digit, DigitSeq};
 use itertools::Itertools;
 use num_bigint::{BigInt, BigUint};
-use search::search_for_simple_families;
-use std::sync::atomic::AtomicBool;
+use num_prime::nt_funcs::is_prime;
+use search::{is_substring_of_simple, search_for_simple_families};
+use std::{sync::atomic::AtomicBool, usize};
 
 mod composite;
 mod data;
@@ -117,14 +118,18 @@ fn main() {
 
 fn do_full(cmd: &FullArgs) -> (Vec<(DigitSeq, BigUint)>, Vec<search::SearchNode>) {
     let ctx = do_search(&cmd.search_args);
-
-    println!("---- SIEVING PHASE ----");
-
     let mut primes = ctx.primes;
     let mut leftover_branches = vec![];
 
+    if !ctx.frontier.all_simple() {
+        println!("Not all remaining branches are simple! Must bail out now.");
+        return (primes, ctx.frontier.iter().cloned().collect());
+    }
+
+    println!("---- SIEVING PHASE ----");
+
     // TODO: sieve them all at the same time!
-    for family in ctx.frontier.iter().cloned() {
+    'family: for family in ctx.frontier.iter().cloned() {
         let simple = match &family {
             search::SearchNode::Simple(x) => x,
             _ => {
@@ -162,12 +167,56 @@ fn do_full(cmd: &FullArgs) -> (Vec<(DigitSeq, BigUint)>, Vec<search::SearchNode>
             }
         };
 
+        // It's possible that a simple family can only be expanded a finite amount
+        // before it conflicts with a known minimal prime.
+        // Figure out what that range is.
+        let mut n_limit = None;
+        for (p, _) in &primes {
+            match is_substring_of_simple(&p, simple) {
+                search::SubstringResult::Yes => {
+                    println!(
+                        "simple family {} already contained a substring {}, instant discard",
+                        simple, p
+                    );
+                    continue 'family;
+                }
+                search::SubstringResult::Never => {}
+                search::SubstringResult::Eventually(n) => {
+                    println!("{} will contain {} at {} repeats", simple, p, n);
+                    n_limit = Some(match n_limit {
+                        Some(n_limit) => std::cmp::max(n_limit, n),
+                        None => n,
+                    })
+                }
+            }
+        }
+
+        if let Some(n_limit) = n_limit {
+            // Just test them directly
+            for n in simple.num_repeats..n_limit {
+                let value = simple.value_with(base, n);
+                if is_prime(&value, None).probably() {
+                    let seq = simple.sequence_with(n);
+                    println!("Found prime {}", seq);
+                    primes.push((seq, value));
+                    continue 'family;
+                }
+            }
+
+            // Nothing? Then this branch will contain a prime and we should
+            // quash it.
+            println!("{} did not become prime before containing a prime", simple);
+            continue 'family;
+        }
+
         // Great, we have a sequence! Sieve it and see what we can get :)
+        let n_lo = simple.num_repeats;
+        let n_hi = cmd.n_hi;
         println!(
-            "Investigating family {} -> ({}*{}^n+{})/{}",
-            simple, k, base, c, d
+            "Investigating family {} -> ({}*{}^n+{})/{} for n from {} to {}",
+            simple, k, base, c, d, n_lo, n_hi,
         );
-        match sieve::find_first_prime(base, k, c, d, simple.num_repeats, cmd.n_hi, cmd.p_max) {
+        match sieve::find_first_prime(base, k, c, d, n_lo, n_hi, cmd.p_max) {
             Some((i, p)) => {
                 let digitseq =
                     DigitSeq(p.to_radix_be(base.into()).into_iter().map(Digit).collect());
@@ -181,6 +230,7 @@ fn do_full(cmd: &FullArgs) -> (Vec<(DigitSeq, BigUint)>, Vec<search::SearchNode>
         }
     }
 
+    primes.sort_by_key(|(_, p)| p.clone());
     println!(
         "Final set of primes ({}): {}",
         primes.len(),
