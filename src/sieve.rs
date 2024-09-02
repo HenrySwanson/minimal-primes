@@ -8,20 +8,22 @@ use num_prime::buffer::{NaiveBuffer, PrimeBufferExt};
 
 use crate::math::gcd_reduce;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Sequence {
     pub k: u64,
     pub c: i64,
     pub d: u64,
+}
+
+#[derive(Debug)]
+pub struct SequenceSlice {
+    seq: Sequence,
     n_lo: usize,
     n_bitvec: BitVec,
 }
 
 impl Sequence {
-    pub fn new(k: u64, c: i64, d: u64, n_lo: usize, n_hi: usize) -> Self {
-        assert!(n_lo <= n_hi);
-        let n_range = n_hi - n_lo;
-
+    pub fn new(k: u64, c: i64, d: u64) -> Self {
         assert_ne!(k, 0);
         assert_ne!(c, 0);
         assert_ne!(d, 0);
@@ -36,8 +38,6 @@ impl Sequence {
             // casting is okay because 0 < gcd <= |c|
             c: c / (gcd as i64),
             d: d / gcd,
-            n_lo,
-            n_bitvec: BitVec::repeat(true, n_range),
         }
     }
 
@@ -51,31 +51,6 @@ impl Sequence {
         let (q, r) = kbnc.div_rem(&self.d.into());
         debug_assert_eq!(r, BigUint::ZERO);
         q
-    }
-
-    pub fn check_n(&self, n: usize) -> bool {
-        self.n_bitvec[n - self.n_lo]
-    }
-
-    pub fn eliminate_n(&mut self, n: usize) {
-        self.n_bitvec.set(n - self.n_lo, false);
-    }
-
-    pub fn eliminate_multiple(&mut self, p: u64, base: u64, start: usize, spacing: usize) {
-        let mut idx = start - self.n_lo;
-
-        // It's possible the term we're about to eliminate is actually p itself.
-        // Let's avoid that, if so.
-        // TODO: actually, this should report a prime immediately! not that that'll
-        // happen in the interesting cases, but still!
-        if self.check_term_equal(base, p, start) {
-            idx += spacing;
-        }
-
-        while let Some(mut slot) = self.n_bitvec.get_mut(idx) {
-            slot.set(false);
-            idx += spacing;
-        }
     }
 
     fn check_term_equal(&self, base: u64, p: u64, n: usize) -> bool {
@@ -108,6 +83,44 @@ impl Sequence {
     }
 }
 
+impl SequenceSlice {
+    pub fn new(seq: Sequence, n_lo: usize, n_hi: usize) -> Self {
+        assert!(n_lo <= n_hi);
+        let n_range = n_hi - n_lo;
+
+        Self {
+            seq,
+            n_lo,
+            n_bitvec: BitVec::repeat(true, n_range),
+        }
+    }
+
+    pub fn check_n(&self, n: usize) -> bool {
+        self.n_bitvec[n - self.n_lo]
+    }
+
+    pub fn eliminate_n(&mut self, n: usize) {
+        self.n_bitvec.set(n - self.n_lo, false);
+    }
+
+    pub fn eliminate_multiple(&mut self, p: u64, base: u64, start: usize, spacing: usize) {
+        let mut idx = start - self.n_lo;
+
+        // It's possible the term we're about to eliminate is actually p itself.
+        // Let's avoid that, if so.
+        // TODO: actually, this should report a prime immediately! not that that'll
+        // happen in the interesting cases, but still!
+        if self.seq.check_term_equal(base, p, start) {
+            idx += spacing;
+        }
+
+        while let Some(mut slot) = self.n_bitvec.get_mut(idx) {
+            slot.set(false);
+            idx += spacing;
+        }
+    }
+}
+
 pub fn find_first_prime(
     base: u8,
     k: u64,
@@ -115,34 +128,43 @@ pub fn find_first_prime(
     d: u64,
     n_lo: usize,
     n_hi: usize,
+    p_max: u64,
+) -> Option<(usize, BigUint)> {
+    let seq = Sequence::new(k, c, d);
+    let mut slice = SequenceSlice::new(seq, n_lo, n_hi);
+
+    sieve(base, &mut slice, p_max)
+}
+
+pub fn sieve(
+    base: u8,
+    slice: &mut SequenceSlice,
     // TODO: how many? can i decide from "outside"?
     p_max: u64,
 ) -> Option<(usize, BigUint)> {
-    let n_range = n_hi - n_lo;
-    let mut seq = Sequence::new(k, c, d, n_lo, n_hi);
-
     // Decide how many steps for baby-step giant-step
+    let n_range = slice.n_bitvec.len();
     let num_baby_steps = (n_range as f64).sqrt() as usize;
     let num_giant_steps = n_range.div_ceil(num_baby_steps);
 
     // Now go and eliminate a bunch of terms
     let mut prime_buffer = NaiveBuffer::new();
     for p in prime_buffer.primes(p_max) {
-        baby_step_giant_step(base.into(), *p, num_baby_steps, num_giant_steps, &mut seq);
+        baby_step_giant_step(base.into(), *p, num_baby_steps, num_giant_steps, slice);
     }
 
     // Lastly, iterate through the remaining numbers and see if they're prime
     println!(
         "{}/{} remaining",
-        seq.n_bitvec.count_ones(),
-        seq.n_bitvec.len()
+        slice.n_bitvec.count_ones(),
+        slice.n_bitvec.len()
     );
-    for i in seq.n_bitvec.iter_ones() {
-        let exponent = seq.n_lo + i;
+    for i in slice.n_bitvec.iter_ones() {
+        let exponent = slice.n_lo + i;
         println!("Start computing #{}", exponent);
 
         // TODO: re-use the previous computation?
-        let value = seq.compute_term(exponent as u32, base.into());
+        let value = slice.seq.compute_term(exponent as u32, base.into());
         println!("Start checking #{}", exponent);
 
         if prime_buffer.is_prime(&value, None).probably() {
@@ -160,7 +182,7 @@ fn baby_step_giant_step(
     p: u64,
     num_baby_steps: usize,
     num_giant_steps: usize,
-    seq: &mut Sequence,
+    slice: &mut SequenceSlice,
 ) {
     // This works by solving b^n = (-c/k) mod p for n, using baby-step-giant-step.
 
@@ -171,26 +193,26 @@ fn baby_step_giant_step(
     // For now though, skip it! (TODO)
     if
     /* p < seq.d && */
-    seq.d.is_multiple_of(&p) {
+    slice.seq.d.is_multiple_of(&p) {
         println!(
             "Skipping prime {}, it divides the denominator d={}",
-            p, seq.d
+            p, slice.seq.d
         );
         return;
     }
 
     // Compute some inverses. If k or b is zero mod p, we need to check whether c is
     // zero mod p.
-    let (kinv, binv) = match (seq.k.invm(&p), base.invm(&p)) {
+    let (kinv, binv) = match (slice.seq.k.invm(&p), base.invm(&p)) {
         (Some(x), Some(y)) => (x, y),
         (_, _) => {
             // This'll always be equivalent to c mod p. If we're using this right,
             // we'll have non-zero c%p, so we can't eliminate anything.
             assert_ne!(
-                seq.c.unsigned_abs() % p,
+                slice.seq.c.unsigned_abs() % p,
                 0,
                 "Sequence {:?} is always divisible by {}",
-                seq,
+                slice.seq,
                 p
             );
             return;
@@ -198,21 +220,21 @@ fn baby_step_giant_step(
     };
 
     // We first have to get c as a u64 before we can do mod-p math with it.
-    let neg_c_mod_p = if seq.c >= 0 {
-        seq.c.unsigned_abs().negm(&p)
+    let neg_c_mod_p = if slice.seq.c >= 0 {
+        slice.seq.c.unsigned_abs().negm(&p)
     } else {
-        seq.c.unsigned_abs()
+        slice.seq.c.unsigned_abs()
     };
 
     let ck = neg_c_mod_p.mulm(kinv, &p);
-    let (baby_table, order) = baby_steps(base, p, num_baby_steps, seq.n_lo);
+    let (baby_table, order) = baby_steps(base, p, num_baby_steps, slice.n_lo);
 
     // If we know the order, our baby table contains all powers of b.
     // If ck is in there, we can do some elimination.
     if let Some(order) = order {
         if let Some(i) = baby_table.get(&ck) {
             // eliminate L + i, and all multiples of order afterward
-            seq.eliminate_multiple(p, base, seq.n_lo + i, order);
+            slice.eliminate_multiple(p, base, slice.n_lo + i, order);
         }
         return;
     }
@@ -230,7 +252,7 @@ fn baby_step_giant_step(
     for i in 0..num_giant_steps {
         if let Some(j) = baby_table.get(&ckb) {
             // Found a solution! (-c/k)b^(im) = b^(L+j), so we eliminate L+im+j
-            let exp = seq.n_lo + i * num_baby_steps + j;
+            let exp = slice.n_lo + i * num_baby_steps + j;
 
             // Is this the first or second solution we've found?
             match first_solution {
@@ -249,7 +271,7 @@ fn baby_step_giant_step(
     }
 
     if let Some(exp) = first_solution {
-        seq.eliminate_multiple(p, base, exp, order);
+        slice.eliminate_multiple(p, base, exp, order);
     }
 }
 
@@ -290,17 +312,18 @@ mod tests {
         let n_range = 100;
         let max_p = 100;
 
-        let mut seq = Sequence::new(5, 1, 1, 0, n_range);
+        let seq = Sequence::new(5, 1, 1);
+        let mut slice = SequenceSlice::new(seq, 0, n_range);
         let mut prime_buffer = NaiveBuffer::new();
         for p in prime_buffer.primes(max_p) {
-            baby_step_giant_step(base, *p, 10, 10, &mut seq);
+            baby_step_giant_step(base, *p, 10, 10, &mut slice);
         }
 
         for i in 0..n_range {
             // Check every remaining element in the sequence
-            let exp = seq.n_lo + i;
-            let elt = seq.compute_term(exp as u32, base);
-            let is_remaining = seq.check_n(i);
+            let exp = slice.n_lo + i;
+            let elt = slice.seq.compute_term(exp as u32, base);
+            let is_remaining = slice.check_n(i);
             let is_prime = prime_buffer.is_prime(&elt, None).probably();
 
             // If it's prime, we must not eliminate it.
@@ -322,7 +345,7 @@ mod tests {
                     elt,
                     seq.k,
                     base,
-                    seq.n_lo + i,
+                    slice.n_lo + i,
                     seq.c,
                     min_factor
                 );
@@ -330,7 +353,7 @@ mod tests {
         }
 
         // Also check we eliminated a substantial number of them
-        let num_remaining = seq.n_bitvec.count_ones();
+        let num_remaining = slice.n_bitvec.count_ones();
         assert!(
             num_remaining < 20,
             "Expected to eliminate more options, there are {} remaining",
