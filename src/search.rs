@@ -257,18 +257,14 @@ impl SearchContext {
         // TODO: is this right?
         // Check if this family is simple or not. If it is, we should
         // re-enqueue it as such. (Note: this is after composite check!)
-        if family.cores.len() == 1 && family.cores[0].len() == 1 {
-            let after = family.digitseqs.pop().unwrap();
-            let before = family.digitseqs.pop().unwrap();
-            let node = SearchNode::Simple(SimpleFamily {
-                before,
-                center: family.cores[0][0],
-                num_repeats: 0,
-                after,
-            });
-            self.frontier.put(node);
-            return;
-        }
+        let mut family = match SimpleFamily::try_from(family) {
+            Ok(simple) => {
+                self.frontier.put(SearchNode::Simple(simple));
+                return;
+            }
+            // can't convert, put it back to normal
+            Err(f) => f,
+        };
 
         // Let's see if we can split it in an interesting way
         if let Some(children) = self.split_on_repeat(&family, 3) {

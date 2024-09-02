@@ -210,6 +210,41 @@ impl Family {
     }
 }
 
+impl TryFrom<Family> for SimpleFamily {
+    type Error = Family;
+
+    fn try_from(mut family: Family) -> Result<Self, Self::Error> {
+        // We need to have exactly one core, and only one digit in it.
+        if family.cores.len() != 1 || family.cores[0].len() != 1 {
+            return Err(family);
+        }
+
+        // Great! Pull out the bits we want.
+        let center = family.cores[0][0];
+        let mut after = family.digitseqs.pop().unwrap();
+        let mut before = family.digitseqs.pop().unwrap();
+
+        // It's quite likely we've got some repeated digits next to
+        // the center. Let's merge those in.
+        let mut num_repeats = 0;
+        while before.0.last() == Some(&center) {
+            num_repeats += 1;
+            before.0.pop();
+        }
+        while after.0.first() == Some(&center) {
+            num_repeats += 1;
+            after.0.remove(0);
+        }
+
+        Ok(SimpleFamily {
+            before,
+            center,
+            num_repeats,
+            after,
+        })
+    }
+}
+
 impl std::fmt::Display for Digit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let d = self.0;
