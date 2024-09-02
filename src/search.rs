@@ -4,11 +4,12 @@ use std::time::{Duration, Instant};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_prime::nt_funcs::is_prime;
+use num_traits::One;
 
 use crate::composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
 use crate::data::{DigitSeq, Family, SimpleFamily};
 use crate::debug_println;
-use crate::math::{big_one, gcd_reduce};
+use crate::math::gcd_reduce;
 
 pub fn search_for_simple_families(
     base: u8,
@@ -529,7 +530,7 @@ impl SearchContext {
                 ),
             );
 
-            if g != big_one() {
+            if g != BigUint::one() {
                 // Got a match! Return xLyLz
                 let mut new = family.clone();
                 let d_less_core = family.cores[0]

@@ -3,24 +3,24 @@
 
 use itertools::Itertools;
 use num_bigint::BigUint;
+use num_integer::Integer;
+use num_traits::identities::One;
 
 use crate::data::Digit;
 use crate::data::DigitSeq;
 use crate::data::Family;
-use crate::math::big_one;
-use crate::math::gcd;
 use crate::math::gcd_reduce;
 
 /// Checks whether this family shares a factor with the base.
 /// Basically just checks the last digit.
-pub fn shares_factor_with_base(base: u8, family: &Family) -> Option<BigUint> {
+pub fn shares_factor_with_base(base: u8, family: &Family) -> Option<u8> {
     // Get the last digit of the family
     let last_seq = family.digitseqs.last().expect("digitseqs nonempty");
     let d = last_seq.0.last()?;
 
-    let gcd = gcd(d.0.into(), base.into());
-    debug_assert!(gcd != BigUint::ZERO);
-    if gcd != big_one() {
+    let gcd = d.0.gcd(&base);
+    debug_assert!(gcd != 0);
+    if gcd != 1 {
         Some(gcd)
     } else {
         None
@@ -69,7 +69,7 @@ pub fn find_perpetual_factor(base: u8, family: &Family, stride: usize) -> Option
         );
 
         // If any of the GCDs are 1, bail out immediately.
-        if g == big_one() {
+        if g == BigUint::one() {
             return None;
         }
 
@@ -134,14 +134,14 @@ pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUi
     let even_repeats: [(usize, usize); 6] = [(0, 0), (2, 0), (0, 2), (1, 1), (1, 3), (3, 1)];
     let even_gcd = gcd_reduce(even_repeats.iter().flat_map(bar));
 
-    if even_gcd == big_one() {
+    if even_gcd == BigUint::one() {
         return None;
     }
 
     let odd_repeats: [(usize, usize); 6] = [(1, 0), (3, 0), (1, 2), (0, 1), (2, 1), (0, 3)];
     let odd_gcd = gcd_reduce(odd_repeats.iter().flat_map(bar));
 
-    if odd_gcd == big_one() {
+    if odd_gcd == BigUint::one() {
         return None;
     }
 

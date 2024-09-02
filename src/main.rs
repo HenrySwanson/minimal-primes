@@ -68,7 +68,7 @@ struct SieveArgs {
     k: u64,
 
     /// c
-    c: u64,
+    c: i64,
 
     /// lower bound for n
     n_lo: usize,
@@ -137,7 +137,8 @@ fn do_search(cmd: SearchArgs) {
 }
 
 fn do_sieve(cmd: SieveArgs) {
-    let x = sieve::find_first_prime(cmd.base, cmd.k, cmd.c, cmd.n_lo, cmd.n_hi, cmd.p_max).unwrap();
+    let x =
+        sieve::find_first_prime(cmd.base, cmd.k, cmd.c, 1, cmd.n_lo, cmd.n_hi, cmd.p_max).unwrap();
     println!("{}, {}", x.0, x.1);
 }
 

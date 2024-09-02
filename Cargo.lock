@@ -222,8 +222,10 @@ dependencies = [
  "clap",
  "itertools",
  "num-bigint",
+ "num-integer",
  "num-modular 0.6.1",
  "num-prime",
+ "num-traits",
 ]
 
 [[package]]
