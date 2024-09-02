@@ -4,6 +4,7 @@ use itertools::Itertools;
 use num_bigint::{BigInt, BigUint};
 use search::{is_substring_of_simple, search_for_simple_families, SearchContext};
 use sequences::{Digit, DigitSeq};
+use sieve::{Sequence, SequenceSlice};
 use std::{ops::ControlFlow, sync::atomic::AtomicBool, usize};
 
 mod composite;
@@ -246,21 +247,31 @@ fn second_stage(
             let c = i64::try_from(c)
                 .unwrap_or_else(|e| panic!("Can't convert {} to i64", e.into_original()));
 
-            (simple, (k, c, d, simple.num_repeats, 16))
+            let seq = Sequence::new(k, c, d);
+
+            (simple, seq)
         })
         .collect();
 
     // Okay, now we have a collection of simple familes, and the sequences
     // they correspond to. Let's do some sieving.
-    // TODO: sieve them all at the same time!
+    let mut n_lo = 0;
+    let mut n_len = 16;
+
     while !remaining_branches.is_empty() {
-        for (simple, (k, c, d, lo, len)) in std::mem::take(&mut remaining_branches) {
-            // Real quick, check if this can be eliminated via a minimal prime
+        let mut sequences_to_sieve = vec![];
+        let mut slices_to_sieve = vec![];
+
+        let lo = n_lo;
+        let hi = std::cmp::min(n_lo + n_len, cmd.n_hi);
+
+        // Real quick, check if this can be eliminated via a minimal prime
+        for (simple, seq) in std::mem::take(&mut remaining_branches) {
             if let Some(p) = primes
                 .iter()
                 .find(|p| match is_substring_of_simple(p, simple) {
                     search::SubstringResult::Never => false,
-                    search::SubstringResult::Eventually(n) => lo >= n,
+                    search::SubstringResult::Eventually(n) => n_lo >= n,
                     search::SubstringResult::Yes => true,
                 })
             {
@@ -268,20 +279,32 @@ fn second_stage(
                 continue;
             }
 
-            let hi = std::cmp::min(lo + len, cmd.n_hi);
-
             // Do we give up on this sequence?
-            if lo >= hi {
+            if n_lo >= cmd.n_hi {
                 println!("Reached limit on n for {}", simple);
                 unsolved_branches.push(search::SearchNode::Simple(simple.clone()));
-                break;
+                continue;
             }
 
+            sequences_to_sieve.push(simple);
+            slices_to_sieve.push(SequenceSlice::new(seq, lo, hi))
+        }
+
+        // Now sieve all these slices at once
+        println!("Sieving {} families", slices_to_sieve.len());
+        sieve::sieve(base, &mut slices_to_sieve, cmd.p_max);
+
+        for (simple, slice) in std::iter::zip(sequences_to_sieve, slices_to_sieve) {
             println!(
-                "Investigating family {} -> ({}*{}^n+{})/{} for n from {} to {}",
-                simple, k, base, c, d, lo, hi,
+                "Investigating family ({}*{}^n+{})/{} for n from {} to {}",
+                slice.seq.k,
+                base,
+                slice.seq.c,
+                slice.seq.d,
+                slice.n_lo(),
+                slice.n_hi(),
             );
-            match sieve::find_first_prime(base, k, c, d, lo, hi, cmd.p_max) {
+            match sieve::last_resort(base, &slice) {
                 Some((i, p)) => {
                     let digitseq =
                         DigitSeq(p.to_radix_be(base.into()).into_iter().map(Digit).collect());
@@ -290,10 +313,13 @@ fn second_stage(
                 }
                 None => {
                     println!("Unable to find prime in the given range: {}", simple);
-                    remaining_branches.push((simple, (k, c, d, hi, len * 2)))
+                    remaining_branches.push((simple, slice.seq))
                 }
             }
         }
+
+        n_lo = hi;
+        n_len *= 2;
     }
 
     primes.sort();

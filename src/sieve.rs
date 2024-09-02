@@ -4,7 +4,8 @@ use bitvec::prelude::BitVec;
 use num_bigint::BigUint;
 use num_integer::Integer;
 use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
-use num_prime::buffer::{NaiveBuffer, PrimeBufferExt};
+use num_prime::buffer::NaiveBuffer;
+use num_prime::nt_funcs::is_prime;
 
 use crate::math::gcd_reduce;
 
@@ -17,7 +18,7 @@ pub struct Sequence {
 
 #[derive(Debug)]
 pub struct SequenceSlice {
-    seq: Sequence,
+    pub seq: Sequence,
     n_lo: usize,
     n_bitvec: BitVec,
 }
@@ -95,6 +96,14 @@ impl SequenceSlice {
         }
     }
 
+    pub fn n_lo(&self) -> usize {
+        self.n_lo
+    }
+
+    pub fn n_hi(&self) -> usize {
+        self.n_lo + self.n_bitvec.len()
+    }
+
     pub fn check_n(&self, n: usize) -> bool {
         self.n_bitvec[n - self.n_lo]
     }
@@ -114,6 +123,11 @@ impl SequenceSlice {
             idx += spacing;
         }
 
+        // Insane edge case: it could also be zero! In that case, bump it up twice.
+        if self.seq.check_term_equal(base, 0, start) {
+            idx += 2 * spacing;
+        }
+
         while let Some(mut slot) = self.n_bitvec.get_mut(idx) {
             slot.set(false);
             idx += spacing;
@@ -131,28 +145,41 @@ pub fn find_first_prime(
     p_max: u64,
 ) -> Option<(usize, BigUint)> {
     let seq = Sequence::new(k, c, d);
-    let mut slice = SequenceSlice::new(seq, n_lo, n_hi);
+    let slice = SequenceSlice::new(seq, n_lo, n_hi);
 
-    sieve(base, &mut slice, p_max)
+    let mut slices = [slice];
+    sieve(base, &mut slices, p_max);
+    last_resort(base, &slices[0])
 }
 
 pub fn sieve(
     base: u8,
-    slice: &mut SequenceSlice,
+    slices: &mut [SequenceSlice],
     // TODO: how many? can i decide from "outside"?
     p_max: u64,
-) -> Option<(usize, BigUint)> {
+) {
+    if slices.is_empty() {
+        return;
+    }
+
     // Decide how many steps for baby-step giant-step
-    let n_range = slice.n_bitvec.len();
+    // TODO: i think i can make it all the same range?
+    let n_range = slices
+        .iter()
+        .map(|slice| slice.n_bitvec.len())
+        .max()
+        .unwrap();
     let num_baby_steps = (n_range as f64).sqrt() as usize;
     let num_giant_steps = n_range.div_ceil(num_baby_steps);
 
     // Now go and eliminate a bunch of terms
     let mut prime_buffer = NaiveBuffer::new();
     for p in prime_buffer.primes(p_max) {
-        baby_step_giant_step(base.into(), *p, num_baby_steps, num_giant_steps, slice);
+        baby_step_giant_step(base.into(), *p, num_baby_steps, num_giant_steps, slices);
     }
+}
 
+pub fn last_resort(base: u8, slice: &SequenceSlice) -> Option<(usize, BigUint)> {
     // Lastly, iterate through the remaining numbers and see if they're prime
     println!(
         "{}/{} remaining",
@@ -167,7 +194,7 @@ pub fn sieve(
         let value = slice.seq.compute_term(exponent as u32, base.into());
         println!("Start checking #{}", exponent);
 
-        if prime_buffer.is_prime(&value, None).probably() {
+        if is_prime(&value, None).probably() {
             return Some((exponent, value));
         }
 
@@ -182,60 +209,109 @@ fn baby_step_giant_step(
     p: u64,
     num_baby_steps: usize,
     num_giant_steps: usize,
-    slice: &mut SequenceSlice,
+    slices: &mut [SequenceSlice],
 ) {
+    // Now that we're dealing with multiple simultaneous sequences, we may need
+    // to skip over some of them. We do so with this vector.
+    let mut skip = vec![false; slices.len()];
+
     // This works by solving b^n = (-c/k) mod p for n, using baby-step-giant-step.
 
     // What about d?
     // If p doesn't divide d, then we don't have to worry; p divides (kb^n+c)/d exactly
     // when it divides kb^n+c.
     // If p does divide d, then we have to be more careful, and count the number of ps.
-    // For now though, skip it! (TODO)
-    if
-    /* p < seq.d && */
-    slice.seq.d.is_multiple_of(&p) {
-        println!(
-            "Skipping prime {}, it divides the denominator d={}",
-            p, slice.seq.d
-        );
-        return;
-    }
+    // For now though, we just skip that prime for that sequence! (TODO)
 
-    // Compute some inverses. If k or b is zero mod p, we need to check whether c is
-    // zero mod p.
-    let (kinv, binv) = match (slice.seq.k.invm(&p), base.invm(&p)) {
-        (Some(x), Some(y)) => (x, y),
-        (_, _) => {
-            // This'll always be equivalent to c mod p. If we're using this right,
-            // we'll have non-zero c%p, so we can't eliminate anything.
-            assert_ne!(
-                slice.seq.c.unsigned_abs() % p,
-                0,
-                "Sequence {:?} is always divisible by {}",
-                slice.seq,
-                p
+    // Compute some inverses!
+    let binv = match base.invm(&p) {
+        Some(x) => x,
+        None => {
+            // If p divides b, then the term will be equivalent to c mod p.
+            // If c is zero, this is always divisible by p, otherwise, it never
+            // is.
+            // The former situation should never arise in practice.
+            println!(
+                "Completely skipping prime {}, it divides the base b={}",
+                p, base
             );
+            for slice in slices {
+                assert_ne!(
+                    slice.seq.c.unsigned_abs() % p,
+                    0,
+                    "Sequence {:?} is always divisible by {}",
+                    slice.seq,
+                    p
+                );
+            }
             return;
         }
     };
 
-    // We first have to get c as a u64 before we can do mod-p math with it.
-    let neg_c_mod_p = if slice.seq.c >= 0 {
-        slice.seq.c.unsigned_abs().negm(&p)
-    } else {
-        slice.seq.c.unsigned_abs()
-    };
+    // We want to compute -c/k for each of our sequences.
+    let ck: Vec<_> = slices
+        .iter()
+        .enumerate()
+        .map(|(i, slice)| {
+            // Here is a convenient place to check d
+            if
+            /* p < seq.d && */
+            slice.seq.d.is_multiple_of(&p) {
+                // TODO: log something
+                skip[i] = true;
+                return 0;
+            }
 
-    let ck = neg_c_mod_p.mulm(kinv, &p);
-    let (baby_table, order) = baby_steps(base, p, num_baby_steps, slice.n_lo);
+            // If k is zero mod p, we have the same situation as with b, but
+            // we only need to check one c.
+            let kinv = match slice.seq.k.invm(&p) {
+                Some(x) => x,
+                None => {
+                    assert_ne!(
+                        slice.seq.c.unsigned_abs() % p,
+                        0,
+                        "Sequence {:?} is always divisible by {}",
+                        slice.seq,
+                        p
+                    );
+                    skip[i] = true;
+                    return 0;
+                }
+            };
+
+            // We first have to get c as a u64 before we can do mod-p math with it.
+            let neg_c_mod_p = if slice.seq.c >= 0 {
+                slice.seq.c.unsigned_abs().negm(&p)
+            } else {
+                slice.seq.c.unsigned_abs()
+            };
+
+            // -c/k mod p
+            neg_c_mod_p.mulm(kinv, &p)
+        })
+        .collect();
+
+    // Take some baby steps
+    let (baby_table, order) = baby_steps(base, p, num_baby_steps, slices[0].n_lo);
+    assert!(
+        baby_table.keys().all(|x| *x != 0),
+        "should never see 0s in baby_table when b has an inverse"
+    );
 
     // If we know the order, our baby table contains all powers of b.
     // If ck is in there, we can do some elimination.
     if let Some(order) = order {
-        if let Some(i) = baby_table.get(&ck) {
-            // eliminate L + i, and all multiples of order afterward
-            slice.eliminate_multiple(p, base, slice.n_lo + i, order);
+        for (idx, slice) in slices.iter_mut().enumerate() {
+            if skip[idx] {
+                continue;
+            }
+
+            if let Some(i) = baby_table.get(&ck[idx]) {
+                // eliminate L + i, and all multiples of order afterward
+                slice.eliminate_multiple(p, base, slice.n_lo + i, order);
+            }
         }
+
         return;
     }
 
@@ -247,31 +323,63 @@ fn baby_step_giant_step(
     // We know that the order divides p-1, so worst-case scenario,
     // we can use that as the order.
     let mut order: usize = (p - 1).try_into().unwrap();
-    let mut first_solution: Option<usize> = None;
+    let mut idx_of_first_solution: Option<usize> = None;
+
+    // Also set an array for tracking the actual solutions we find.
+    let mut solutions = vec![None; slices.len()];
+    let mut n_solutions = 0;
 
     for i in 0..num_giant_steps {
-        if let Some(j) = baby_table.get(&ckb) {
-            // Found a solution! (-c/k)b^(im) = b^(L+j), so we eliminate L+im+j
-            let exp = slice.n_lo + i * num_baby_steps + j;
-
-            // Is this the first or second solution we've found?
-            match first_solution {
-                Some(n) => {
-                    // Great! Two solutions tell us the order of b mod p.
-                    assert!(exp > n);
-                    order = exp - n;
-                    break;
-                }
-                None => first_solution = Some(exp),
-            }
+        // One extra for the repeat solution
+        if n_solutions == slices.len() + 1 {
+            break;
         }
 
-        // Bump ckb
-        ckb = ckb.mulm(bm, &p);
+        // Check whether this step gave a solution for any of the slices
+        for (idx, slice) in slices.iter().enumerate() {
+            // Ignore this slice if we've already solved it (unless we're still looking
+            // for the order). Or if we're just skipping it outright.
+            if skip[idx] || (solutions[idx].is_some() && idx_of_first_solution != Some(idx)) {
+                continue;
+            }
+
+            // See if we got a hit on ckb
+            if let Some(j) = baby_table.get(&ckb[idx]) {
+                // Found a solution! (-c/k)b^(im) = b^(L+j), so we eliminate L+im+j
+                let exp = slice.n_lo + i * num_baby_steps + j;
+
+                n_solutions += 1;
+
+                // Is this a repeat solution? We have to be slightly different if so.
+                if idx_of_first_solution == Some(idx) {
+                    let old_soln = solutions[idx].expect("first solution");
+                    assert!(exp > old_soln);
+                    order = exp - old_soln;
+                    idx_of_first_solution = None; // don't need it anymore
+                } else {
+                    // Save it normally
+                    solutions[idx] = Some(exp);
+                    if n_solutions == 1 {
+                        idx_of_first_solution = Some(idx);
+                    }
+                }
+            }
+
+            // Either way, bump ckb
+            ckb[idx] = ckb[idx].mulm(bm, &p);
+        }
     }
 
-    if let Some(exp) = first_solution {
-        slice.eliminate_multiple(p, base, exp, order);
+    // Okay, after all that, what do we have?
+    // We have some solutions to some of the sequences, and hopefully we have an order.
+    for (idx, slice) in slices.iter_mut().enumerate() {
+        if skip[idx] {
+            continue;
+        }
+
+        if let Some(exp) = solutions[idx] {
+            slice.eliminate_multiple(p, base, exp, order);
+        }
     }
 }
 
@@ -302,6 +410,8 @@ fn baby_steps(
 
 #[cfg(test)]
 mod tests {
+    use num_prime::buffer::PrimeBufferExt;
+
     use super::*;
 
     #[test]
@@ -313,12 +423,14 @@ mod tests {
         let max_p = 100;
 
         let seq = Sequence::new(5, 1, 1);
-        let mut slice = SequenceSlice::new(seq, 0, n_range);
+        let slice = SequenceSlice::new(seq, 0, n_range);
+        let mut slices = [slice];
         let mut prime_buffer = NaiveBuffer::new();
         for p in prime_buffer.primes(max_p) {
-            baby_step_giant_step(base, *p, 10, 10, &mut slice);
+            baby_step_giant_step(base, *p, 10, 10, &mut slices);
         }
 
+        let slice = &slices[0];
         for i in 0..n_range {
             // Check every remaining element in the sequence
             let exp = slice.n_lo + i;
