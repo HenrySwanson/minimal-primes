@@ -82,7 +82,12 @@ impl Sequence {
         let mut x = u128::from(p);
         x *= u128::from(self.d);
         if self.c > 0 {
-            x -= u128::from(self.c.unsigned_abs());
+            let c = u128::from(self.c.unsigned_abs());
+
+            x = match x.checked_sub(c) {
+                Some(x) => x,
+                None => return false,
+            };
         } else {
             x += u128::from(self.c.unsigned_abs());
         }
