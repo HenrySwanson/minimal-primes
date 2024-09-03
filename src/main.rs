@@ -296,11 +296,8 @@ fn second_stage(
 
         for (simple, slice) in std::iter::zip(sequences_to_sieve, slices_to_sieve) {
             println!(
-                "Investigating family ({}*{}^n+{})/{} for n from {} to {}",
-                slice.seq.k,
-                base,
-                slice.seq.c,
-                slice.seq.d,
+                "Investigating family {} for n from {} to {}",
+                slice.seq,
                 slice.n_lo(),
                 slice.n_hi(),
             );

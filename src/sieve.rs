@@ -84,6 +84,12 @@ impl Sequence {
     }
 }
 
+impl std::fmt::Display for Sequence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}*b^n+{})/{}", self.k, self.c, self.d)
+    }
+}
+
 impl SequenceSlice {
     pub fn new(seq: Sequence, n_lo: usize, n_hi: usize) -> Self {
         assert!(n_lo <= n_hi);
@@ -188,17 +194,14 @@ pub fn last_resort(base: u8, slice: &SequenceSlice) -> Option<(usize, BigUint)> 
     );
     for i in slice.n_bitvec.iter_ones() {
         let exponent = slice.n_lo + i;
-        println!("Start computing #{}", exponent);
 
         // TODO: re-use the previous computation?
         let value = slice.seq.compute_term(exponent as u32, base.into());
-        println!("Start checking #{}", exponent);
+        println!("  Check {} at n={}", slice.seq, exponent);
 
         if is_prime(&value, None).probably() {
             return Some((exponent, value));
         }
-
-        println!("Done checking #{}", exponent);
     }
 
     None
@@ -442,8 +445,8 @@ mod tests {
             if is_prime {
                 assert!(
                     is_remaining,
-                    "{} = {}*{}^{}+{} is prime, but was removed from the list",
-                    elt, seq.k, base, exp, seq.c
+                    "{} = {} is prime at n={}, but was removed from the list",
+                    elt, seq, exp
                 );
             // If it's composite, we might have eliminated it. Specifically,
             // if it has small factors, we should have been able to eliminate it.
@@ -453,12 +456,10 @@ mod tests {
                 let min_factor = factors.keys().min().expect("at least one factor");
                 assert!(
                     min_factor >= &max_p.into(),
-                    "{} = {}*{}^{}+{} has unexpected small factor {}",
+                    "{} = {} at n={} has unexpected small factor {}",
                     elt,
-                    seq.k,
-                    base,
+                    seq,
                     slice.n_lo + i,
-                    seq.c,
                     min_factor
                 );
             }
