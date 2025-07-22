@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use bitvec::prelude::BitVec;
+use log::debug;
 use num_bigint::BigUint;
 use num_integer::Integer;
 use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
@@ -187,7 +188,7 @@ pub fn sieve(
 
 pub fn last_resort(base: u8, slice: &SequenceSlice) -> Option<(usize, BigUint)> {
     // Lastly, iterate through the remaining numbers and see if they're prime
-    println!(
+    debug!(
         "{}/{} remaining",
         slice.n_bitvec.count_ones(),
         slice.n_bitvec.len()
@@ -197,7 +198,7 @@ pub fn last_resort(base: u8, slice: &SequenceSlice) -> Option<(usize, BigUint)> 
 
         // TODO: re-use the previous computation?
         let value = slice.seq.compute_term(exponent as u32, base.into());
-        println!("  Check {} at n={}", slice.seq, exponent);
+        debug!("  Check {} at n={}", slice.seq, exponent);
 
         if is_prime(&value, None).probably() {
             return Some((exponent, value));
@@ -234,7 +235,7 @@ fn baby_step_giant_step(
             // If c is zero, this is always divisible by p, otherwise, it never
             // is.
             // The former situation should never arise in practice.
-            println!(
+            debug!(
                 "Completely skipping prime {}, it divides the base b={}",
                 p, base
             );

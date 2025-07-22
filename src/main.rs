@@ -1,6 +1,7 @@
 use clap::Parser;
 use data_structures::CandidateSequences;
 use itertools::Itertools;
+use log::LevelFilter;
 use num_bigint::{BigInt, BigUint};
 use search::{is_substring_of_simple, search_for_simple_families, SearchContext};
 use sequences::{Digit, DigitSeq};
@@ -9,22 +10,11 @@ use std::{ops::ControlFlow, sync::atomic::AtomicBool, usize};
 
 mod composite;
 mod data_structures;
+mod logging;
 mod math;
 mod search;
 mod sequences;
 mod sieve;
-
-static LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
-
-macro_rules! debug_println {
-    ($($arg:tt)*) => {
-        if crate::LOGGING_ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
-            println!($($arg)*);
-        }
-    };
-}
-
-pub(crate) use debug_println;
 
 #[derive(Parser)]
 struct Args {
@@ -32,9 +22,9 @@ struct Args {
     #[command(subcommand)]
     command: Command,
 
-    /// Enable logging
-    #[arg(long)]
-    log: bool,
+    /// Log level
+    #[arg(long, global = true, default_value_t = LevelFilter::Warn)]
+    log_level: LevelFilter,
 }
 
 #[derive(clap::Subcommand)]
@@ -95,7 +85,10 @@ struct SieveArgs {
 
 fn main() {
     let args = Args::parse();
-    LOGGING_ENABLED.store(args.log, std::sync::atomic::Ordering::Relaxed);
+
+    // Set up logging
+    log::set_boxed_logger(Box::new(logging::SimpleLogger)).expect("logger should be uninitialized");
+    log::set_max_level(args.log_level);
 
     match args.command {
         Command::Search(cmd) => {

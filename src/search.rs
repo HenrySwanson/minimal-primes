@@ -2,13 +2,13 @@ use std::cell::RefCell;
 use std::time::{Duration, Instant};
 
 use itertools::Itertools;
+use log::{debug, info, trace};
 use num_bigint::BigUint;
 use num_prime::nt_funcs::is_prime;
 use num_traits::One;
 
 use crate::composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
 use crate::data_structures::{is_proper_substring, CandidateSequences, Frontier, Weight};
-use crate::debug_println;
 use crate::math::gcd_reduce;
 use crate::sequences::{DigitSeq, Family, SimpleFamily};
 
@@ -22,26 +22,26 @@ pub fn search_for_simple_families(
     while let Some(weight) = ctx.frontier.min_weight() {
         if let Some(max) = max_weight {
             if weight > max {
-                println!("Reached weight cutoff; stopping...");
+                info!("Reached weight cutoff; stopping...");
                 break;
             }
         }
 
         if let Some(max) = max_iter {
             if ctx.iter >= max {
-                println!("Reached iteration cutoff; stopping...");
+                info!("Reached iteration cutoff; stopping...");
                 break;
             }
         }
 
         if stop_when_simple {
             if ctx.frontier.all_simple() {
-                println!("All remaining families are simple; stopping...");
+                info!("All remaining families are simple; stopping...");
                 break;
             }
         }
 
-        println!(
+        info!(
             "Iteration {} - Weight {} - {} branches",
             ctx.iter,
             weight,
@@ -125,11 +125,11 @@ impl SearchContext {
             // We want to explore all possible children with weight one more than this one.
             match family {
                 SearchNode::Arbitrary(family) => {
-                    debug_println!(" Exploring {}", family);
+                    debug!(" Exploring {}", family);
                     self.explore_family(family)
                 }
                 SearchNode::Simple(family) => {
-                    debug_println!(" Exploring simple {}", family,);
+                    debug!(" Exploring simple {}", family,);
                     self.explore_simple_family(family)
                 }
             }
@@ -146,14 +146,14 @@ impl SearchContext {
         let seq = family.contract();
         if let Some(p) = self.test_for_contained_prime(&seq) {
             assert_ne!(&seq, p);
-            debug_println!("  Discarding {}, contains prime {}", family, p);
+            debug!("  Discarding {}, contains prime {}", family, p);
             return;
         }
 
-        debug_println!("  Testing for primality {}", seq);
+        trace!("  Testing for primality {}", seq);
         let value = seq.value(self.base);
         if self.test_for_prime(&value) {
-            debug_println!("  Saving {}, contracts to prime", family);
+            debug!("  Saving {}, contracts to prime", family);
             self.primes.insert(seq);
             return;
         }
@@ -162,14 +162,14 @@ impl SearchContext {
         let mut family = self.reduce_cores(family);
         family.simplify();
         if family.cores.is_empty() {
-            debug_println!("  {} was reduced to trivial string", family);
+            debug!("  {} was reduced to trivial string", family);
             return;
         }
 
         // Now, run some tests to see whether this family is guaranteed to
         // be composite.
         if self.test_for_perpetual_composite(&family) {
-            debug_println!("  Discarding {}, is always composite", family);
+            debug!("  Discarding {}, is always composite", family);
             return;
         }
 
@@ -205,10 +205,10 @@ impl SearchContext {
         let slot = self.iter % family.cores.len();
         debug_assert!(!family.cores[slot].is_empty());
         let children = if family.weight() == 1 {
-            debug_println!("  Splitting {} left", family);
+            debug!("  Splitting {} left", family);
             family.split_left(slot)
         } else {
-            debug_println!("  Splitting {} right", family);
+            debug!("  Splitting {} right", family);
             family.split_right(slot)
         };
         self.frontier
@@ -241,7 +241,7 @@ impl SearchContext {
             let result = is_substring_of_simple(prime, &family);
             self.stats.borrow_mut().num_simple_substring_checks += 1;
             if let SubstringResult::Yes = result {
-                debug_println!("  Discarding {}, contains prime {}", family, prime);
+                debug!("  Discarding {}, contains prime {}", family, prime);
                 self.stats.borrow_mut().duration_simple_substring_checks += start.elapsed();
                 return;
             }
@@ -252,7 +252,7 @@ impl SearchContext {
         let value = family.value(self.base);
 
         if self.test_for_prime(&value) {
-            debug_println!("  Saving {}, is prime", family);
+            debug!("  Saving {}, is prime", family);
 
             let mut seq = family.before.clone();
             for _ in 0..family.num_repeats {
@@ -281,14 +281,14 @@ impl SearchContext {
 
                 if let Some(p) = self.test_for_contained_prime(&seq) {
                     assert_ne!(&seq, p);
-                    debug_println!("  Discarding {}, contains prime {}", seq, p);
+                    debug!("  Discarding {}, contains prime {}", seq, p);
                     continue;
                 }
 
-                debug_println!("  Testing for primality {}", seq);
+                trace!("  Testing for primality {}", seq);
                 let value = seq.value(self.base);
                 if self.test_for_prime(&value) {
-                    debug_println!("  Saving {}, is prime", seq);
+                    debug!("  Saving {}, is prime", seq);
                     self.primes.insert(seq);
                 } else {
                     allowed_digits.push(digit);
@@ -298,7 +298,7 @@ impl SearchContext {
             *core = allowed_digits;
         }
         // Now we've reduced the core, and have a new family.
-        debug_println!("  Reducing {} to {}", old_family, family);
+        debug!("  Reducing {} to {}", old_family, family);
         family
     }
 
@@ -333,7 +333,7 @@ impl SearchContext {
 
         // p divides BASE (e.g., 2, 5)
         if let Some(factor) = shares_factor_with_base(self.base, family) {
-            debug_println!("  {} has divisor {}", family, factor);
+            debug!("  {} has divisor {}", family, factor);
             return true;
         }
         // p does not divide BASE (e.g. 7)
@@ -341,7 +341,7 @@ impl SearchContext {
         // This is how we detect families like 4[6]9 being divisible by 7.
         for stride in 1..=2 {
             if let Some(factors) = find_perpetual_factor(self.base, family, stride) {
-                debug_println!(
+                debug!(
                     "  {} is divisible by {}",
                     family,
                     factors.iter().format(", ")
@@ -351,7 +351,7 @@ impl SearchContext {
         }
 
         if let Some((even_factor, odd_factor)) = find_even_odd_factor(self.base, family) {
-            debug_println!(
+            debug!(
                 "  {} is divisible by either {} or {}",
                 family,
                 even_factor,
@@ -364,7 +364,7 @@ impl SearchContext {
     }
 
     fn split_on_repeat(&self, family: &Family, max_repeats: usize) -> Option<Vec<Family>> {
-        debug_println!(" Trying to split {}", family);
+        debug!(" Trying to split {}", family);
         for (i, core) in family.cores.iter().enumerate() {
             for d in core.iter().copied() {
                 for n in 2..=max_repeats {
@@ -372,7 +372,7 @@ impl SearchContext {
                     let seq = family.substitute_multiple(i, std::iter::repeat(d).take(n));
                     if let Some(p) = self.test_for_contained_prime(&seq) {
                         assert_ne!(&seq, p);
-                        debug_println!("  {} contains a prime {}", seq, p);
+                        debug!("  {} contains a prime {}", seq, p);
 
                         // Split into n families, x (L-y) (y (L-y))^i z for i in 0..n
                         let yless_core: Vec<_> = core.iter().copied().filter(|x| *x != d).collect();
@@ -394,7 +394,7 @@ impl SearchContext {
                             child.simplify();
                         }
 
-                        debug_println!(
+                        debug!(
                             "  {} split into {}",
                             family,
                             children.iter().format(" and ")
@@ -451,7 +451,7 @@ impl SearchContext {
 
                 new.digitseqs.insert(1, d.into());
                 new.cores.insert(1, d_less_core);
-                debug_println!("  {} must have a {}, transforming into {}", family, d, new);
+                debug!("  {} must have a {}, transforming into {}", family, d, new);
                 return Some(new);
             }
         }

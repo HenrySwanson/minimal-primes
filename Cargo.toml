@@ -9,6 +9,7 @@ edition = "2021"
 bitvec = "1.0.1"
 clap = { version = "4.5.15", features = ["derive"] }
 itertools = "0.13.0"
+log = { version = "0.4.27", features = ["std"] }
 num-bigint = "0.4.6"
 num-integer = "0.1.46"
 num-modular = "0.6.1"
