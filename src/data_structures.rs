@@ -101,14 +101,14 @@ impl CandidateSequences {
     pub fn insert(&mut self, seq: DigitSeq) {
         // Does this contain an existing candidate? Reject it.
         for other in self.inner.iter_mut() {
-            if is_proper_substring(&other, &seq) {
+            if is_proper_substring(other, &seq) {
                 return;
             }
         }
 
         // Remove any candidates that contain this (if any)
         self.inner
-            .retain(|other| !is_proper_substring(&seq, &other));
+            .retain(|other| !is_proper_substring(&seq, other));
 
         // Insert
         self.inner.push(seq);

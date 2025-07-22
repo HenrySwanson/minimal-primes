@@ -34,11 +34,9 @@ pub fn search_for_simple_families(
             }
         }
 
-        if stop_when_simple {
-            if ctx.frontier.all_simple() {
-                info!("All remaining families are simple; stopping...");
-                break;
-            }
+        if stop_when_simple && ctx.frontier.all_simple() {
+            info!("All remaining families are simple; stopping...");
+            break;
         }
 
         info!(
@@ -353,9 +351,7 @@ impl SearchContext {
         if let Some((even_factor, odd_factor)) = find_even_odd_factor(self.base, family) {
             debug!(
                 "  {} is divisible by either {} or {}",
-                family,
-                even_factor,
-                odd_factor
+                family, even_factor, odd_factor
             );
             return true;
         }
@@ -369,7 +365,7 @@ impl SearchContext {
             for d in core.iter().copied() {
                 for n in 2..=max_repeats {
                     // Check whether x y^n z contains a prime subword
-                    let seq = family.substitute_multiple(i, std::iter::repeat(d).take(n));
+                    let seq = family.substitute_multiple(i, std::iter::repeat_n(d, n));
                     if let Some(p) = self.test_for_contained_prime(&seq) {
                         assert_ne!(&seq, p);
                         debug!("  {} contains a prime {}", seq, p);

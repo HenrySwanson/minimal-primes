@@ -6,7 +6,7 @@ use num_bigint::{BigInt, BigUint};
 use search::{is_substring_of_simple, search_for_simple_families, SearchContext};
 use sequences::{Digit, DigitSeq};
 use sieve::{Sequence, SequenceSlice};
-use std::{ops::ControlFlow, sync::atomic::AtomicBool, usize};
+use std::ops::ControlFlow;
 
 mod composite;
 mod data_structures;
