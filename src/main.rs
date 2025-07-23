@@ -171,6 +171,8 @@ fn first_stage(cmd: &SearchArgs) -> (search::SearchContext, Frontier<SearchNode>
             .as_millis()
     );
 
+    frontier.print_tree_to_stdout();
+
     (ctx, frontier)
 }
 

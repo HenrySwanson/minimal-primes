@@ -6,10 +6,23 @@ pub struct Frontier<T> {
     /// maps weight to nodes; used to ensure we're exploring the
     /// search space in (non-strictly) increasing order.
     /// items lower than `min_allowed_weight` must be empty
-    by_weight: Vec<VecDeque<T>>,
+    // usize is the node ID, might remove this later
+    by_weight: Vec<VecDeque<(T, usize)>>,
     /// the 'ratchet' that enforces that we can't backtrack to an
     /// element of lower weight.
     min_allowed_weight: usize,
+    /// optional tree for tracing
+    /// TODO: make optional
+    tree_tracer: TreeTracer,
+}
+
+struct TreeTracer {
+    nodes: Vec<TreeTracerNode>,
+}
+
+struct TreeTracerNode {
+    tag: String, // TODO: change that?
+    children: Vec<usize>,
 }
 
 pub trait Weight {
@@ -20,13 +33,19 @@ pub struct CandidateSequences {
     inner: Vec<DigitSeq>,
 }
 
-impl<T: Weight> Frontier<T> {
+// TODO: remove ToString bound
+impl<T: Weight + ToString> Frontier<T> {
     pub fn new(initial: T) -> Self {
         let mut ret = Self {
             by_weight: vec![],
             min_allowed_weight: initial.weight(),
+            tree_tracer: TreeTracer { nodes: vec![] },
         };
-        ret.put(initial);
+        ret.tree_tracer.nodes.push(TreeTracerNode {
+            tag: initial.to_string(),
+            children: vec![],
+        });
+        ret.put(initial, 0);
         ret
     }
 
@@ -46,17 +65,17 @@ impl<T: Weight> Frontier<T> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.by_weight.iter().flatten()
+        self.by_weight.iter().flatten().map(|(value, _)| value)
     }
 
-    fn put(&mut self, node: T) {
+    fn put(&mut self, node: T, idx: usize) {
         let weight = node.weight();
         debug_assert!(weight >= self.min_allowed_weight);
 
         loop {
             match self.by_weight.get_mut(weight) {
                 Some(layer) => {
-                    layer.push_back(node);
+                    layer.push_back((node, idx));
                     break;
                 }
                 None => self.by_weight.push(VecDeque::new()),
@@ -80,9 +99,18 @@ impl<T: Weight> Frontier<T> {
             None => return false,
         };
 
-        let node = layer.pop_front().expect("non-empty layer");
+        let (node, idx) = layer.pop_front().expect("non-empty layer");
         for child in f(node) {
-            self.put(child);
+            let child_tag = child.to_string();
+            let child_idx = self.tree_tracer.nodes.len();
+
+            self.tree_tracer.nodes[idx].children.push(child_idx);
+            self.tree_tracer.nodes.push(TreeTracerNode {
+                tag: child_tag,
+                children: vec![],
+            });
+
+            self.put(child, child_idx);
         }
         true
     }
@@ -93,16 +121,25 @@ impl<T: Weight> Frontier<T> {
             None => return false,
         };
 
-        for node in layer {
+        for (node, idx) in layer {
             for child in f(node) {
-                self.put(child);
+                let child_tag = child.to_string();
+                let child_idx = self.tree_tracer.nodes.len();
+
+                self.tree_tracer.nodes[idx].children.push(child_idx);
+                self.tree_tracer.nodes.push(TreeTracerNode {
+                    tag: child_tag,
+                    children: vec![],
+                });
+
+                self.put(child, child_idx);
             }
         }
 
         true
     }
 
-    fn find_first_non_empty_layer_mut(&mut self) -> Option<&mut VecDeque<T>> {
+    fn find_first_non_empty_layer_mut(&mut self) -> Option<&mut VecDeque<(T, usize)>> {
         for (i, layer) in self.by_weight.iter_mut().enumerate() {
             if i < self.min_allowed_weight {
                 assert!(
@@ -117,6 +154,25 @@ impl<T: Weight> Frontier<T> {
         }
 
         None
+    }
+
+    pub fn print_tree_to_stdout(&self) {
+        self.tree_tracer.print_tree_to_stdout();
+    }
+}
+
+impl TreeTracer {
+    fn print_tree_to_stdout(&self) {
+        self.print_to_stdout_helper(0, 0);
+    }
+
+    fn print_to_stdout_helper(&self, node_idx: usize, indent: usize) {
+        let node = &self.nodes[node_idx];
+
+        println!("{:indent$}{}", "", node.tag, indent = indent * 2);
+        for child_idx in &node.children {
+            self.print_to_stdout_helper(*child_idx, indent + 1);
+        }
     }
 }
 
