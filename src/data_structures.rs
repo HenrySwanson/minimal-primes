@@ -5,12 +5,8 @@ use crate::digits::DigitSeq;
 pub struct Frontier<T> {
     /// maps weight to nodes; used to ensure we're exploring the
     /// search space in (non-strictly) increasing order.
-    /// items lower than `min_allowed_weight` must be empty
     // usize is the node ID, might remove this later
-    by_weight: Vec<VecDeque<(T, usize)>>,
-    /// the 'ratchet' that enforces that we can't backtrack to an
-    /// element of lower weight.
-    min_allowed_weight: usize,
+    by_weight: WeightedVec<(T, usize)>,
     /// optional tree for tracing
     /// TODO: make optional
     tree_tracer: TreeTracer,
@@ -29,6 +25,14 @@ pub trait Weight {
     fn weight(&self) -> usize;
 }
 
+/// items lower than `min_allowed_weight` must be empty
+struct WeightedVec<T> {
+    elements: Vec<VecDeque<T>>,
+    /// the 'ratchet' that enforces that we can't backtrack to an
+    /// element of lower weight.
+    min_allowed_weight: usize,
+}
+
 pub struct CandidateSequences {
     inner: Vec<DigitSeq>,
 }
@@ -37,8 +41,7 @@ pub struct CandidateSequences {
 impl<T: Weight + ToString> Frontier<T> {
     pub fn new(initial: T) -> Self {
         let mut ret = Self {
-            by_weight: vec![],
-            min_allowed_weight: initial.weight(),
+            by_weight: WeightedVec::new(),
             tree_tracer: TreeTracer { nodes: vec![] },
         };
         ret.tree_tracer.nodes.push(TreeTracerNode {
@@ -50,37 +53,27 @@ impl<T: Weight + ToString> Frontier<T> {
     }
 
     pub fn len(&self) -> usize {
-        self.by_weight.iter().map(|layer| layer.len()).sum()
+        self.by_weight.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.by_weight.iter().all(|layer| layer.is_empty())
+        self.by_weight.is_empty()
     }
 
     /// Returns the minimum weight present in this collection. This can be
     /// different from [self.min_allowed_weight], because that layer might
     /// be empty (or even the layers above).
     pub fn min_weight(&self) -> Option<usize> {
-        self.by_weight.iter().position(|layer| !layer.is_empty())
+        self.by_weight.min_weight()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.by_weight.iter().flatten().map(|(value, _)| value)
+        self.by_weight.iter().map(|(value, _)| value)
     }
 
     fn put(&mut self, node: T, idx: usize) {
         let weight = node.weight();
-        debug_assert!(weight >= self.min_allowed_weight);
-
-        loop {
-            match self.by_weight.get_mut(weight) {
-                Some(layer) => {
-                    layer.push_back((node, idx));
-                    break;
-                }
-                None => self.by_weight.push(VecDeque::new()),
-            }
-        }
+        self.by_weight.put((node, idx), weight);
     }
 
     // TODO: return some richer type from the closure?
@@ -94,7 +87,7 @@ impl<T: Weight + ToString> Frontier<T> {
     /// nodes to explore.
     pub fn explore_next(&mut self, f: impl FnOnce(T) -> Vec<T>) -> bool {
         // Pop out an element of least weight
-        let layer = match self.find_first_non_empty_layer_mut() {
+        let layer = match self.by_weight.find_first_non_empty_layer_mut() {
             Some(layer) => layer,
             None => return false,
         };
@@ -116,7 +109,7 @@ impl<T: Weight + ToString> Frontier<T> {
     }
 
     pub fn explore_one_level(&mut self, mut f: impl FnMut(T) -> Vec<T>) -> bool {
-        let layer = match self.find_first_non_empty_layer_mut() {
+        let layer = match self.by_weight.find_first_non_empty_layer_mut() {
             Some(layer) => std::mem::take(layer),
             None => return false,
         };
@@ -139,23 +132,6 @@ impl<T: Weight + ToString> Frontier<T> {
         true
     }
 
-    fn find_first_non_empty_layer_mut(&mut self) -> Option<&mut VecDeque<(T, usize)>> {
-        for (i, layer) in self.by_weight.iter_mut().enumerate() {
-            if i < self.min_allowed_weight {
-                assert!(
-                    layer.is_empty(),
-                    "all layers below min_allowed_weight must be empty"
-                );
-            }
-
-            if !layer.is_empty() {
-                return Some(layer);
-            }
-        }
-
-        None
-    }
-
     pub fn print_tree_to_stdout(&self) {
         self.tree_tracer.print_tree_to_stdout();
     }
@@ -173,6 +149,63 @@ impl TreeTracer {
         for child_idx in &node.children {
             self.print_to_stdout_helper(*child_idx, indent + 1);
         }
+    }
+}
+
+impl<T> WeightedVec<T> {
+    fn new() -> Self {
+        Self {
+            elements: vec![],
+            min_allowed_weight: 0,
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &T> {
+        self.elements.iter().flatten()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.elements.iter().all(|layer| layer.is_empty())
+    }
+
+    fn len(&self) -> usize {
+        self.elements.iter().map(|layer| layer.len()).sum()
+    }
+
+    fn min_weight(&self) -> Option<usize> {
+        self.elements.iter().position(|layer| !layer.is_empty())
+    }
+
+    fn put(&mut self, item: T, weight: usize) {
+        debug_assert!(weight >= self.min_allowed_weight);
+
+        loop {
+            // Keep appending empty deques until we reach the right weight
+            match self.elements.get_mut(weight) {
+                Some(layer) => {
+                    layer.push_back(item);
+                    break;
+                }
+                None => self.elements.push(VecDeque::new()),
+            }
+        }
+    }
+
+    fn find_first_non_empty_layer_mut(&mut self) -> Option<&mut VecDeque<T>> {
+        for (i, layer) in self.elements.iter_mut().enumerate() {
+            if i < self.min_allowed_weight {
+                assert!(
+                    layer.is_empty(),
+                    "all layers below min_allowed_weight must be empty"
+                );
+            }
+
+            if !layer.is_empty() {
+                return Some(layer);
+            }
+        }
+
+        None
     }
 }
 
