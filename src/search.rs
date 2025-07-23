@@ -16,14 +16,17 @@ use crate::data_structures::{is_proper_substring, CandidateSequences, Frontier, 
 use crate::digits::DigitSeq;
 use crate::math::gcd_reduce;
 
+// TODO: don't love the return type here, try moving some fields around
 pub fn search_for_simple_families(
     base: u8,
     max_weight: Option<usize>,
     max_iter: Option<usize>,
     stop_when_simple: bool,
-) -> SearchContext {
+) -> (SearchContext, Frontier<SearchNode>) {
     let mut ctx = SearchContext::new(base);
-    while let Some(weight) = ctx.frontier.min_weight() {
+    let mut frontier = Frontier::new(SearchNode::Arbitrary(Family::any(base)));
+
+    while let Some(weight) = frontier.min_weight() {
         if let Some(max) = max_weight {
             if weight > max {
                 info!("Reached weight cutoff; stopping...");
@@ -38,7 +41,7 @@ pub fn search_for_simple_families(
             }
         }
 
-        if stop_when_simple && ctx.frontier.all_simple() {
+        if stop_when_simple && frontier.all_simple() {
             info!("All remaining families are simple; stopping...");
             break;
         }
@@ -47,14 +50,14 @@ pub fn search_for_simple_families(
             "Iteration {} - Weight {} - {} branches",
             ctx.iter,
             weight,
-            ctx.frontier.len()
+            frontier.len()
         );
 
-        ctx.search_one_level();
+        ctx.search_one_level(&mut frontier);
     }
 
     ctx.primes.sort();
-    ctx
+    (ctx, frontier)
 }
 
 #[derive(Debug, Default)]
@@ -74,8 +77,6 @@ pub struct SearchContext {
     /// iteration counter; corresponds to the weight of the families
     /// we're looking at
     pub iter: usize,
-    /// families we haven't explored yet
-    pub frontier: Frontier<SearchNode>,
     /// primes we've discovered so far, in two different formats
     /// depending on the order we discovered these, they may not be minimal!
     pub primes: CandidateSequences,
@@ -107,40 +108,37 @@ impl Weight for SearchNode {
 
 impl SearchContext {
     pub fn new(base: u8) -> Self {
-        let initial_family = Family::any(base);
-        let mut frontier = Frontier::new();
-        frontier.put(SearchNode::Arbitrary(initial_family));
-
         Self {
             base,
             iter: 0,
-            frontier,
             primes: CandidateSequences::new(),
             stats: RefCell::new(Stats::default()),
         }
     }
 
-    pub fn search_one_level(&mut self) {
-        let old_queue = self.frontier.pop().unwrap_or_default();
-        for family in old_queue {
-            // Say our family is xL*z.
-            // We want to explore all possible children with weight one more than this one.
-            match family {
-                SearchNode::Arbitrary(family) => {
-                    debug!(" Exploring {}", family);
-                    self.explore_family(family)
-                }
-                SearchNode::Simple(family) => {
-                    debug!(" Exploring simple {}", family,);
-                    self.explore_simple_family(family)
-                }
-            }
-            self.stats.borrow_mut().num_branches_explored += 1;
-        }
-        self.iter += 1;
+    pub fn search_one_level(&mut self, frontier: &mut Frontier<SearchNode>) {
+        frontier.explore_one_level(|node| self.explore_node(node));
+        self.iter += 1
     }
 
-    fn explore_family(&mut self, family: Family) {
+    fn explore_node(&mut self, family: SearchNode) -> Vec<SearchNode> {
+        // Say our family is xL*z.
+        // We want to explore all possible children with weight one more than this one.
+        let children = match family {
+            SearchNode::Arbitrary(family) => {
+                debug!(" Exploring {}", family);
+                self.explore_family(family)
+            }
+            SearchNode::Simple(family) => {
+                debug!(" Exploring simple {}", family);
+                self.explore_simple_family(family)
+            }
+        };
+        self.stats.borrow_mut().num_branches_explored += 1;
+        children
+    }
+
+    fn explore_family(&mut self, family: Family) -> Vec<SearchNode> {
         // Test this for primality
         // TODO: normally we've tested this already, in reduce_cores,
         // but split_on_repeat can produce strings we've never tested :/
@@ -149,7 +147,7 @@ impl SearchContext {
         if let Some(p) = self.test_for_contained_prime(&seq) {
             assert_ne!(&seq, p);
             debug!("  Discarding {}, contains prime {}", family, p);
-            return;
+            return vec![];
         }
 
         trace!("  Testing for primality {}", seq);
@@ -157,7 +155,7 @@ impl SearchContext {
         if self.test_for_prime(&value) {
             debug!("  Saving {}, contracts to prime", family);
             self.primes.insert(seq);
-            return;
+            return vec![];
         }
 
         // Then, we try to reduce the cores.
@@ -165,14 +163,14 @@ impl SearchContext {
         family.simplify();
         if family.cores.is_empty() {
             debug!("  {} was reduced to trivial string", family);
-            return;
+            return vec![];
         }
 
         // Now, run some tests to see whether this family is guaranteed to
         // be composite.
         if self.test_for_perpetual_composite(&family) {
             debug!("  Discarding {}, is always composite", family);
-            return;
+            return vec![];
         }
 
         // TODO: is this right?
@@ -180,8 +178,7 @@ impl SearchContext {
         // re-enqueue it as such. (Note: this is after composite check!)
         let mut family = match SimpleFamily::try_from(family) {
             Ok(simple) => {
-                self.frontier.put(SearchNode::Simple(simple));
-                return;
+                return vec![SearchNode::Simple(simple)];
             }
             // can't convert, put it back to normal
             Err(f) => f,
@@ -189,15 +186,12 @@ impl SearchContext {
 
         // Let's see if we can split it in an interesting way
         if let Some(children) = self.split_on_repeat(&family, 3) {
-            self.frontier
-                .extend(children.into_iter().map(SearchNode::Arbitrary));
-            return;
+            return children.into_iter().map(SearchNode::Arbitrary).collect();
         }
 
         if family.weight() >= 2 {
             if let Some(child) = self.split_on_necessary_digit(&family) {
-                self.frontier.put(SearchNode::Arbitrary(child));
-                return;
+                return vec![SearchNode::Arbitrary(child)];
             }
         }
 
@@ -206,15 +200,13 @@ impl SearchContext {
         // have to worry about that.
         let slot = self.iter % family.cores.len();
         debug_assert!(!family.cores[slot].is_empty());
-        let children = if family.weight() == 1 {
+        let mut children = if family.weight() == 1 {
             debug!("  Splitting {} left", family);
             family.split_left(slot)
         } else {
             debug!("  Splitting {} right", family);
             family.split_right(slot)
         };
-        self.frontier
-            .extend(children.into_iter().map(SearchNode::Arbitrary));
 
         // We also need to consider the case where the chosen core expands to
         // the empty string. However, in the case where there's one core, this
@@ -225,11 +217,13 @@ impl SearchContext {
         if family.cores.len() > 1 {
             family.cores[slot].clear();
             family.simplify();
-            self.frontier.put(SearchNode::Arbitrary(family));
+            children.push(family);
         }
+
+        children.into_iter().map(SearchNode::Arbitrary).collect()
     }
 
-    fn explore_simple_family(&mut self, mut family: SimpleFamily) {
+    fn explore_simple_family(&mut self, mut family: SimpleFamily) -> Vec<SearchNode> {
         // There's a lot less we can do here! We can't split anything,
         // we can't reduce cores, etc, etc.
         // Even composite testing isn't very useful here, since we
@@ -245,7 +239,7 @@ impl SearchContext {
             if let SubstringResult::Yes = result {
                 debug!("  Discarding {}, contains prime {}", family, prime);
                 self.stats.borrow_mut().duration_simple_substring_checks += start.elapsed();
-                return;
+                return vec![];
             }
         }
         self.stats.borrow_mut().duration_simple_substring_checks += start.elapsed();
@@ -263,11 +257,11 @@ impl SearchContext {
             seq += family.after;
 
             self.primes.insert(seq);
-            return;
+            return vec![];
         }
 
         family.num_repeats += 1;
-        self.frontier.put(SearchNode::Simple(family));
+        vec![SearchNode::Simple(family)]
     }
 
     fn reduce_cores(&mut self, mut family: Family) -> Family {

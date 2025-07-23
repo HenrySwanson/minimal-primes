@@ -21,14 +21,7 @@ pub struct CandidateSequences {
 }
 
 impl<T: Weight> Frontier<T> {
-    pub fn new() -> Self {
-        Self {
-            by_weight: vec![],
-            min_allowed_weight: 0,
-        }
-    }
-
-    pub fn start(initial: T) -> Self {
+    pub fn new(initial: T) -> Self {
         let mut ret = Self {
             by_weight: vec![],
             min_allowed_weight: initial.weight(),
@@ -56,21 +49,7 @@ impl<T: Weight> Frontier<T> {
         self.by_weight.iter().flatten()
     }
 
-    /// Removes the families of the least weight from the structure.
-    /// Once this method is called, elements of weight < self.min_weight
-    /// should not be inserted! Elements with exactly the minimum weight
-    /// are allowed though (lateral exploration).
-    pub fn pop(&mut self) -> Option<VecDeque<T>> {
-        self.find_first_non_empty_layer_mut().map(std::mem::take)
-    }
-
-    pub fn extend(&mut self, iter: impl IntoIterator<Item = T>) {
-        for node in iter {
-            self.put(node);
-        }
-    }
-
-    pub fn put(&mut self, node: T) {
+    fn put(&mut self, node: T) {
         let weight = node.weight();
         debug_assert!(weight >= self.min_allowed_weight);
 
@@ -102,18 +81,22 @@ impl<T: Weight> Frontier<T> {
         };
 
         let node = layer.pop_front().expect("non-empty layer");
-        self.extend(f(node));
+        for child in f(node) {
+            self.put(child);
+        }
         true
     }
 
     pub fn explore_one_level(&mut self, mut f: impl FnMut(T) -> Vec<T>) -> bool {
-        let layer = match self.pop() {
-            Some(layer) => layer,
+        let layer = match self.find_first_non_empty_layer_mut() {
+            Some(layer) => std::mem::take(layer),
             None => return false,
         };
 
         for node in layer {
-            self.extend(f(node));
+            for child in f(node) {
+                self.put(child);
+            }
         }
 
         true
