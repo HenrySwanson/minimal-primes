@@ -1,23 +1,21 @@
 use std::collections::VecDeque;
+use std::fmt::Display;
 
 use crate::digits::DigitSeq;
 
 pub struct Frontier<T> {
     /// maps weight to nodes; used to ensure we're exploring the
     /// search space in (non-strictly) increasing order.
-    // usize is the node ID, might remove this later
-    by_weight: WeightedVec<(T, usize)>,
-    /// optional tree for tracing
-    /// TODO: make optional
-    tree_tracer: TreeTracer,
+    by_weight: WeightedVec<T>,
 }
 
-struct TreeTracer {
-    nodes: Vec<TreeTracerNode>,
+pub struct TreeTracer<T> {
+    nodes: Vec<TreeTracerNode<T>>,
+    unexplored: WeightedVec<usize>,
 }
 
-struct TreeTracerNode {
-    tag: String, // TODO: change that?
+struct TreeTracerNode<T> {
+    value: T, // TODO: change that?
     children: Vec<usize>,
 }
 
@@ -37,18 +35,12 @@ pub struct CandidateSequences {
     inner: Vec<DigitSeq>,
 }
 
-// TODO: remove ToString bound
-impl<T: Weight + ToString> Frontier<T> {
+impl<T: Weight> Frontier<T> {
     pub fn new(initial: T) -> Self {
         let mut ret = Self {
             by_weight: WeightedVec::new(),
-            tree_tracer: TreeTracer { nodes: vec![] },
         };
-        ret.tree_tracer.nodes.push(TreeTracerNode {
-            tag: initial.to_string(),
-            children: vec![],
-        });
-        ret.put(initial, 0);
+        ret.put(initial);
         ret
     }
 
@@ -68,12 +60,12 @@ impl<T: Weight + ToString> Frontier<T> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.by_weight.iter().map(|(value, _)| value)
+        self.by_weight.iter()
     }
 
-    fn put(&mut self, node: T, idx: usize) {
+    fn put(&mut self, node: T) {
         let weight = node.weight();
-        self.by_weight.put((node, idx), weight);
+        self.by_weight.put(node, weight);
     }
 
     // TODO: return some richer type from the closure?
@@ -92,18 +84,9 @@ impl<T: Weight + ToString> Frontier<T> {
             None => return false,
         };
 
-        let (node, idx) = layer.pop_front().expect("non-empty layer");
+        let node = layer.pop_front().expect("non-empty layer");
         for child in f(node) {
-            let child_tag = child.to_string();
-            let child_idx = self.tree_tracer.nodes.len();
-
-            self.tree_tracer.nodes[idx].children.push(child_idx);
-            self.tree_tracer.nodes.push(TreeTracerNode {
-                tag: child_tag,
-                children: vec![],
-            });
-
-            self.put(child, child_idx);
+            self.put(child);
         }
         true
     }
@@ -114,38 +97,94 @@ impl<T: Weight + ToString> Frontier<T> {
             None => return false,
         };
 
-        for (node, idx) in layer {
+        for node in layer {
             for child in f(node) {
-                let child_tag = child.to_string();
-                let child_idx = self.tree_tracer.nodes.len();
-
-                self.tree_tracer.nodes[idx].children.push(child_idx);
-                self.tree_tracer.nodes.push(TreeTracerNode {
-                    tag: child_tag,
-                    children: vec![],
-                });
-
-                self.put(child, child_idx);
+                self.put(child);
             }
         }
 
         true
     }
 
-    pub fn print_tree_to_stdout(&self) {
-        self.tree_tracer.print_tree_to_stdout();
-    }
+    pub fn print_tree_to_stdout(&self) {}
 }
 
-impl TreeTracer {
-    fn print_tree_to_stdout(&self) {
+impl<T: Weight> TreeTracer<T> {
+    pub fn new(initial: T) -> Self {
+        let mut ret = Self {
+            nodes: vec![],
+            unexplored: WeightedVec::new(),
+        };
+        ret.put(initial);
+        ret
+    }
+
+    pub fn len(&self) -> usize {
+        self.unexplored.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.unexplored.is_empty()
+    }
+
+    /// Returns the minimum weight present in this collection. This can be
+    /// different from [self.min_allowed_weight], because that layer might
+    /// be empty (or even the layers above).
+    pub fn min_weight(&self) -> Option<usize> {
+        self.unexplored.min_weight()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.unexplored.iter().map(|idx| &self.nodes[*idx].value)
+    }
+
+    fn put(&mut self, node: T) {
+        let weight = node.weight();
+        let idx = self.nodes.len();
+        self.nodes.push(TreeTracerNode {
+            value: node,
+            children: vec![],
+        });
+        self.unexplored.put(idx, weight);
+    }
+
+    pub fn explore_one_level(&mut self, mut f: impl FnMut(T) -> Vec<T>) -> bool
+    where
+        T: Clone,
+    {
+        let layer = match self.unexplored.find_first_non_empty_layer_mut() {
+            Some(layer) => std::mem::take(layer),
+            None => return false,
+        };
+
+        for idx in layer {
+            let node = &self.nodes[idx];
+            let mut child_idxs = vec![];
+            for child in f(node.value.clone()) {
+                let child_idx = self.nodes.len();
+                child_idxs.push(child_idx);
+
+                self.put(child);
+            }
+        }
+
+        true
+    }
+
+    pub fn print_tree_to_stdout(&self)
+    where
+        T: Display,
+    {
         self.print_to_stdout_helper(0, 0);
     }
 
-    fn print_to_stdout_helper(&self, node_idx: usize, indent: usize) {
+    fn print_to_stdout_helper(&self, node_idx: usize, indent: usize)
+    where
+        T: Display,
+    {
         let node = &self.nodes[node_idx];
 
-        println!("{:indent$}{}", "", node.tag, indent = indent * 2);
+        println!("{:indent$}{}", "", node.value, indent = indent * 2);
         for child_idx in &node.children {
             self.print_to_stdout_helper(*child_idx, indent + 1);
         }
