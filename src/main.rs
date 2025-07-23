@@ -4,16 +4,15 @@ use itertools::Itertools;
 use log::LevelFilter;
 use num_bigint::{BigInt, BigUint};
 use search::{is_substring_of_simple, search_for_simple_families, SearchContext};
-use sequences::{Digit, DigitSeq};
+use digits::{Digit, DigitSeq};
 use sieve::{Sequence, SequenceSlice};
 use std::ops::ControlFlow;
 
-mod composite;
+mod digits;
 mod data_structures;
 mod logging;
 mod math;
 mod search;
-mod sequences;
 mod sieve;
 
 #[derive(Parser)]

@@ -6,10 +6,10 @@ use num_bigint::BigUint;
 use num_integer::Integer;
 use num_traits::identities::One;
 
+use super::families::Family;
+use crate::digits::Digit;
+use crate::digits::DigitSeq;
 use crate::math::gcd_reduce;
-use crate::sequences::Digit;
-use crate::sequences::DigitSeq;
-use crate::sequences::Family;
 
 /// Checks whether this family shares a factor with the base.
 /// Basically just checks the last digit.

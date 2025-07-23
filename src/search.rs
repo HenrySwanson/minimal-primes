@@ -1,3 +1,6 @@
+mod composite;
+mod families;
+
 use std::cell::RefCell;
 use std::time::{Duration, Instant};
 
@@ -7,10 +10,11 @@ use num_bigint::BigUint;
 use num_prime::nt_funcs::is_prime;
 use num_traits::One;
 
-use crate::composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
+use self::composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
+use self::families::{Family, SimpleFamily};
 use crate::data_structures::{is_proper_substring, CandidateSequences, Frontier, Weight};
+use crate::digits::DigitSeq;
 use crate::math::gcd_reduce;
-use crate::sequences::{DigitSeq, Family, SimpleFamily};
 
 pub fn search_for_simple_families(
     base: u8,

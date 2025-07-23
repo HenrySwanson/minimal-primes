@@ -1,4 +1,4 @@
-use crate::sequences::DigitSeq;
+use crate::digits::DigitSeq;
 
 pub struct Frontier<T> {
     /// maps weight to nodes; used to ensure we're exploring the
@@ -107,8 +107,7 @@ impl CandidateSequences {
         }
 
         // Remove any candidates that contain this (if any)
-        self.inner
-            .retain(|other| !is_proper_substring(&seq, other));
+        self.inner.retain(|other| !is_proper_substring(&seq, other));
 
         // Insert
         self.inner.push(seq);
