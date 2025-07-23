@@ -1,4 +1,5 @@
 mod composite;
+mod explore;
 mod families;
 
 use std::cell::RefCell;
@@ -12,21 +13,23 @@ use num_traits::One;
 
 use self::composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
 use self::families::{Family, SimpleFamily};
-use crate::data_structures::{is_proper_substring, CandidateSequences, Frontier, Weight};
+use crate::data_structures::{is_proper_substring, CandidateSequences, Weight};
 use crate::digits::DigitSeq;
 use crate::math::gcd_reduce;
 
+pub use self::explore::Explore;
+
 // TODO: don't love the return type here, try moving some fields around
-pub fn search_for_simple_families(
+pub fn search_for_simple_families<E: Explore>(
     base: u8,
     max_weight: Option<usize>,
     max_iter: Option<usize>,
     stop_when_simple: bool,
-) -> (SearchContext, Frontier<SearchNode>) {
+) -> (SearchContext, E) {
     let mut ctx = SearchContext::new(base);
-    let mut frontier = Frontier::new(SearchNode::Arbitrary(Family::any(base)));
+    let mut explorer = E::start(SearchNode::Arbitrary(Family::any(base)));
 
-    while let Some(weight) = frontier.min_weight() {
+    while let Some(weight) = explorer.min_weight() {
         if let Some(max) = max_weight {
             if weight > max {
                 info!("Reached weight cutoff; stopping...");
@@ -41,7 +44,7 @@ pub fn search_for_simple_families(
             }
         }
 
-        if stop_when_simple && frontier.all_simple() {
+        if stop_when_simple && explorer.all_simple() {
             info!("All remaining families are simple; stopping...");
             break;
         }
@@ -50,14 +53,14 @@ pub fn search_for_simple_families(
             "Iteration {} - Weight {} - {} branches",
             ctx.iter,
             weight,
-            frontier.len()
+            explorer.len()
         );
 
-        ctx.search_one_level(&mut frontier);
+        ctx.search_one_level(&mut explorer);
     }
 
     ctx.primes.sort();
-    (ctx, frontier)
+    (ctx, explorer)
 }
 
 #[derive(Debug, Default)]
@@ -91,12 +94,6 @@ pub enum SearchNode {
     Simple(SimpleFamily),
 }
 
-impl Frontier<SearchNode> {
-    pub fn all_simple(&self) -> bool {
-        self.iter().all(|f| matches!(f, SearchNode::Simple(_)))
-    }
-}
-
 impl Weight for SearchNode {
     fn weight(&self) -> usize {
         match self {
@@ -116,8 +113,8 @@ impl SearchContext {
         }
     }
 
-    pub fn search_one_level(&mut self, frontier: &mut Frontier<SearchNode>) {
-        frontier.explore_one_level(|node| self.explore_node(node));
+    pub fn search_one_level<E: Explore>(&mut self, explorer: &mut E) {
+        explorer.explore_one_level(|node| self.explore_node(node));
         self.iter += 1
     }
 

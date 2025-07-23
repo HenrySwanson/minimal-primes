@@ -9,7 +9,7 @@ use sieve::{Sequence, SequenceSlice};
 use std::ops::ControlFlow;
 
 use crate::data_structures::Frontier;
-use crate::search::SearchNode;
+use crate::search::{Explore, SearchNode};
 
 mod data_structures;
 mod digits;
@@ -94,7 +94,7 @@ fn main() {
 
     match args.command {
         Command::Search(cmd) => {
-            do_search(&cmd);
+            do_search::<Frontier<SearchNode>>(&cmd);
         }
         Command::Sieve(cmd) => {
             do_sieve(&cmd);
@@ -102,21 +102,21 @@ fn main() {
     }
 }
 
-fn do_search(cmd: &SearchArgs) -> (CandidateSequences, Vec<search::SearchNode>) {
-    let (mut ctx, mut frontier) = first_stage(cmd);
+fn do_search<E: Explore>(cmd: &SearchArgs) -> (CandidateSequences, Vec<search::SearchNode>) {
+    let (mut ctx, mut explorer) = first_stage::<E>(cmd);
 
     if !cmd.with_sieve {
-        return (ctx.primes, frontier.iter().cloned().collect());
+        return (ctx.primes, explorer.iter().cloned().collect());
     }
 
-    if !frontier.all_simple() {
+    if !explorer.all_simple() {
         println!("Not all remaining branches are simple! Must bail out now.");
-        return (ctx.primes, frontier.iter().cloned().collect());
+        return (ctx.primes, explorer.iter().cloned().collect());
     }
 
-    while intermediate_stage(&mut ctx, &mut frontier).is_continue() {}
+    while intermediate_stage(&mut ctx, &mut explorer).is_continue() {}
 
-    let (primes, unsolved) = second_stage(cmd, ctx, frontier);
+    let (primes, unsolved) = second_stage(cmd, ctx, explorer);
 
     println!(
         "Final set of primes ({}): {}",
@@ -131,12 +131,12 @@ fn do_search(cmd: &SearchArgs) -> (CandidateSequences, Vec<search::SearchNode>) 
     (primes, unsolved)
 }
 
-fn first_stage(cmd: &SearchArgs) -> (search::SearchContext, Frontier<SearchNode>) {
-    let (ctx, frontier) =
-        search_for_simple_families(cmd.base, cmd.max_weight, cmd.max_iter, cmd.with_sieve);
+fn first_stage<E: Explore>(cmd: &SearchArgs) -> (search::SearchContext, E) {
+    let (ctx, explorer) =
+        search_for_simple_families::<E>(cmd.base, cmd.max_weight, cmd.max_iter, cmd.with_sieve);
 
     println!("---- BRANCHES REMAINING ----");
-    for f in frontier.iter() {
+    for f in explorer.iter() {
         println!("{}", f);
     }
     println!("---- MINIMAL PRIMES ----");
@@ -145,7 +145,7 @@ fn first_stage(cmd: &SearchArgs) -> (search::SearchContext, Frontier<SearchNode>
     println!(
         "{} primes found, {} branches unresolved",
         ctx.primes.len(),
-        frontier.len()
+        explorer.len()
     );
     println!("---- STATS ----");
     println!(
@@ -171,14 +171,14 @@ fn first_stage(cmd: &SearchArgs) -> (search::SearchContext, Frontier<SearchNode>
             .as_millis()
     );
 
-    frontier.print_tree_to_stdout();
+    explorer.print_tree_to_stdout();
 
-    (ctx, frontier)
+    (ctx, explorer)
 }
 
-fn intermediate_stage(
+fn intermediate_stage<E: Explore>(
     ctx: &mut SearchContext,
-    frontier: &mut Frontier<SearchNode>,
+    explorer: &mut E,
 ) -> ControlFlow<(), ()> {
     println!("---- INTERMEDIARY PHASE ----");
     // It's possible that a simple family can only be expanded a finite amount
@@ -186,7 +186,7 @@ fn intermediate_stage(
     // jump right to sieving, but should instead continue normal searching.
 
     // Check if any family is potentially able to contain any prime.
-    let should_search = frontier.iter().any(|family| {
+    let should_search = explorer.iter().any(|family| {
         let simple = match family {
             search::SearchNode::Simple(s) => s,
             _ => unreachable!("found non-simple family after all_simple()"),
@@ -206,25 +206,25 @@ fn intermediate_stage(
             "Searching one extra round: iter={}, num primes={}, num_branches={}",
             ctx.iter,
             ctx.primes.len(),
-            frontier.len()
+            explorer.len()
         );
-        ctx.search_one_level(frontier);
+        ctx.search_one_level(explorer);
         ControlFlow::Continue(())
     } else {
         ControlFlow::Break(())
     }
 }
 
-fn second_stage(
+fn second_stage<E: Explore>(
     cmd: &SearchArgs,
     ctx: SearchContext,
-    frontier: Frontier<SearchNode>,
+    explorer: E,
 ) -> (CandidateSequences, Vec<search::SearchNode>) {
     println!("---- SIEVING PHASE ----");
     let base = ctx.base;
     let mut primes = ctx.primes;
     let mut unsolved_branches = vec![];
-    let mut remaining_branches: Vec<_> = frontier
+    let mut remaining_branches: Vec<_> = explorer
         .iter()
         .map(|family| {
             let simple = match &family {
@@ -425,7 +425,8 @@ mod tests {
     }
 
     fn calculate(base: u8, max_weight: usize) -> (CandidateSequences, Vec<search::SearchNode>) {
-        let (ctx, frontier) = search_for_simple_families(base, Some(max_weight), None, false);
+        let (ctx, frontier) =
+            search_for_simple_families::<Frontier<SearchNode>>(base, Some(max_weight), None, false);
         (ctx.primes, frontier.iter().cloned().collect())
     }
 
@@ -433,7 +434,7 @@ mod tests {
         base: u8,
         max_weight: usize,
     ) -> (CandidateSequences, Vec<search::SearchNode>) {
-        do_search(&SearchArgs {
+        do_search::<Frontier<SearchNode>>(&SearchArgs {
             base,
             max_weight: Some(max_weight),
             max_iter: None,
