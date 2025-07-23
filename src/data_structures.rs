@@ -1,10 +1,12 @@
+use std::collections::VecDeque;
+
 use crate::digits::DigitSeq;
 
 pub struct Frontier<T> {
     /// maps weight to nodes; used to ensure we're exploring the
     /// search space in (non-strictly) increasing order.
     /// items lower than `min_allowed_weight` must be empty
-    by_weight: Vec<Vec<T>>,
+    by_weight: Vec<VecDeque<T>>,
     /// the 'ratchet' that enforces that we can't backtrack to an
     /// element of lower weight.
     min_allowed_weight: usize,
@@ -24,6 +26,15 @@ impl<T: Weight> Frontier<T> {
             by_weight: vec![],
             min_allowed_weight: 0,
         }
+    }
+
+    pub fn start(initial: T) -> Self {
+        let mut ret = Self {
+            by_weight: vec![],
+            min_allowed_weight: initial.weight(),
+        };
+        ret.put(initial);
+        ret
     }
 
     pub fn len(&self) -> usize {
@@ -49,18 +60,8 @@ impl<T: Weight> Frontier<T> {
     /// Once this method is called, elements of weight < self.min_weight
     /// should not be inserted! Elements with exactly the minimum weight
     /// are allowed though (lateral exploration).
-    pub fn pop(&mut self) -> Option<Vec<T>> {
-        for (i, layer) in self.by_weight.iter_mut().enumerate() {
-            if i < self.min_allowed_weight {
-                assert!(layer.is_empty())
-            }
-
-            // Take the first non-empty layer we see
-            if !layer.is_empty() {
-                return Some(std::mem::take(layer));
-            }
-        }
-        None
+    pub fn pop(&mut self) -> Option<VecDeque<T>> {
+        self.find_first_non_empty_layer_mut().map(std::mem::take)
     }
 
     pub fn extend(&mut self, iter: impl IntoIterator<Item = T>) {
@@ -76,12 +77,63 @@ impl<T: Weight> Frontier<T> {
         loop {
             match self.by_weight.get_mut(weight) {
                 Some(layer) => {
-                    layer.push(node);
+                    layer.push_back(node);
                     break;
                 }
-                None => self.by_weight.push(vec![]),
+                None => self.by_weight.push(VecDeque::new()),
             }
         }
+    }
+
+    // TODO: return some richer type from the closure?
+    /// Pops the next node, and applies the given function to it,
+    /// inserting the returned nodes into itself.
+    ///
+    /// Returned nodes must have weight at least as large as the
+    /// popped node.
+    ///
+    /// Returns false if this structure is empty and there are no
+    /// nodes to explore.
+    pub fn explore_next(&mut self, f: impl FnOnce(T) -> Vec<T>) -> bool {
+        // Pop out an element of least weight
+        let layer = match self.find_first_non_empty_layer_mut() {
+            Some(layer) => layer,
+            None => return false,
+        };
+
+        let node = layer.pop_front().expect("non-empty layer");
+        self.extend(f(node));
+        true
+    }
+
+    pub fn explore_one_level(&mut self, mut f: impl FnMut(T) -> Vec<T>) -> bool {
+        let layer = match self.pop() {
+            Some(layer) => layer,
+            None => return false,
+        };
+
+        for node in layer {
+            self.extend(f(node));
+        }
+
+        true
+    }
+
+    fn find_first_non_empty_layer_mut(&mut self) -> Option<&mut VecDeque<T>> {
+        for (i, layer) in self.by_weight.iter_mut().enumerate() {
+            if i < self.min_allowed_weight {
+                assert!(
+                    layer.is_empty(),
+                    "all layers below min_allowed_weight must be empty"
+                );
+            }
+
+            if !layer.is_empty() {
+                return Some(layer);
+            }
+        }
+
+        None
     }
 }
 
