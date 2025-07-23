@@ -8,7 +8,7 @@ use search::{is_substring_of_simple, search_for_simple_families, SearchContext};
 use sieve::{Sequence, SequenceSlice};
 use std::ops::ControlFlow;
 
-use crate::data_structures::Frontier;
+use crate::data_structures::{Frontier, TreeTracer};
 use crate::search::{Explore, SearchNode};
 
 mod data_structures;
@@ -61,6 +61,10 @@ struct SearchArgs {
     /// max p to sieve with
     #[arg(long, default_value_t = 1_000_000)]
     p_max: u64,
+
+    /// whether to log the whole search tree
+    #[arg(long)]
+    tree_log: bool,
 }
 
 #[derive(clap::Args)]
@@ -94,7 +98,11 @@ fn main() {
 
     match args.command {
         Command::Search(cmd) => {
-            do_search::<Frontier<SearchNode>>(&cmd);
+            if cmd.tree_log {
+                do_search::<TreeTracer<SearchNode>>(&cmd);
+            } else {
+                do_search::<Frontier<SearchNode>>(&cmd);
+            }
         }
         Command::Sieve(cmd) => {
             do_sieve(&cmd);
@@ -441,6 +449,7 @@ mod tests {
             with_sieve: true,
             n_hi: 5000,
             p_max: 1_000_000,
+            tree_log: false,
         })
     }
 

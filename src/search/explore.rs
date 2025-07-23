@@ -68,6 +68,7 @@ impl Explore for TreeTracer<SearchNode> {
     }
 
     fn print_tree_to_stdout(&self) {
+        println!("---- SEARCH TREE ----");
         self.print_tree_to_stdout();
     }
 }

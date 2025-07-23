@@ -166,6 +166,8 @@ impl<T: Weight> TreeTracer<T> {
 
                 self.put(child);
             }
+
+            self.nodes[idx].children = child_idxs;
         }
 
         true
