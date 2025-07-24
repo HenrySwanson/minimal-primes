@@ -405,7 +405,7 @@ mod tests {
         Complete,
         /// Can get all the minimal primes, but there's some branches
         /// we can't realize are composite.
-        StrayBranches { unresolved: usize },
+        StrayBranches { unresolved: Vec<&'static str> },
         /// Not solved yet. Limit the number of iterations.
         Unsolved { max_weight: usize },
     }
@@ -425,8 +425,20 @@ mod tests {
     declare_test_for_base!(test_base_5, 5, Status::Complete);
     declare_test_for_base!(test_base_6, 6, Status::Complete);
     declare_test_for_base!(test_base_7, 7, Status::Complete);
-    declare_test_for_base!(test_base_8, 8, Status::StrayBranches { unresolved: 1 });
-    declare_test_for_base!(test_base_9, 9, Status::StrayBranches { unresolved: 1 });
+    declare_test_for_base!(
+        test_base_8,
+        8,
+        Status::StrayBranches {
+            unresolved: vec!["10*1"],
+        }
+    );
+    declare_test_for_base!(
+        test_base_9,
+        9,
+        Status::StrayBranches {
+            unresolved: vec!["1*"]
+        }
+    );
     declare_test_for_base!(test_base_10, 10, Status::Complete);
     declare_test_for_base!(test_base_11, 11, Status::Complete);
     declare_test_for_base!(test_base_12, 12, Status::Complete);
@@ -442,7 +454,13 @@ mod tests {
     declare_test_for_base!(test_base_21, 21, Status::Unsolved { max_weight: 4 });
     declare_test_for_base!(test_base_22, 22, Status::Unsolved { max_weight: 5 });
     declare_test_for_base!(test_base_23, 23, Status::Unsolved { max_weight: 3 });
-    declare_test_for_base!(test_base_24, 24, Status::StrayBranches { unresolved: 1 });
+    declare_test_for_base!(
+        test_base_24,
+        24,
+        Status::StrayBranches {
+            unresolved: vec!["6*1"]
+        }
+    );
     declare_test_for_base!(test_base_25, 25, Status::Unsolved { max_weight: 3 });
     declare_test_for_base!(test_base_26, 26, Status::Unsolved { max_weight: 3 });
     declare_test_for_base!(test_base_27, 27, Status::Unsolved { max_weight: 3 });
@@ -470,10 +488,25 @@ mod tests {
                 let max_weight = get_max_weight(base) + 1;
                 let results = calculate(base, max_weight);
                 compare_primes(base, &results.primes, false);
+
+                assert!(
+                    results.other_families.is_empty(),
+                    "Got some non-simple families:\n{}",
+                    results.other_families.iter().format("\n")
+                );
+
+                let mut simple_strings: Vec<_> = results
+                    .simple_families
+                    .iter()
+                    // TODO: better method here
+                    .map(|x| x.to_string().split(" -- ").next().unwrap().to_owned())
+                    .collect();
+                simple_strings.sort();
+
                 assert_eq!(
-                    results.simple_families.len() + results.other_families.len(),
+                    simple_strings,
                     unresolved,
-                    "Didn't get the expected number of unsolved branches: {}\n{}",
+                    "Didn't get the expected unsolved branches:\n{}\nvs\n{}",
                     results.simple_families.iter().format("\n"),
                     results.other_families.iter().format("\n")
                 );
