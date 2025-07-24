@@ -13,12 +13,16 @@ use num_traits::One;
 
 use self::composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
 use self::families::Family;
-use crate::data_structures::{is_proper_substring, CandidateSequences, Weight};
+use crate::data_structures::{is_proper_substring, CandidateSequences};
 use crate::digits::DigitSeq;
 use crate::math::gcd_reduce;
+use crate::search::explore::Weight;
 
 pub use self::explore::Explore;
 pub use self::families::SimpleFamily;
+
+// TODO: un-pub these
+pub use self::explore::{Frontier, TreeTracer};
 
 // TODO: don't love the return type here, try moving some fields around
 pub fn search_for_simple_families<E: Explore>(

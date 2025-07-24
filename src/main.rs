@@ -1,15 +1,16 @@
+use crate::data_structures::CandidateSequences;
+use crate::digits::{Digit, DigitSeq};
+use crate::search::{
+    is_substring_of_simple, search_for_simple_families, Explore, Frontier, SearchNode,
+    SimpleFamily, TreeTracer,
+};
+use crate::sieve::{Sequence, SequenceSlice};
+
 use clap::Parser;
-use data_structures::CandidateSequences;
-use digits::{Digit, DigitSeq};
 use itertools::Itertools;
 use log::LevelFilter;
 use num_bigint::{BigInt, BigUint};
 use num_prime::nt_funcs::is_prime;
-use search::{is_substring_of_simple, search_for_simple_families};
-use sieve::{Sequence, SequenceSlice};
-
-use crate::data_structures::{Frontier, TreeTracer};
-use crate::search::{Explore, SearchNode, SimpleFamily};
 
 mod data_structures;
 mod digits;
@@ -389,6 +390,8 @@ fn do_sieve(cmd: &SieveArgs) {
 #[cfg(test)]
 mod tests {
     use std::io;
+
+    use crate::search::Frontier;
 
     use super::*;
 
