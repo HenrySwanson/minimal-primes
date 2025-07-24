@@ -4,12 +4,12 @@ use digits::{Digit, DigitSeq};
 use itertools::Itertools;
 use log::LevelFilter;
 use num_bigint::{BigInt, BigUint};
-use search::{is_substring_of_simple, search_for_simple_families, SearchContext};
+use num_prime::nt_funcs::is_prime;
+use search::{is_substring_of_simple, search_for_simple_families};
 use sieve::{Sequence, SequenceSlice};
-use std::ops::ControlFlow;
 
 use crate::data_structures::{Frontier, TreeTracer};
-use crate::search::{Explore, SearchNode};
+use crate::search::{Explore, SearchNode, SimpleFamily};
 
 mod data_structures;
 mod digits;
@@ -111,7 +111,7 @@ fn main() {
 }
 
 fn do_search<E: Explore>(cmd: &SearchArgs) -> (CandidateSequences, Vec<search::SearchNode>) {
-    let (mut ctx, mut explorer) = first_stage::<E>(cmd);
+    let (mut ctx, explorer) = first_stage::<E>(cmd);
 
     if !cmd.with_sieve {
         return (ctx.primes, explorer.iter().cloned().collect());
@@ -122,9 +122,17 @@ fn do_search<E: Explore>(cmd: &SearchArgs) -> (CandidateSequences, Vec<search::S
         return (ctx.primes, explorer.iter().cloned().collect());
     }
 
-    while intermediate_stage(&mut ctx, &mut explorer).is_continue() {}
+    let unsolved_families = explorer
+        .iter()
+        .map(|node| match node {
+            SearchNode::Arbitrary(_) => unreachable!("all_simple was true"),
+            SearchNode::Simple(simple_family) => simple_family.clone(),
+        })
+        .collect();
 
-    let (primes, unsolved) = second_stage(cmd, ctx, explorer);
+    let unsolved_families = intermediate_stage(cmd.base, unsolved_families, &mut ctx.primes);
+
+    let (primes, unsolved) = second_stage(cmd, unsolved_families, ctx.primes);
 
     println!(
         "Final set of primes ({}): {}",
@@ -136,7 +144,10 @@ fn do_search<E: Explore>(cmd: &SearchArgs) -> (CandidateSequences, Vec<search::S
         println!("{}", x);
     }
 
-    (primes, unsolved)
+    (
+        primes,
+        unsolved.into_iter().map(SearchNode::Simple).collect(),
+    )
 }
 
 fn first_stage<E: Explore>(cmd: &SearchArgs) -> (search::SearchContext, E) {
@@ -184,62 +195,99 @@ fn first_stage<E: Explore>(cmd: &SearchArgs) -> (search::SearchContext, E) {
     (ctx, explorer)
 }
 
-fn intermediate_stage<E: Explore>(
-    ctx: &mut SearchContext,
-    explorer: &mut E,
-) -> ControlFlow<(), ()> {
-    println!("---- INTERMEDIARY PHASE ----");
+fn intermediate_stage(
+    base: u8,
+    unsolved_families: Vec<SimpleFamily>,
+    primes: &mut CandidateSequences,
+) -> Vec<SimpleFamily> {
     // It's possible that a simple family can only be expanded a finite amount
     // before it conflicts with a known minimal prime. If so, we should not
-    // jump right to sieving, but should instead continue normal searching.
+    // jump right to sieving, but try to eliminate it quickly.
+    println!("---- INTERMEDIARY PHASE ----");
 
-    // Check if any family is potentially able to contain any prime.
-    let should_search = explorer.iter().any(|family| {
-        let simple = match family {
-            search::SearchNode::Simple(s) => s,
-            _ => unreachable!("found non-simple family after all_simple()"),
-        };
-
-        ctx.primes
-            .iter()
-            .any(|p| match is_substring_of_simple(p, simple) {
-                search::SubstringResult::Never => false,
-                search::SubstringResult::Yes => true,
-                search::SubstringResult::Eventually(_) => true,
-            })
-    });
-
-    if should_search {
-        println!(
-            "Searching one extra round: iter={}, num primes={}, num_branches={}",
-            ctx.iter,
-            ctx.primes.len(),
-            explorer.len()
-        );
-        ctx.search_one_level(explorer);
-        ControlFlow::Continue(())
-    } else {
-        ControlFlow::Break(())
-    }
+    unsolved_families
+        .into_iter()
+        .filter_map(|family| intermediate_process_family(base, family, primes))
+        .collect()
 }
 
-fn second_stage<E: Explore>(
-    cmd: &SearchArgs,
-    ctx: SearchContext,
-    explorer: E,
-) -> (CandidateSequences, Vec<search::SearchNode>) {
-    println!("---- SIEVING PHASE ----");
-    let base = ctx.base;
-    let mut primes = ctx.primes;
-    let mut unsolved_branches = vec![];
-    let mut remaining_branches: Vec<_> = explorer
-        .iter()
-        .map(|family| {
-            let simple = match &family {
-                search::SearchNode::Simple(x) => x,
-                _ => unreachable!("found non-simple family after all_simple()"),
-            };
+/// If the family becomes prime, adds it to `primes`. If it contains another
+/// prime, just discards it. If it can't do either of those things, returns
+/// the family, incremented to as far as we searched.
+fn intermediate_process_family(
+    base: u8,
+    family: SimpleFamily,
+    primes: &mut CandidateSequences,
+) -> Option<SimpleFamily> {
+    // Figure out how many iterations we need to check (if any)
+    let mut min_repeats = None;
+    for p in primes.iter() {
+        match is_substring_of_simple(p, &family) {
+            search::SubstringResult::Yes => {
+                // we can discard this immediately!
+                println!("  Discarding {}, contains prime {}", family, p);
+                return None;
+            }
+            search::SubstringResult::Never => {
+                // no luck, move to the next prime
+            }
+            search::SubstringResult::Eventually(n) => {
+                println!("  {} will contain {} at {} repeats", family, p, n);
+                min_repeats = Some(min_repeats.map_or(n, |m| n.min(m)));
+            }
+        }
+    }
 
+    // TODO get really crystal clear about "is it n repeats or n _more_ repeats"
+    let iterations = match min_repeats {
+        Some(n) => n - family.num_repeats,
+        None => {
+            println!("  {} will not contain any known minimal primes", family);
+            return Some(family);
+        }
+    };
+
+    // Either this family hits a prime quickly, or after it gets too long,
+    // will contain another prime and be discarded. Let's find out which.
+    let mut family = family;
+    for _ in 0..iterations {
+        // Test if it's prime
+        let value = family.value(base);
+
+        if is_prime(&value, None).probably() {
+            println!("  Saving {}, is prime", family);
+            // TODO: shouldn't this be a method?
+            let mut seq = family.before;
+            for _ in 0..family.num_repeats {
+                seq += family.center;
+            }
+            seq += family.after;
+
+            primes.insert(seq);
+            return None;
+        }
+
+        // not yet, increment and try again
+        family.num_repeats += 1;
+    }
+
+    // Didn't become prime, discard it
+    println!("  {} did not become prime, discarding", family);
+    None
+}
+
+fn second_stage(
+    cmd: &SearchArgs,
+    unsolved_families: Vec<SimpleFamily>,
+    primes: CandidateSequences,
+) -> (CandidateSequences, Vec<SimpleFamily>) {
+    println!("---- SIEVING PHASE ----");
+    let base = cmd.base;
+    let mut primes = primes;
+    let mut unsolved_branches = vec![];
+    let mut remaining_branches: Vec<_> = unsolved_families
+        .iter()
+        .map(|simple| {
             // Compute the sequence for this family: xy*z
             let x = simple.before.value(base);
             let y = simple.center.0;
@@ -291,7 +339,7 @@ fn second_stage<E: Explore>(
             // Do we give up on this sequence?
             if n_lo >= cmd.n_hi {
                 println!("Reached limit on n for {}", simple);
-                unsolved_branches.push(search::SearchNode::Simple(simple.clone()));
+                unsolved_branches.push(simple.clone());
                 continue;
             }
 
