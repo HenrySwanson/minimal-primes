@@ -12,19 +12,40 @@ use num_prime::nt_funcs::is_prime;
 use num_traits::One;
 
 use self::composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
+use self::explore::{Frontier, TreeTracer, Weight};
 use crate::data_structures::{is_proper_substring, CandidateSequences};
 use crate::digits::DigitSeq;
 use crate::math::gcd_reduce;
-use crate::search::explore::Weight;
+use crate::search::explore::Explore;
 use crate::SearchResults;
 
-pub use self::explore::Explore;
 pub use self::families::{Family, SimpleFamily};
 
-// TODO: un-pub these
-pub use self::explore::{Frontier, TreeTracer};
+pub fn search_for_simple_families(
+    base: u8,
+    max_weight: Option<usize>,
+    max_iter: Option<usize>,
+    stop_when_simple: bool,
+    tree_log: bool,
+) -> SearchResults {
+    if tree_log {
+        search_for_simple_families_impl::<TreeTracer<SearchNode>>(
+            base,
+            max_weight,
+            max_iter,
+            stop_when_simple,
+        )
+    } else {
+        search_for_simple_families_impl::<Frontier<SearchNode>>(
+            base,
+            max_weight,
+            max_iter,
+            stop_when_simple,
+        )
+    }
+}
 
-pub fn search_for_simple_families<E: Explore>(
+fn search_for_simple_families_impl<E: Explore>(
     base: u8,
     max_weight: Option<usize>,
     max_iter: Option<usize>,

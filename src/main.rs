@@ -3,8 +3,7 @@ use std::cell::RefCell;
 use crate::data_structures::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
 use crate::search::{
-    is_substring_of_simple, search_for_simple_families, Explore, Family, Frontier, SearchNode,
-    SimpleFamily, Stats, TreeTracer,
+    is_substring_of_simple, search_for_simple_families, Family, SimpleFamily, Stats,
 };
 use crate::sieve::{Sequence, SequenceSlice};
 
@@ -101,11 +100,7 @@ fn main() {
 
     match args.command {
         Command::Search(cmd) => {
-            if cmd.tree_log {
-                do_search::<TreeTracer<SearchNode>>(&cmd);
-            } else {
-                do_search::<Frontier<SearchNode>>(&cmd);
-            }
+            do_search(&cmd);
         }
         Command::Sieve(cmd) => {
             do_sieve(&cmd);
@@ -120,8 +115,8 @@ pub struct SearchResults {
     pub stats: RefCell<Stats>,
 }
 
-fn do_search<E: Explore>(cmd: &SearchArgs) -> SearchResults {
-    let mut results = first_stage::<E>(cmd);
+fn do_search(cmd: &SearchArgs) -> SearchResults {
+    let mut results = first_stage(cmd);
 
     if !cmd.with_sieve {
         return results;
@@ -155,9 +150,14 @@ fn do_search<E: Explore>(cmd: &SearchArgs) -> SearchResults {
     }
 }
 
-fn first_stage<E: Explore>(cmd: &SearchArgs) -> SearchResults {
-    let results =
-        search_for_simple_families::<E>(cmd.base, cmd.max_weight, cmd.max_iter, cmd.with_sieve);
+fn first_stage(cmd: &SearchArgs) -> SearchResults {
+    let results = search_for_simple_families(
+        cmd.base,
+        cmd.max_weight,
+        cmd.max_iter,
+        cmd.with_sieve,
+        cmd.tree_log,
+    );
 
     println!("---- BRANCHES REMAINING ----");
     for f in results.simple_families.iter() {
@@ -395,11 +395,9 @@ fn do_sieve(cmd: &SieveArgs) {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-
-    use crate::search::Frontier;
-
     use super::*;
+
+    use std::io;
 
     // TODO: name exactly which branches can't be resolved
     enum Status {
@@ -492,11 +490,11 @@ mod tests {
     }
 
     fn calculate(base: u8, max_weight: usize) -> SearchResults {
-        search_for_simple_families::<Frontier<SearchNode>>(base, Some(max_weight), None, false)
+        search_for_simple_families(base, Some(max_weight), None, false, false)
     }
 
     fn calculate_full(base: u8, max_weight: usize) -> SearchResults {
-        do_search::<Frontier<SearchNode>>(&SearchArgs {
+        do_search(&SearchArgs {
             base,
             max_weight: Some(max_weight),
             max_iter: None,
