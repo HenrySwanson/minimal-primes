@@ -1,8 +1,10 @@
+use std::cell::RefCell;
+
 use crate::data_structures::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
 use crate::search::{
-    is_substring_of_simple, search_for_simple_families, Explore, Frontier, SearchNode,
-    SimpleFamily, TreeTracer,
+    is_substring_of_simple, search_for_simple_families, Explore, Family, Frontier, SearchNode,
+    SimpleFamily, Stats, TreeTracer,
 };
 use crate::sieve::{Sequence, SequenceSlice};
 
@@ -111,29 +113,29 @@ fn main() {
     }
 }
 
-fn do_search<E: Explore>(cmd: &SearchArgs) -> (CandidateSequences, Vec<search::SearchNode>) {
-    let (mut ctx, explorer) = first_stage::<E>(cmd);
+pub struct SearchResults {
+    pub primes: CandidateSequences,
+    pub simple_families: Vec<SimpleFamily>,
+    pub other_families: Vec<Family>,
+    pub stats: RefCell<Stats>,
+}
+
+fn do_search<E: Explore>(cmd: &SearchArgs) -> SearchResults {
+    let mut results = first_stage::<E>(cmd);
 
     if !cmd.with_sieve {
-        return (ctx.primes, explorer.iter().cloned().collect());
+        return results;
     }
 
-    if !explorer.all_simple() {
+    if !results.other_families.is_empty() {
         println!("Not all remaining branches are simple! Must bail out now.");
-        return (ctx.primes, explorer.iter().cloned().collect());
+        return results;
     }
 
-    let unsolved_families = explorer
-        .iter()
-        .map(|node| match node {
-            SearchNode::Arbitrary(_) => unreachable!("all_simple was true"),
-            SearchNode::Simple(simple_family) => simple_family.clone(),
-        })
-        .collect();
+    let unsolved_families =
+        intermediate_stage(cmd.base, results.simple_families, &mut results.primes);
 
-    let unsolved_families = intermediate_stage(cmd.base, unsolved_families, &mut ctx.primes);
-
-    let (primes, unsolved) = second_stage(cmd, unsolved_families, ctx.primes);
+    let (primes, unsolved) = second_stage(cmd, unsolved_families, results.primes);
 
     println!(
         "Final set of primes ({}): {}",
@@ -145,55 +147,59 @@ fn do_search<E: Explore>(cmd: &SearchArgs) -> (CandidateSequences, Vec<search::S
         println!("{}", x);
     }
 
-    (
+    SearchResults {
         primes,
-        unsolved.into_iter().map(SearchNode::Simple).collect(),
-    )
+        simple_families: unsolved,
+        other_families: vec![],
+        stats: results.stats,
+    }
 }
 
-fn first_stage<E: Explore>(cmd: &SearchArgs) -> (search::SearchContext, E) {
-    let (ctx, explorer) =
+fn first_stage<E: Explore>(cmd: &SearchArgs) -> SearchResults {
+    let results =
         search_for_simple_families::<E>(cmd.base, cmd.max_weight, cmd.max_iter, cmd.with_sieve);
 
     println!("---- BRANCHES REMAINING ----");
-    for f in explorer.iter() {
+    for f in results.simple_families.iter() {
+        println!("{}", f);
+    }
+    for f in results.other_families.iter() {
         println!("{}", f);
     }
     println!("---- MINIMAL PRIMES ----");
-    println!("{}", ctx.primes.iter().format(", "));
+    println!("{}", results.primes.iter().format(", "));
     println!("------------");
     println!(
         "{} primes found, {} branches unresolved",
-        ctx.primes.len(),
-        explorer.len()
+        results.primes.len(),
+        results.simple_families.len() + results.other_families.len()
     );
     println!("---- STATS ----");
     println!(
         "{} branches explored",
-        ctx.stats.borrow().num_branches_explored
+        results.stats.borrow().num_branches_explored
     );
     println!(
         "{} primality tests ({}ms)",
-        ctx.stats.borrow().num_primality_checks,
-        ctx.stats.borrow().duration_primality_checks.as_millis()
+        results.stats.borrow().num_primality_checks,
+        results.stats.borrow().duration_primality_checks.as_millis()
     );
     println!(
         "{} substring tests ({}ms)",
-        ctx.stats.borrow().num_substring_checks,
-        ctx.stats.borrow().duration_substring_checks.as_millis()
+        results.stats.borrow().num_substring_checks,
+        results.stats.borrow().duration_substring_checks.as_millis()
     );
     println!(
         "{} simple substring tests ({}ms)",
-        ctx.stats.borrow().num_simple_substring_checks,
-        ctx.stats
+        results.stats.borrow().num_simple_substring_checks,
+        results
+            .stats
             .borrow()
             .duration_simple_substring_checks
             .as_millis()
     );
 
-    explorer.print_tree_to_stdout();
-
-    (ctx, explorer)
+    results
 }
 
 fn intermediate_stage(
@@ -452,47 +458,44 @@ mod tests {
             Status::Complete => {
                 // Simulate it for the full duration
                 let max_weight = get_max_weight(base);
-                let (primes, frontier) = calculate_full(base, max_weight);
-                compare_primes(base, &primes, true);
+                let results = calculate_full(base, max_weight);
+                compare_primes(base, &results.primes, true);
                 assert!(
-                    frontier.is_empty(),
-                    "Some branches were not eliminated!\n{}",
-                    frontier.iter().format("\n")
+                    results.simple_families.is_empty() && results.other_families.is_empty(),
+                    "Some branches were not eliminated!\n{}\n{}",
+                    results.simple_families.iter().format("\n"),
+                    results.other_families.iter().format("\n")
                 );
             }
             Status::StrayBranches { unresolved } => {
                 // Simulate it for the full duration
                 let max_weight = get_max_weight(base) + 1;
-                let (primes, frontier) = calculate(base, max_weight);
-                compare_primes(base, &primes, false);
+                let results = calculate(base, max_weight);
+                compare_primes(base, &results.primes, false);
                 assert_eq!(
-                    frontier.len(),
+                    results.simple_families.len() + results.other_families.len(),
                     unresolved,
-                    "Didn't get the expected number of unsolved branches: {}",
-                    frontier.iter().format("\n")
+                    "Didn't get the expected number of unsolved branches: {}\n{}",
+                    results.simple_families.iter().format("\n"),
+                    results.other_families.iter().format("\n")
                 );
             }
             Status::Unsolved { max_weight } => {
-                let (primes, frontier) = calculate(base, max_weight);
-                compare_primes(base, &primes, false);
+                let results = calculate(base, max_weight);
+                compare_primes(base, &results.primes, false);
                 assert!(
-                    !frontier.is_empty(),
+                    !results.simple_families.is_empty() || !results.other_families.is_empty(),
                     "All branches were eliminated, this test should be marked Complete!"
                 );
             }
         }
     }
 
-    fn calculate(base: u8, max_weight: usize) -> (CandidateSequences, Vec<search::SearchNode>) {
-        let (ctx, frontier) =
-            search_for_simple_families::<Frontier<SearchNode>>(base, Some(max_weight), None, false);
-        (ctx.primes, frontier.iter().cloned().collect())
+    fn calculate(base: u8, max_weight: usize) -> SearchResults {
+        search_for_simple_families::<Frontier<SearchNode>>(base, Some(max_weight), None, false)
     }
 
-    fn calculate_full(
-        base: u8,
-        max_weight: usize,
-    ) -> (CandidateSequences, Vec<search::SearchNode>) {
+    fn calculate_full(base: u8, max_weight: usize) -> SearchResults {
         do_search::<Frontier<SearchNode>>(&SearchArgs {
             base,
             max_weight: Some(max_weight),
