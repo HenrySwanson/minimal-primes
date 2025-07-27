@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 use crate::data_structures::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
 use crate::search::{search_for_simple_families, Family, SimpleFamily, Stats};
@@ -110,7 +108,7 @@ pub struct SearchResults {
     pub primes: CandidateSequences,
     pub simple_families: Vec<SimpleFamily>,
     pub other_families: Vec<Family>,
-    pub stats: RefCell<Stats>,
+    pub stats: Stats,
 }
 
 fn do_search(cmd: &SearchArgs) -> SearchResults {
@@ -173,28 +171,21 @@ fn first_stage(cmd: &SearchArgs) -> SearchResults {
         results.simple_families.len() + results.other_families.len()
     );
     println!("---- STATS ----");
-    println!(
-        "{} branches explored",
-        results.stats.borrow().num_branches_explored
-    );
+    println!("{} branches explored", results.stats.num_branches_explored);
     println!(
         "{} primality tests ({}ms)",
-        results.stats.borrow().num_primality_checks,
-        results.stats.borrow().duration_primality_checks.as_millis()
+        results.stats.num_primality_checks,
+        results.stats.duration_primality_checks.as_millis()
     );
     println!(
         "{} substring tests ({}ms)",
-        results.stats.borrow().num_substring_checks,
-        results.stats.borrow().duration_substring_checks.as_millis()
+        results.stats.num_substring_checks,
+        results.stats.duration_substring_checks.as_millis()
     );
     println!(
         "{} simple substring tests ({}ms)",
-        results.stats.borrow().num_simple_substring_checks,
-        results
-            .stats
-            .borrow()
-            .duration_simple_substring_checks
-            .as_millis()
+        results.stats.num_simple_substring_checks,
+        results.stats.duration_simple_substring_checks.as_millis()
     );
 
     results

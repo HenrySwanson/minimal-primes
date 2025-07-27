@@ -2,7 +2,6 @@ mod composite;
 mod explore;
 mod families;
 
-use std::cell::RefCell;
 use std::time::{Duration, Instant};
 
 use itertools::Itertools;
@@ -126,7 +125,7 @@ pub struct SearchContext {
     pub primes: CandidateSequences,
 
     /// For potentially getting insight into what's going on
-    pub stats: RefCell<Stats>,
+    pub stats: Stats,
 }
 
 #[derive(Debug, Clone)]
@@ -150,7 +149,7 @@ impl SearchContext {
             base,
             iter: 0,
             primes: CandidateSequences::new(),
-            stats: RefCell::new(Stats::default()),
+            stats: Stats::default(),
         }
     }
 
@@ -167,7 +166,7 @@ impl SearchContext {
                 self.explore_simple_family(family)
             }
         };
-        self.stats.borrow_mut().num_branches_explored += 1;
+        self.stats.num_branches_explored += 1;
         children
     }
 
@@ -283,18 +282,18 @@ impl SearchContext {
         // Test if it contains a prime
         let start = Instant::now();
         for prime in self.primes.iter() {
-            self.stats.borrow_mut().num_simple_substring_checks += 1;
+            self.stats.num_simple_substring_checks += 1;
             if family
                 .will_contain_at(prime)
                 .is_some_and(|n| n <= family.min_repeats)
             {
                 let reason = format!("  Discarding {}, contains prime {}", family, prime);
-                self.stats.borrow_mut().duration_simple_substring_checks += start.elapsed();
+                self.stats.duration_simple_substring_checks += start.elapsed();
                 debug!("{}", reason);
                 return (vec![], reason);
             }
         }
-        self.stats.borrow_mut().duration_simple_substring_checks += start.elapsed();
+        self.stats.duration_simple_substring_checks += start.elapsed();
 
         // Test if it is a prime
         let value = family.value(self.base);
@@ -345,25 +344,25 @@ impl SearchContext {
         family
     }
 
-    fn test_for_contained_prime(&self, seq: &DigitSeq) -> Option<&DigitSeq> {
+    fn test_for_contained_prime(&mut self, seq: &DigitSeq) -> Option<&DigitSeq> {
         let start = Instant::now();
         // We don't need to search for *all* possible primes, just the minimal
         // ones. And if we've been doing our job right, we should have a complete
         // list of them (up to a length limit).
         let result = self.primes.iter().find(|subseq| {
-            self.stats.borrow_mut().num_substring_checks += 1;
+            self.stats.num_substring_checks += 1;
             is_proper_substring(subseq, seq)
         });
 
-        self.stats.borrow_mut().duration_substring_checks += start.elapsed();
+        self.stats.duration_substring_checks += start.elapsed();
         result
     }
 
     fn test_for_prime(&mut self, value: &BigUint) -> bool {
         let start = Instant::now();
         let result = is_prime(value, None).probably();
-        self.stats.borrow_mut().duration_primality_checks += start.elapsed();
-        self.stats.borrow_mut().num_primality_checks += 1;
+        self.stats.duration_primality_checks += start.elapsed();
+        self.stats.num_primality_checks += 1;
         result
     }
 
@@ -404,7 +403,7 @@ impl SearchContext {
         false
     }
 
-    fn split_on_repeat(&self, family: &Family, max_repeats: usize) -> Option<Vec<Family>> {
+    fn split_on_repeat(&mut self, family: &Family, max_repeats: usize) -> Option<Vec<Family>> {
         debug!(" Trying to split {}", family);
         for (i, core) in family.cores.iter().enumerate() {
             for d in core.iter().copied() {
