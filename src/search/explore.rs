@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use log::debug;
+
 use crate::data_structures::WeightedVec;
 use crate::search::SearchNode;
 
@@ -14,7 +16,7 @@ pub trait Explore {
     ///
     /// Returns false if this structure is empty and there are no
     /// nodes to explore.
-    fn explore_next(&mut self, f: impl FnOnce(SearchNode) -> Vec<SearchNode>) -> bool;
+    fn explore_next(&mut self, f: impl FnOnce(SearchNode) -> (Vec<SearchNode>, String)) -> bool;
 
     fn iter(&self) -> impl Iterator<Item = &SearchNode>;
 
@@ -47,6 +49,7 @@ pub struct TreeTracer<T> {
 
 struct TreeTracerNode<T> {
     value: T,
+    reason: Option<String>,
     children: Vec<usize>,
 }
 
@@ -64,7 +67,7 @@ impl Explore for Frontier<SearchNode> {
     }
 
     // TODO: return some richer type from the closure?
-    fn explore_next(&mut self, f: impl FnOnce(SearchNode) -> Vec<SearchNode>) -> bool {
+    fn explore_next(&mut self, f: impl FnOnce(SearchNode) -> (Vec<SearchNode>, String)) -> bool {
         // Pop out an element of least weight
         let layer = match self.by_weight.find_first_non_empty_layer_mut() {
             Some(layer) => layer,
@@ -72,7 +75,8 @@ impl Explore for Frontier<SearchNode> {
         };
 
         let node = layer.pop_front().expect("non-empty layer");
-        for child in f(node) {
+        let (children, _) = f(node);
+        for child in children {
             self.put(child);
         }
         true
@@ -115,7 +119,7 @@ impl Explore for TreeTracer<SearchNode> {
         ret
     }
 
-    fn explore_next(&mut self, f: impl FnOnce(SearchNode) -> Vec<SearchNode>) -> bool {
+    fn explore_next(&mut self, f: impl FnOnce(SearchNode) -> (Vec<SearchNode>, String)) -> bool {
         // Pop out an element of least weight
         let layer = match self.unexplored.find_first_non_empty_layer_mut() {
             Some(layer) => layer,
@@ -125,7 +129,8 @@ impl Explore for TreeTracer<SearchNode> {
         let node_idx = layer.pop_front().expect("non-empty layer");
         let node = &self.nodes[node_idx];
         let mut child_idxs = vec![];
-        for child in f(node.value.clone()) {
+        let (children, reason) = f(node.value.clone());
+        for child in children {
             let child_idx = self.nodes.len();
             child_idxs.push(child_idx);
 
@@ -133,6 +138,7 @@ impl Explore for TreeTracer<SearchNode> {
         }
 
         self.nodes[node_idx].children = child_idxs;
+        self.nodes[node_idx].reason = Some(reason);
         true
     }
 
@@ -163,6 +169,7 @@ impl<T> TreeTracer<T> {
         let idx = self.nodes.len();
         self.nodes.push(TreeTracerNode {
             value: node,
+            reason: None,
             children: vec![],
         });
         self.unexplored.put(idx, weight);
@@ -174,7 +181,20 @@ impl<T> TreeTracer<T> {
     {
         let node = &self.nodes[node_idx];
 
-        println!("{:indent$}{}", "", node.value, indent = indent * 2);
+        match &node.reason {
+            Some(reason) => {
+                println!(
+                    "{:indent$}{}  {}",
+                    "",
+                    node.value,
+                    reason,
+                    indent = indent * 2,
+                );
+            }
+            None => {
+                println!("{:indent$}{}", "", node.value, indent = indent * 2);
+            }
+        }
         for child_idx in &node.children {
             self.print_tree_to_stdout_helper(*child_idx, indent + 1);
         }

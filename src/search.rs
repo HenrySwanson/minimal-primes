@@ -154,7 +154,7 @@ impl SearchContext {
         }
     }
 
-    fn explore_node(&mut self, family: SearchNode) -> Vec<SearchNode> {
+    fn explore_node(&mut self, family: SearchNode) -> (Vec<SearchNode>, String) {
         // Say our family is xL*z.
         // We want to explore all possible children with weight one more than this one.
         let children = match family {
@@ -171,7 +171,7 @@ impl SearchContext {
         children
     }
 
-    fn explore_family(&mut self, family: Family) -> Vec<SearchNode> {
+    fn explore_family(&mut self, family: Family) -> (Vec<SearchNode>, String) {
         // Test this for primality
         // TODO: normally we've tested this already, in reduce_cores,
         // but split_on_repeat can produce strings we've never tested :/
@@ -179,31 +179,35 @@ impl SearchContext {
         let seq = family.contract();
         if let Some(p) = self.test_for_contained_prime(&seq) {
             assert_ne!(&seq, p);
-            debug!("  Discarding {}, contains prime {}", family, p);
-            return vec![];
+            let reason = format!("  Discarding {}, contains prime {}", family, p);
+            debug!("{}", reason);
+            return (vec![], reason);
         }
 
         trace!("  Testing for primality {}", seq);
         let value = seq.value(self.base);
         if self.test_for_prime(&value) {
-            debug!("  Saving {}, contracts to prime", family);
+            let reason = format!("  Saving {}, contracts to prime", family);
             self.primes.insert(seq);
-            return vec![];
+            debug!("{}", reason);
+            return (vec![], reason);
         }
 
         // Then, we try to reduce the cores.
         let mut family = self.reduce_cores(family);
         family.simplify();
         if family.cores.is_empty() {
-            debug!("  {} was reduced to trivial string", family);
-            return vec![];
+            let reason = format!("  {} was reduced to trivial string", family);
+            debug!("{}", reason);
+            return (vec![], reason);
         }
 
         // Now, run some tests to see whether this family is guaranteed to
         // be composite.
         if self.test_for_perpetual_composite(&family) {
-            debug!("  Discarding {}, is always composite", family);
-            return vec![];
+            let reason = format!("  Discarding {}, is always composite", family);
+            debug!("{}", reason);
+            return (vec![], reason);
         }
 
         // TODO: is this right?
@@ -211,7 +215,10 @@ impl SearchContext {
         // re-enqueue it as such. (Note: this is after composite check!)
         let mut family = match SimpleFamily::try_from(family) {
             Ok(simple) => {
-                return vec![SearchNode::Simple(simple)];
+                return (
+                    vec![SearchNode::Simple(simple)],
+                    "reduced to simple".to_string(),
+                );
             }
             // can't convert, put it back to normal
             Err(f) => f,
@@ -219,12 +226,18 @@ impl SearchContext {
 
         // Let's see if we can split it in an interesting way
         if let Some(children) = self.split_on_repeat(&family, 3) {
-            return children.into_iter().map(SearchNode::Arbitrary).collect();
+            return (
+                children.into_iter().map(SearchNode::Arbitrary).collect(),
+                "split on repeat".to_string(),
+            );
         }
 
         if family.weight() >= 2 {
             if let Some(child) = self.split_on_necessary_digit(&family) {
-                return vec![SearchNode::Arbitrary(child)];
+                return (
+                    vec![SearchNode::Arbitrary(child)],
+                    "split on necessary digit".to_string(),
+                );
             }
         }
 
@@ -253,10 +266,13 @@ impl SearchContext {
             children.push(family);
         }
 
-        children.into_iter().map(SearchNode::Arbitrary).collect()
+        (
+            children.into_iter().map(SearchNode::Arbitrary).collect(),
+            "split".to_string(),
+        )
     }
 
-    fn explore_simple_family(&mut self, mut family: SimpleFamily) -> Vec<SearchNode> {
+    fn explore_simple_family(&mut self, mut family: SimpleFamily) -> (Vec<SearchNode>, String) {
         // There's a lot less we can do here! We can't split anything,
         // we can't reduce cores, etc, etc.
         // Even composite testing isn't very useful here, since we
@@ -270,9 +286,10 @@ impl SearchContext {
             let result = is_substring_of_simple(prime, &family);
             self.stats.borrow_mut().num_simple_substring_checks += 1;
             if let SubstringResult::Yes = result {
-                debug!("  Discarding {}, contains prime {}", family, prime);
+                let reason = format!("  Discarding {}, contains prime {}", family, prime);
                 self.stats.borrow_mut().duration_simple_substring_checks += start.elapsed();
-                return vec![];
+                debug!("{}", reason);
+                return (vec![], reason);
             }
         }
         self.stats.borrow_mut().duration_simple_substring_checks += start.elapsed();
@@ -281,15 +298,15 @@ impl SearchContext {
         let value = family.value(self.base);
 
         if self.test_for_prime(&value) {
-            debug!("  Saving {}, is prime", family);
-
+            let reason = format!("  Saving {}, is prime", family);
+            debug!("{}", reason);
             let seq = family.sequence();
             self.primes.insert(seq);
-            return vec![];
+            return (vec![], reason);
         }
 
         family.num_repeats += 1;
-        vec![SearchNode::Simple(family)]
+        (vec![SearchNode::Simple(family)], "increment".to_string())
     }
 
     fn reduce_cores(&mut self, mut family: Family) -> Family {
