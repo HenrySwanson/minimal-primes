@@ -283,12 +283,7 @@ impl SearchContext {
         if self.test_for_prime(&value) {
             debug!("  Saving {}, is prime", family);
 
-            let mut seq = family.before.clone();
-            for _ in 0..family.num_repeats {
-                seq += family.center;
-            }
-            seq += family.after;
-
+            let seq = family.sequence();
             self.primes.insert(seq);
             return vec![];
         }

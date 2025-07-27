@@ -122,6 +122,10 @@ impl Family {
 }
 
 impl SimpleFamily {
+    pub fn sequence(&self) -> DigitSeq {
+        self.sequence_with(self.num_repeats)
+    }
+
     pub fn sequence_with(&self, n: usize) -> DigitSeq {
         let mut seq = self.before.clone();
         for _ in 0..n {

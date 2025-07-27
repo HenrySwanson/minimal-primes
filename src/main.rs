@@ -263,13 +263,7 @@ fn intermediate_process_family(
 
         if is_prime(&value, None).probably() {
             println!("  Saving {}, is prime", family);
-            // TODO: shouldn't this be a method?
-            let mut seq = family.before;
-            for _ in 0..family.num_repeats {
-                seq += family.center;
-            }
-            seq += family.after;
-
+            let seq = family.sequence();
             primes.insert(seq);
             return None;
         }
