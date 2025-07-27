@@ -1,7 +1,5 @@
 use std::fmt::Display;
 
-use log::debug;
-
 use crate::data_structures::WeightedVec;
 use crate::search::SearchNode;
 

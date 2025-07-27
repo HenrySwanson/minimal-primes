@@ -139,7 +139,7 @@ impl Weight for SearchNode {
     fn weight(&self) -> usize {
         match self {
             SearchNode::Arbitrary(x) => x.weight(),
-            SearchNode::Simple(x) => x.before.0.len() + x.num_repeats + x.after.0.len(),
+            SearchNode::Simple(x) => x.before.0.len() + x.min_repeats + x.after.0.len(),
         }
     }
 }
@@ -283,9 +283,11 @@ impl SearchContext {
         // Test if it contains a prime
         let start = Instant::now();
         for prime in self.primes.iter() {
-            let result = is_substring_of_simple(prime, &family);
             self.stats.borrow_mut().num_simple_substring_checks += 1;
-            if let SubstringResult::Yes = result {
+            if family
+                .will_contain_at(prime)
+                .is_some_and(|n| n <= family.min_repeats)
+            {
                 let reason = format!("  Discarding {}, contains prime {}", family, prime);
                 self.stats.borrow_mut().duration_simple_substring_checks += start.elapsed();
                 debug!("{}", reason);
@@ -305,7 +307,7 @@ impl SearchContext {
             return (vec![], reason);
         }
 
-        family.num_repeats += 1;
+        family.min_repeats += 1;
         (vec![SearchNode::Simple(family)], "increment".to_string())
     }
 
@@ -495,62 +497,6 @@ impl SearchContext {
             }
         }
         None
-    }
-}
-
-pub enum SubstringResult {
-    Yes,
-    Never,
-    Eventually(usize),
-}
-
-pub fn is_substring_of_simple(needle: &DigitSeq, haystack: &SimpleFamily) -> SubstringResult {
-    let mut needle_iter = needle.0.iter().copied().peekable();
-    let mut repeats_required = 0;
-
-    // Three stages: go through before, then center, then after.
-    // Try to consume the whole needle.
-    for d in haystack.before.0.iter().copied() {
-        match needle_iter.peek() {
-            Some(d2) if d == *d2 => {
-                needle_iter.next();
-            }
-            Some(_) => {}
-            None => break,
-        }
-    }
-
-    // For the center, consume as many digits as we can, even if it's
-    // more than we currently have.
-    loop {
-        match needle_iter.peek() {
-            Some(d2) if haystack.center == *d2 => {
-                repeats_required += 1;
-                needle_iter.next();
-            }
-            // different digit, time to leave
-            Some(_) => break,
-            // done with the needle!
-            None => break,
-        }
-    }
-
-    for d in haystack.after.0.iter().copied() {
-        match needle_iter.peek() {
-            Some(d2) if d == *d2 => {
-                needle_iter.next();
-            }
-            Some(_) => {}
-            None => break,
-        }
-    }
-
-    if needle_iter.peek().is_some() {
-        SubstringResult::Never
-    } else if repeats_required <= haystack.num_repeats {
-        SubstringResult::Yes
-    } else {
-        SubstringResult::Eventually(repeats_required)
     }
 }
 

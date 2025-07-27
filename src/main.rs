@@ -2,9 +2,7 @@ use std::cell::RefCell;
 
 use crate::data_structures::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
-use crate::search::{
-    is_substring_of_simple, search_for_simple_families, Family, SimpleFamily, Stats,
-};
+use crate::search::{search_for_simple_families, Family, SimpleFamily, Stats};
 use crate::sieve::{Sequence, SequenceSlice};
 
 use clap::Parser;
@@ -227,27 +225,28 @@ fn intermediate_process_family(
     primes: &mut CandidateSequences,
 ) -> Option<SimpleFamily> {
     // Figure out how many iterations we need to check (if any)
-    let mut min_repeats = None;
+    let mut repeats_until_prime = None;
     for p in primes.iter() {
-        match is_substring_of_simple(p, &family) {
-            search::SubstringResult::Yes => {
-                // we can discard this immediately!
-                println!("  Discarding {}, contains prime {}", family, p);
-                return None;
-            }
-            search::SubstringResult::Never => {
+        match family.will_contain_at(p) {
+            None => {
                 // no luck, move to the next prime
             }
-            search::SubstringResult::Eventually(n) => {
-                println!("  {} will contain {} at {} repeats", family, p, n);
-                min_repeats = Some(min_repeats.map_or(n, |m| n.min(m)));
+            Some(n) => {
+                if n <= family.min_repeats {
+                    // we can discard this immediately!
+                    println!("  Discarding {}, contains prime {}", family, p);
+                    return None;
+                }
+
+                // Otherwise, take the the running minimum of these
+                println!("  {} will contain {} after {} more repeats", family, p, n);
+                repeats_until_prime = Some(repeats_until_prime.map_or(n, |m| n.min(m)));
             }
         }
     }
 
-    // TODO get really crystal clear about "is it n repeats or n _more_ repeats"
-    let iterations = match min_repeats {
-        Some(n) => n - family.num_repeats,
+    let repeats_until_prime = match repeats_until_prime {
+        Some(n) => n,
         None => {
             println!("  {} will not contain any known minimal primes", family);
             return Some(family);
@@ -257,7 +256,7 @@ fn intermediate_process_family(
     // Either this family hits a prime quickly, or after it gets too long,
     // will contain another prime and be discarded. Let's find out which.
     let mut family = family;
-    for _ in 0..iterations {
+    while family.min_repeats < repeats_until_prime {
         // Test if it's prime
         let value = family.value(base);
 
@@ -269,7 +268,7 @@ fn intermediate_process_family(
         }
 
         // not yet, increment and try again
-        family.num_repeats += 1;
+        family.min_repeats += 1;
     }
 
     // Didn't become prime, discard it
@@ -327,11 +326,7 @@ fn second_stage(
         for (simple, seq) in std::mem::take(&mut remaining_branches) {
             if let Some(p) = primes
                 .iter()
-                .find(|p| match is_substring_of_simple(p, simple) {
-                    search::SubstringResult::Never => false,
-                    search::SubstringResult::Eventually(n) => n_lo >= n,
-                    search::SubstringResult::Yes => true,
-                })
+                .find(|p| simple.will_contain_at(p).is_some_and(|n| n < n_lo))
             {
                 println!("{} can be eliminated, since it contains {}", simple, p);
                 continue;

@@ -14,7 +14,7 @@ pub struct Family {
 pub struct SimpleFamily {
     pub before: DigitSeq,
     pub center: Digit,
-    pub num_repeats: usize,
+    pub min_repeats: usize,
     pub after: DigitSeq,
 }
 
@@ -123,12 +123,8 @@ impl Family {
 
 impl SimpleFamily {
     pub fn sequence(&self) -> DigitSeq {
-        self.sequence_with(self.num_repeats)
-    }
-
-    pub fn sequence_with(&self, n: usize) -> DigitSeq {
         let mut seq = self.before.clone();
-        for _ in 0..n {
+        for _ in 0..self.min_repeats {
             seq += self.center;
         }
         seq += &self.after;
@@ -136,21 +132,67 @@ impl SimpleFamily {
     }
 
     pub fn value(&self, base: u8) -> BigUint {
-        self.value_with(base, self.num_repeats)
-    }
-
-    pub fn value_with(&self, base: u8, n: usize) -> BigUint {
         let mut value = BigUint::ZERO;
         for d in &self.before.0 {
             value = value * base + d.0;
         }
-        for _ in 0..n {
+        for _ in 0..self.min_repeats {
             value = value * base + self.center.0;
         }
         for d in &self.after.0 {
             value = value * base + d.0;
         }
         value
+    }
+
+    /// Returns the smallest n for which this family will contain the given
+    /// digit sequence as a substring, or None if no such n exists.
+    pub fn will_contain_at(&self, needle: &DigitSeq) -> Option<usize> {
+        let mut needle_iter = needle.0.iter().copied().peekable();
+        let mut repeats_required = 0;
+
+        // Three stages: go through before, then center, then after.
+        // Try to consume the whole needle.
+        for d in self.before.0.iter().copied() {
+            match needle_iter.peek() {
+                Some(d2) if d == *d2 => {
+                    needle_iter.next();
+                }
+                Some(_) => {}
+                None => break,
+            }
+        }
+
+        // For the center, consume as many digits as we can, even if it's
+        // more than we currently have.
+        loop {
+            match needle_iter.peek() {
+                Some(d2) if self.center == *d2 => {
+                    repeats_required += 1;
+                    needle_iter.next();
+                }
+                // different digit, time to leave
+                Some(_) => break,
+                // done with the needle!
+                None => break,
+            }
+        }
+
+        for d in self.after.0.iter().copied() {
+            match needle_iter.peek() {
+                Some(d2) if d == *d2 => {
+                    needle_iter.next();
+                }
+                Some(_) => {}
+                None => break,
+            }
+        }
+
+        if needle_iter.peek().is_some() {
+            None
+        } else {
+            Some(repeats_required)
+        }
     }
 }
 
@@ -183,7 +225,7 @@ impl TryFrom<Family> for SimpleFamily {
         Ok(SimpleFamily {
             before,
             center,
-            num_repeats,
+            min_repeats: num_repeats,
             after,
         })
     }
@@ -209,7 +251,7 @@ impl std::fmt::Display for SimpleFamily {
         write!(
             f,
             "{}{}*{} -- x{}",
-            self.before, self.center, self.after, self.num_repeats
+            self.before, self.center, self.after, self.min_repeats
         )
     }
 }
