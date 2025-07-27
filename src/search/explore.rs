@@ -16,8 +16,6 @@ pub trait Explore {
     /// nodes to explore.
     fn explore_next(&mut self, f: impl FnOnce(SearchNode) -> Vec<SearchNode>) -> bool;
 
-    fn explore_one_level(&mut self, f: impl FnMut(SearchNode) -> Vec<SearchNode>) -> bool;
-
     fn iter(&self) -> impl Iterator<Item = &SearchNode>;
 
     fn min_weight(&self) -> Option<usize>;
@@ -80,21 +78,6 @@ impl Explore for Frontier<SearchNode> {
         true
     }
 
-    fn explore_one_level(&mut self, mut f: impl FnMut(SearchNode) -> Vec<SearchNode>) -> bool {
-        let layer = match self.by_weight.find_first_non_empty_layer_mut() {
-            Some(layer) => std::mem::take(layer),
-            None => return false,
-        };
-
-        for node in layer {
-            for child in f(node) {
-                self.put(child);
-            }
-        }
-
-        true
-    }
-
     fn iter(&self) -> impl Iterator<Item = &SearchNode> {
         self.by_weight.iter()
     }
@@ -133,28 +116,23 @@ impl Explore for TreeTracer<SearchNode> {
     }
 
     fn explore_next(&mut self, f: impl FnOnce(SearchNode) -> Vec<SearchNode>) -> bool {
-        todo!()
-    }
-
-    fn explore_one_level(&mut self, mut f: impl FnMut(SearchNode) -> Vec<SearchNode>) -> bool {
+        // Pop out an element of least weight
         let layer = match self.unexplored.find_first_non_empty_layer_mut() {
-            Some(layer) => std::mem::take(layer),
+            Some(layer) => layer,
             None => return false,
         };
 
-        for idx in layer {
-            let node = &self.nodes[idx];
-            let mut child_idxs = vec![];
-            for child in f(node.value.clone()) {
-                let child_idx = self.nodes.len();
-                child_idxs.push(child_idx);
+        let node_idx = layer.pop_front().expect("non-empty layer");
+        let node = &self.nodes[node_idx];
+        let mut child_idxs = vec![];
+        for child in f(node.value.clone()) {
+            let child_idx = self.nodes.len();
+            child_idxs.push(child_idx);
 
-                self.put(child);
-            }
-
-            self.nodes[idx].children = child_idxs;
+            self.put(child);
         }
 
+        self.nodes[node_idx].children = child_idxs;
         true
     }
 

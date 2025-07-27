@@ -81,7 +81,8 @@ fn search_for_simple_families_impl<E: Explore>(
             explorer.len()
         );
 
-        ctx.search_one_level(&mut explorer);
+        explorer.explore_next(|node| ctx.explore_node(node));
+        ctx.iter += 1;
     }
 
     ctx.primes.sort();
@@ -118,8 +119,7 @@ pub struct Stats {
 pub struct SearchContext {
     pub base: u8,
 
-    /// iteration counter; corresponds to the weight of the families
-    /// we're looking at
+    /// iteration counter; counts how many families we've looked at
     pub iter: usize,
     /// primes we've discovered so far, in two different formats
     /// depending on the order we discovered these, they may not be minimal!
@@ -152,11 +152,6 @@ impl SearchContext {
             primes: CandidateSequences::new(),
             stats: RefCell::new(Stats::default()),
         }
-    }
-
-    pub fn search_one_level<E: Explore>(&mut self, explorer: &mut E) {
-        explorer.explore_one_level(|node| self.explore_node(node));
-        self.iter += 1
     }
 
     fn explore_node(&mut self, family: SearchNode) -> Vec<SearchNode> {
@@ -236,7 +231,7 @@ impl SearchContext {
         // If we couldn't eliminate the family, let's split it, left or right.
         // We can't split on a non-empty core, but after we simplify, we shouldn't
         // have to worry about that.
-        let slot = self.iter % family.cores.len();
+        let slot = family.weight() % family.cores.len();
         debug_assert!(!family.cores[slot].is_empty());
         let mut children = if family.weight() == 1 {
             debug!("  Splitting {} left", family);
