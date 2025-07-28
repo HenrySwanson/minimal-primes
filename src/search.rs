@@ -272,7 +272,8 @@ impl SearchContext {
         // If we couldn't eliminate the family, let's split it, left or right.
         // We can't split on a non-empty core, but after we simplify, we shouldn't
         // have to worry about that.
-        let slot = family.weight() % family.cores.len();
+        let weight = family.weight();
+        let slot = (2 * weight) % family.cores.len();
         debug_assert!(!family.cores[slot].is_empty());
         let mut children = if family.weight() == 1 {
             debug!("  Splitting {} left on core {}", family, slot);

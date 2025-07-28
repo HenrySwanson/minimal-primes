@@ -429,7 +429,7 @@ mod tests {
     declare_test_for_base!(test_base_17, 17, Status::Unsolved { max_weight: 4 });
     declare_test_for_base!(test_base_18, 18, Status::Complete);
     declare_test_for_base!(test_base_19, 19, Status::Unsolved { max_weight: 3 });
-    // 20 is solvable, but requires --release to be practical
+    // 20 fails to understand that [G]*[I]*9 is composite, and expands it forever
     declare_test_for_base!(test_base_20, 20, Status::Unsolved { max_weight: 50 });
     declare_test_for_base!(test_base_21, 21, Status::Unsolved { max_weight: 4 });
     declare_test_for_base!(test_base_22, 22, Status::Unsolved { max_weight: 5 });
