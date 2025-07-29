@@ -11,13 +11,12 @@ use num_prime::nt_funcs::is_prime;
 use num_traits::One;
 
 use self::composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
-use self::explore::{Frontier, TreeTracer, Weight};
+use self::explore::{Frontier, Weight};
 use crate::data_structures::{
     is_proper_substring, AppendTree, AppendTreeNodeID, CandidateSequences,
 };
 use crate::digits::DigitSeq;
 use crate::math::gcd_reduce;
-use crate::search::explore::Explore;
 use crate::SearchResults;
 
 pub use self::families::{Family, SimpleFamily};
@@ -43,35 +42,12 @@ pub fn search_for_simple_families(
     stop_when_simple: bool,
     tree_log: bool,
 ) -> SearchResults {
-    if tree_log {
-        search_for_simple_families_impl::<TreeTracer<SearchNode>>(
-            base,
-            max_weight,
-            max_iter,
-            stop_when_simple,
-        )
-    } else {
-        search_for_simple_families_impl::<Frontier<SearchNode>>(
-            base,
-            max_weight,
-            max_iter,
-            stop_when_simple,
-        )
-    }
-}
-
-fn search_for_simple_families_impl<E: Explore>(
-    base: u8,
-    max_weight: Option<usize>,
-    max_iter: Option<usize>,
-    stop_when_simple: bool,
-) -> SearchResults {
     let mut ctx = SearchContext::new(base);
     let initial_node = SearchNode {
         family: NodeType::Arbitrary(Family::any(base)),
         id: ctx.tracer.root(),
     };
-    let mut explorer = E::start(initial_node);
+    let mut explorer = Frontier::start(initial_node);
 
     while let Some(weight) = explorer.min_weight() {
         if let Some(max) = max_weight {
@@ -88,7 +64,11 @@ fn search_for_simple_families_impl<E: Explore>(
             }
         }
 
-        if stop_when_simple && explorer.all_simple() {
+        if stop_when_simple && {
+            explorer
+                .iter()
+                .all(|node| matches!(node.family, NodeType::Simple(_)))
+        } {
             info!("All remaining families are simple; stopping...");
             break;
         }
@@ -105,7 +85,8 @@ fn search_for_simple_families_impl<E: Explore>(
     }
 
     ctx.primes.sort();
-    explorer.print_tree_to_stdout();
+
+    // TODO: print tree to stdout here (for now?)
 
     // Pull the unsolved branches and return them
     let mut ret = SearchResults {
