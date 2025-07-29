@@ -22,6 +22,20 @@ use crate::SearchResults;
 
 pub use self::families::{Family, SimpleFamily};
 
+macro_rules! log_to_tree {
+    ($tracer:expr, $lvl:expr, $($arg:tt)+) => {
+        if log::log_enabled!($lvl) {
+            $tracer.log(format!($($arg)+))
+        }
+    };
+}
+
+macro_rules! debug_to_tree {
+    ($tracer:expr, $($arg:tt)+) => {
+        log_to_tree!($tracer, log::Level::Debug, $($arg)+)
+    };
+}
+
 pub fn search_for_simple_families(
     base: u8,
     max_weight: Option<usize>,
@@ -55,7 +69,7 @@ fn search_for_simple_families_impl<E: Explore>(
     let mut ctx = SearchContext::new(base);
     let initial_node = SearchNode {
         family: NodeType::Arbitrary(Family::any(base)),
-        id: ctx.tree_tracing.root(),
+        id: ctx.tracer.root(),
     };
     let mut explorer = E::start(initial_node);
 
@@ -134,7 +148,7 @@ pub struct SearchContext {
     pub stats: Stats,
     /// For tracking our paths through the search space in a more
     /// understandable format.
-    tree_tracing: Tracer,
+    tracer: Tracer,
 }
 
 #[derive(Debug, Clone)]
@@ -166,13 +180,13 @@ impl SearchContext {
             iter: 0,
             primes: CandidateSequences::new(),
             stats: Stats::default(),
-            tree_tracing: Tracer::new(),
+            tracer: Tracer::new(),
         }
     }
 
     fn explore_node(&mut self, node: SearchNode) -> Vec<SearchNode> {
         let node_id = node.id;
-        self.tree_tracing.set_id(node_id);
+        self.tracer.set_id(node_id);
 
         // Say our family is xL*z.
         // We want to explore all possible children with weight one more than this one.
@@ -191,7 +205,7 @@ impl SearchContext {
             .into_iter()
             .map(|family| {
                 let child_id = self
-                    .tree_tracing
+                    .tracer
                     .make_child(node_id, family.to_string())
                     .expect("node id must be in tree");
                 SearchNode {
@@ -209,9 +223,12 @@ impl SearchContext {
         // but split_on_repeat can produce strings we've never tested :/
         // What's a better way to avoid this redundancy?
         let seq = family.contract();
-        if let Some(p) = self.test_for_contained_prime(&seq) {
-            assert_ne!(&seq, p);
+        // TODO: this borrows self, preventing us from using self.tracer later.
+        // can that be improved?
+        if let Some(p) = self.test_for_contained_prime(&seq).cloned() {
+            assert_ne!(seq, p);
             debug!("  Discarding {}, contains prime {}", family, p);
+            debug_to_tree!(self.tracer, "Discarding, contains prime {}", p);
             return vec![];
         }
 
@@ -219,6 +236,7 @@ impl SearchContext {
         let value = seq.value(self.base);
         if self.test_for_prime(&value) {
             debug!("  Saving {}, contracts to prime", family);
+            debug_to_tree!(self.tracer, "Saving, contracts to prime");
             self.primes.insert(seq);
             return vec![];
         }
@@ -228,6 +246,7 @@ impl SearchContext {
         family.simplify();
         if family.cores.is_empty() {
             debug!("  {} was reduced to trivial string", family);
+            debug_to_tree!(self.tracer, "Reduced to trivial string");
             return vec![];
         }
 
@@ -235,6 +254,7 @@ impl SearchContext {
         // be composite.
         if self.test_for_perpetual_composite(&family) {
             debug!("  Discarding {}, is always composite", family);
+            debug_to_tree!(self.tracer, "Discarding, is always composite");
             return vec![];
         }
 
@@ -266,10 +286,12 @@ impl SearchContext {
         let slot = family.weight() % family.cores.len();
         debug_assert!(!family.cores[slot].is_empty());
         let mut children = if family.weight() == 1 {
-            debug!("  Splitting {} left", family);
+            debug!("  Splitting {} left on core {}", family, slot);
+            debug_to_tree!(self.tracer, "Splitting left on core {}", slot);
             family.split_left(slot)
         } else {
-            debug!("  Splitting {} right", family);
+            debug!("  Splitting {} right on core {}", family, slot);
+            debug_to_tree!(self.tracer, "Splitting right on core {}", slot);
             family.split_right(slot)
         };
 
@@ -305,6 +327,7 @@ impl SearchContext {
                 .is_some_and(|n| n <= family.min_repeats)
             {
                 debug!("  Discarding {}, contains prime {}", family, prime);
+                debug_to_tree!(self.tracer, "Discarding, contains prime {}", prime);
                 self.stats.duration_simple_substring_checks += start.elapsed();
                 return vec![];
             }
@@ -316,6 +339,7 @@ impl SearchContext {
 
         if self.test_for_prime(&value) {
             debug!("  Saving {}, is prime", family);
+            debug_to_tree!(self.tracer, "Saving, is prime");
             let seq = family.sequence();
             self.primes.insert(seq);
             return vec![];
@@ -336,9 +360,10 @@ impl SearchContext {
             for digit in core.iter().copied() {
                 let seq = old_family.substitute(i, digit);
 
-                if let Some(p) = self.test_for_contained_prime(&seq) {
-                    assert_ne!(&seq, p);
+                if let Some(p) = self.test_for_contained_prime(&seq).cloned() {
+                    assert_ne!(seq, p);
                     debug!("  Discarding {}, contains prime {}", seq, p);
+                    debug_to_tree!(self.tracer, "Discarding {}, contains prime {}", seq, p);
                     continue;
                 }
 
@@ -346,6 +371,7 @@ impl SearchContext {
                 let value = seq.value(self.base);
                 if self.test_for_prime(&value) {
                     debug!("  Saving {}, is prime", seq);
+                    debug_to_tree!(self.tracer, "Saving {}, is prime", seq);
                     self.primes.insert(seq);
                 } else {
                     allowed_digits.push(digit);
@@ -356,6 +382,7 @@ impl SearchContext {
         }
         // Now we've reduced the core, and have a new family.
         debug!("  Reducing {} to {}", old_family, family);
+        debug_to_tree!(self.tracer, "Reducing to {}", family);
         family
     }
 
@@ -381,7 +408,7 @@ impl SearchContext {
         result
     }
 
-    fn test_for_perpetual_composite(&self, family: &Family) -> bool {
+    fn test_for_perpetual_composite(&mut self, family: &Family) -> bool {
         // This function is used to eliminate families that will always result
         // in composite numbers, letting us cut off infinite branches of the
         // search space.
@@ -391,6 +418,7 @@ impl SearchContext {
         // p divides BASE (e.g., 2, 5)
         if let Some(factor) = shares_factor_with_base(self.base, family) {
             debug!("  {} has divisor {}", family, factor);
+            debug_to_tree!(self.tracer, "Has divisor {}", factor);
             return true;
         }
         // p does not divide BASE (e.g. 7)
@@ -403,6 +431,7 @@ impl SearchContext {
                     family,
                     factors.iter().format(", ")
                 );
+                debug_to_tree!(self.tracer, "Divisible by {}", factors.iter().format(","));
                 return true;
             }
         }
@@ -411,6 +440,12 @@ impl SearchContext {
             debug!(
                 "  {} is divisible by either {} or {}",
                 family, even_factor, odd_factor
+            );
+            debug_to_tree!(
+                self.tracer,
+                "Divisible by either {} or {}",
+                even_factor,
+                odd_factor
             );
             return true;
         }
@@ -454,6 +489,11 @@ impl SearchContext {
                             family,
                             children.iter().format(" and ")
                         );
+                        debug_to_tree!(
+                            self.tracer,
+                            "Splitting into {}",
+                            children.iter().format(" and ")
+                        );
                         return Some(children);
                     }
                 }
@@ -462,7 +502,7 @@ impl SearchContext {
         None
     }
 
-    fn split_on_necessary_digit(&self, family: &Family) -> Option<Family> {
+    fn split_on_necessary_digit(&mut self, family: &Family) -> Option<Family> {
         // There's a case in base 11 (and probably others) where we have
         // just one core, where all the digits except one are even, and so
         // is the rest of the number.
@@ -507,6 +547,7 @@ impl SearchContext {
                 new.digitseqs.insert(1, d.into());
                 new.cores.insert(1, d_less_core);
                 debug!("  {} must have a {}, transforming into {}", family, d, new);
+                debug_to_tree!(self.tracer, "Must have a {}, transforming to {}", d, new);
                 return Some(new);
             }
         }
@@ -548,6 +589,15 @@ impl Tracer {
     fn set_id(&mut self, node_id: AppendTreeNodeID) {
         match self {
             Tracer::Real(_, id) => *id = node_id,
+            Tracer::Dummy(_) => {}
+        }
+    }
+
+    fn log(&mut self, item: String) {
+        match self {
+            Tracer::Real(t, id) => {
+                t.append(*id, item).expect("logging to nonexistent id");
+            }
             Tracer::Dummy(_) => {}
         }
     }
