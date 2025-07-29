@@ -14,6 +14,26 @@ pub struct CandidateSequences {
     inner: Vec<DigitSeq>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AppendTree<T> {
+    nodes: Vec<AppendTreeNode<T>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AppendTreeNodeID(usize);
+
+#[derive(Debug, Clone)]
+struct AppendTreeNode<T> {
+    contents: Vec<Content<T>>,
+    // TODO: parent?
+}
+
+#[derive(Debug, Clone)]
+enum Content<T> {
+    Item(T),
+    Child { tag: T, idx: usize },
+}
+
 impl<T> WeightedVec<T> {
     pub fn new() -> Self {
         Self {
@@ -105,6 +125,50 @@ impl CandidateSequences {
 
     pub fn sort(&mut self) {
         self.inner.sort();
+    }
+}
+
+impl<T> AppendTree<T> {
+    pub fn new() -> Self {
+        let root = AppendTreeNode::new();
+        Self { nodes: vec![root] }
+    }
+
+    pub fn root(&self) -> AppendTreeNodeID {
+        AppendTreeNodeID(0)
+    }
+
+    pub fn append(&mut self, node_id: AppendTreeNodeID, item: T) -> Result<(), T> {
+        match self.nodes.get_mut(node_id.0) {
+            Some(node) => {
+                node.contents.push(Content::Item(item));
+                Ok(())
+            }
+            None => Err(item),
+        }
+    }
+
+    pub fn make_child(&mut self, node_id: AppendTreeNodeID, tag: T) -> Result<AppendTreeNodeID, T> {
+        // gotta get this before the mutable borrow begins
+        let num_nodes = self.nodes.len();
+
+        match self.nodes.get_mut(node_id.0) {
+            Some(node) => {
+                // Add a new node to the whole tree, and push it into
+                // this node's children.
+                let child_idx = num_nodes;
+                node.contents.push(Content::Child { tag, idx: child_idx });
+                self.nodes.push(AppendTreeNode::new());
+                Ok(AppendTreeNodeID(child_idx))
+            }
+            None => Err(tag),
+        }
+    }
+}
+
+impl<T> AppendTreeNode<T> {
+    pub fn new() -> Self {
+        Self { contents: vec![] }
     }
 }
 
