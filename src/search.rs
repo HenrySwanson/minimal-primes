@@ -132,7 +132,9 @@ pub struct SearchContext {
 
     /// For potentially getting insight into what's going on
     pub stats: Stats,
-    pub tree_tracing: AppendTree<String>,
+    /// For tracking our paths through the search space in a more
+    /// understandable format.
+    tree_tracing: Tracer,
 }
 
 #[derive(Debug, Clone)]
@@ -147,6 +149,16 @@ enum NodeType {
     Simple(SimpleFamily),
 }
 
+enum Never {}
+
+enum Tracer {
+    // The tree and the current index we're looking at
+    Real(AppendTree<String>, AppendTreeNodeID),
+    // we need to get an id sometimes, but we can't make children or items.
+    // using an empty type forces this :)
+    Dummy(AppendTree<Never>),
+}
+
 impl SearchContext {
     pub fn new(base: u8) -> Self {
         Self {
@@ -154,12 +166,13 @@ impl SearchContext {
             iter: 0,
             primes: CandidateSequences::new(),
             stats: Stats::default(),
-            tree_tracing: AppendTree::new(),
+            tree_tracing: Tracer::new(),
         }
     }
 
     fn explore_node(&mut self, node: SearchNode) -> Vec<SearchNode> {
         let node_id = node.id;
+        self.tree_tracing.set_id(node_id);
 
         // Say our family is xL*z.
         // We want to explore all possible children with weight one more than this one.
@@ -498,6 +511,45 @@ impl SearchContext {
             }
         }
         None
+    }
+}
+
+impl Tracer {
+    fn new() -> Self {
+        let tree = AppendTree::new();
+        let root = tree.root();
+        Self::Real(tree, root)
+    }
+
+    fn dummy() -> Self {
+        Self::Dummy(AppendTree::new())
+    }
+
+    fn root(&self) -> AppendTreeNodeID {
+        match self {
+            Tracer::Real(t, _) => t.root(),
+            Tracer::Dummy(t) => t.root(),
+        }
+    }
+
+    fn make_child(
+        &mut self,
+        node_id: AppendTreeNodeID,
+        tag: String,
+    ) -> Result<AppendTreeNodeID, String> {
+        match self {
+            Tracer::Real(t, _) => t.make_child(node_id, tag),
+            // we're never going to log anything, so just keep returning the root
+            // to satisfy the type system
+            Tracer::Dummy(t) => Ok(t.root()),
+        }
+    }
+
+    fn set_id(&mut self, node_id: AppendTreeNodeID) {
+        match self {
+            Tracer::Real(_, id) => *id = node_id,
+            Tracer::Dummy(_) => {}
+        }
     }
 }
 
