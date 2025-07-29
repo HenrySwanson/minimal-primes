@@ -169,6 +169,27 @@ impl<T> AppendTree<T> {
     }
 }
 
+// is this principled? no. does it work well? yeah
+impl<T: std::fmt::Display> AppendTree<T> {
+    pub fn pretty_print_to_stdout(&self) {
+        self.pretty_print_helper(0, 0);
+    }
+
+    fn pretty_print_helper(&self, node_idx: usize, indent: usize) {
+        let node = &self.nodes[node_idx];
+
+        for content in &node.contents {
+            match content {
+                Content::Item(t) => println!("{:indent$}{}", "", t, indent = indent * 2),
+                Content::Child { tag, idx: child_idx } => {
+                    println!("{:indent$}{}", "", tag, indent = indent * 2);
+                    self.pretty_print_helper(*child_idx, indent + 1);
+                }
+            }
+        }
+    }
+}
+
 impl<T> AppendTreeNode<T> {
     pub fn new() -> Self {
         Self { contents: vec![] }

@@ -42,7 +42,7 @@ pub fn search_for_simple_families(
     stop_when_simple: bool,
     tree_log: bool,
 ) -> SearchResults {
-    let mut ctx = SearchContext::new(base);
+    let mut ctx = SearchContext::new(base, tree_log);
     let initial_node = SearchNode {
         family: NodeType::Arbitrary(Family::any(base)),
         id: ctx.tracer.root(),
@@ -86,7 +86,11 @@ pub fn search_for_simple_families(
 
     ctx.primes.sort();
 
-    // TODO: print tree to stdout here (for now?)
+    // print the tree to stdout if we're tracing
+    match ctx.tracer {
+        Tracer::Real(t, _) => t.pretty_print_to_stdout(),
+        Tracer::Dummy(_) => {}
+    }
 
     // Pull the unsolved branches and return them
     let mut ret = SearchResults {
@@ -155,13 +159,17 @@ enum Tracer {
 }
 
 impl SearchContext {
-    pub fn new(base: u8) -> Self {
+    pub fn new(base: u8, tree_log: bool) -> Self {
         Self {
             base,
             iter: 0,
             primes: CandidateSequences::new(),
             stats: Stats::default(),
-            tracer: Tracer::new(),
+            tracer: if tree_log {
+                Tracer::new()
+            } else {
+                Tracer::dummy()
+            },
         }
     }
 
