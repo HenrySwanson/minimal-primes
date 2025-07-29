@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::data_structures::WeightedVec;
-use crate::search::SearchNode;
+use crate::search::{NodeType, SearchNode};
 
 pub trait Explore {
     fn start(node: SearchNode) -> Self;
@@ -28,7 +28,7 @@ pub trait Explore {
 
     fn all_simple(&self) -> bool {
         self.iter()
-            .all(|node| matches!(node, SearchNode::Simple(_)))
+            .all(|node| matches!(node.family, NodeType::Simple(_)))
     }
 
     fn print_tree_to_stdout(&self);

@@ -51,7 +51,10 @@ fn search_for_simple_families_impl<E: Explore>(
     stop_when_simple: bool,
 ) -> SearchResults {
     let mut ctx = SearchContext::new(base);
-    let mut explorer = E::start(SearchNode::Arbitrary(Family::any(base)));
+    let initial_node = SearchNode {
+        family: NodeType::Arbitrary(Family::any(base)),
+    };
+    let mut explorer = E::start(initial_node);
 
     while let Some(weight) = explorer.min_weight() {
         if let Some(max) = max_weight {
@@ -94,10 +97,10 @@ fn search_for_simple_families_impl<E: Explore>(
         other_families: vec![],
         stats: ctx.stats,
     };
-    for family in explorer.iter().cloned() {
-        match family {
-            SearchNode::Arbitrary(family) => ret.other_families.push(family),
-            SearchNode::Simple(simple_family) => ret.simple_families.push(simple_family),
+    for node in explorer.iter().cloned() {
+        match node.family {
+            NodeType::Arbitrary(family) => ret.other_families.push(family),
+            NodeType::Simple(simple_family) => ret.simple_families.push(simple_family),
         }
     }
 
@@ -129,18 +132,14 @@ pub struct SearchContext {
 }
 
 #[derive(Debug, Clone)]
-pub enum SearchNode {
-    Arbitrary(Family),
-    Simple(SimpleFamily),
+pub struct SearchNode {
+    family: NodeType,
 }
 
-impl Weight for SearchNode {
-    fn weight(&self) -> usize {
-        match self {
-            SearchNode::Arbitrary(x) => x.weight(),
-            SearchNode::Simple(x) => x.before.0.len() + x.min_repeats + x.after.0.len(),
-        }
-    }
+#[derive(Debug, Clone)]
+enum NodeType {
+    Arbitrary(Family),
+    Simple(SimpleFamily),
 }
 
 impl SearchContext {
@@ -153,24 +152,28 @@ impl SearchContext {
         }
     }
 
-    fn explore_node(&mut self, family: SearchNode) -> (Vec<SearchNode>, String) {
+    fn explore_node(&mut self, node: SearchNode) -> (Vec<SearchNode>, String) {
         // Say our family is xL*z.
         // We want to explore all possible children with weight one more than this one.
-        let children = match family {
-            SearchNode::Arbitrary(family) => {
+        let (children, reason) = match node.family {
+            NodeType::Arbitrary(family) => {
                 debug!(" Exploring {}", family);
                 self.explore_family(family)
             }
-            SearchNode::Simple(family) => {
+            NodeType::Simple(family) => {
                 debug!(" Exploring simple {}", family);
                 self.explore_simple_family(family)
             }
         };
         self.stats.num_branches_explored += 1;
-        children
+        let children = children
+            .into_iter()
+            .map(|family| SearchNode { family })
+            .collect();
+        (children, reason)
     }
 
-    fn explore_family(&mut self, family: Family) -> (Vec<SearchNode>, String) {
+    fn explore_family(&mut self, family: Family) -> (Vec<NodeType>, String) {
         // Test this for primality
         // TODO: normally we've tested this already, in reduce_cores,
         // but split_on_repeat can produce strings we've never tested :/
@@ -215,7 +218,7 @@ impl SearchContext {
         let mut family = match SimpleFamily::try_from(family) {
             Ok(simple) => {
                 return (
-                    vec![SearchNode::Simple(simple)],
+                    vec![NodeType::Simple(simple)],
                     "reduced to simple".to_string(),
                 );
             }
@@ -226,7 +229,7 @@ impl SearchContext {
         // Let's see if we can split it in an interesting way
         if let Some(children) = self.split_on_repeat(&family, 3) {
             return (
-                children.into_iter().map(SearchNode::Arbitrary).collect(),
+                children.into_iter().map(NodeType::Arbitrary).collect(),
                 "split on repeat".to_string(),
             );
         }
@@ -234,7 +237,7 @@ impl SearchContext {
         if family.weight() >= 2 {
             if let Some(child) = self.split_on_necessary_digit(&family) {
                 return (
-                    vec![SearchNode::Arbitrary(child)],
+                    vec![NodeType::Arbitrary(child)],
                     "split on necessary digit".to_string(),
                 );
             }
@@ -266,12 +269,12 @@ impl SearchContext {
         }
 
         (
-            children.into_iter().map(SearchNode::Arbitrary).collect(),
+            children.into_iter().map(NodeType::Arbitrary).collect(),
             "split".to_string(),
         )
     }
 
-    fn explore_simple_family(&mut self, mut family: SimpleFamily) -> (Vec<SearchNode>, String) {
+    fn explore_simple_family(&mut self, mut family: SimpleFamily) -> (Vec<NodeType>, String) {
         // There's a lot less we can do here! We can't split anything,
         // we can't reduce cores, etc, etc.
         // Even composite testing isn't very useful here, since we
@@ -307,7 +310,7 @@ impl SearchContext {
         }
 
         family.min_repeats += 1;
-        (vec![SearchNode::Simple(family)], "increment".to_string())
+        (vec![NodeType::Simple(family)], "increment".to_string())
     }
 
     fn reduce_cores(&mut self, mut family: Family) -> Family {
@@ -499,11 +502,29 @@ impl SearchContext {
     }
 }
 
+impl std::fmt::Display for NodeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            NodeType::Arbitrary(p) => p.fmt(f),
+            NodeType::Simple(p) => p.fmt(f),
+        }
+    }
+}
+
 impl std::fmt::Display for SearchNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SearchNode::Arbitrary(p) => p.fmt(f),
-            SearchNode::Simple(p) => p.fmt(f),
+        match &self.family {
+            NodeType::Arbitrary(p) => p.fmt(f),
+            NodeType::Simple(p) => p.fmt(f),
+        }
+    }
+}
+
+impl Weight for SearchNode {
+    fn weight(&self) -> usize {
+        match &self.family {
+            NodeType::Arbitrary(x) => x.weight(),
+            NodeType::Simple(x) => x.before.0.len() + x.min_repeats + x.after.0.len(),
         }
     }
 }
