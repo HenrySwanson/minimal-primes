@@ -12,7 +12,9 @@ use num_traits::One;
 
 use self::composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
 use self::explore::{Frontier, TreeTracer, Weight};
-use crate::data_structures::{is_proper_substring, CandidateSequences};
+use crate::data_structures::{
+    is_proper_substring, AppendTree, AppendTreeNodeID, CandidateSequences,
+};
 use crate::digits::DigitSeq;
 use crate::math::gcd_reduce;
 use crate::search::explore::Explore;
@@ -53,6 +55,7 @@ fn search_for_simple_families_impl<E: Explore>(
     let mut ctx = SearchContext::new(base);
     let initial_node = SearchNode {
         family: NodeType::Arbitrary(Family::any(base)),
+        id: ctx.tree_tracing.root(),
     };
     let mut explorer = E::start(initial_node);
 
@@ -129,11 +132,13 @@ pub struct SearchContext {
 
     /// For potentially getting insight into what's going on
     pub stats: Stats,
+    pub tree_tracing: AppendTree<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct SearchNode {
     family: NodeType,
+    id: AppendTreeNodeID,
 }
 
 #[derive(Debug, Clone)]
@@ -149,10 +154,13 @@ impl SearchContext {
             iter: 0,
             primes: CandidateSequences::new(),
             stats: Stats::default(),
+            tree_tracing: AppendTree::new(),
         }
     }
 
     fn explore_node(&mut self, node: SearchNode) -> (Vec<SearchNode>, String) {
+        let node_id = node.id;
+
         // Say our family is xL*z.
         // We want to explore all possible children with weight one more than this one.
         let (children, reason) = match node.family {
@@ -168,7 +176,16 @@ impl SearchContext {
         self.stats.num_branches_explored += 1;
         let children = children
             .into_iter()
-            .map(|family| SearchNode { family })
+            .map(|family| {
+                let child_id = self
+                    .tree_tracing
+                    .make_child(node_id, family.to_string())
+                    .expect("node id must be in tree");
+                SearchNode {
+                    family,
+                    id: child_id,
+                }
+            })
             .collect();
         (children, reason)
     }
