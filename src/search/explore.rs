@@ -14,7 +14,7 @@ pub trait Explore {
     ///
     /// Returns false if this structure is empty and there are no
     /// nodes to explore.
-    fn explore_next(&mut self, f: impl FnOnce(SearchNode) -> (Vec<SearchNode>, String)) -> bool;
+    fn explore_next(&mut self, f: impl FnOnce(SearchNode) -> Vec<SearchNode>) -> bool;
 
     fn iter(&self) -> impl Iterator<Item = &SearchNode>;
 
@@ -65,7 +65,7 @@ impl Explore for Frontier<SearchNode> {
     }
 
     // TODO: return some richer type from the closure?
-    fn explore_next(&mut self, f: impl FnOnce(SearchNode) -> (Vec<SearchNode>, String)) -> bool {
+    fn explore_next(&mut self, f: impl FnOnce(SearchNode) -> Vec<SearchNode>) -> bool {
         // Pop out an element of least weight
         let layer = match self.by_weight.find_first_non_empty_layer_mut() {
             Some(layer) => layer,
@@ -73,8 +73,7 @@ impl Explore for Frontier<SearchNode> {
         };
 
         let node = layer.pop_front().expect("non-empty layer");
-        let (children, _) = f(node);
-        for child in children {
+        for child in f(node) {
             self.put(child);
         }
         true
@@ -117,7 +116,7 @@ impl Explore for TreeTracer<SearchNode> {
         ret
     }
 
-    fn explore_next(&mut self, f: impl FnOnce(SearchNode) -> (Vec<SearchNode>, String)) -> bool {
+    fn explore_next(&mut self, f: impl FnOnce(SearchNode) -> Vec<SearchNode>) -> bool {
         // Pop out an element of least weight
         let layer = match self.unexplored.find_first_non_empty_layer_mut() {
             Some(layer) => layer,
@@ -127,8 +126,7 @@ impl Explore for TreeTracer<SearchNode> {
         let node_idx = layer.pop_front().expect("non-empty layer");
         let node = &self.nodes[node_idx];
         let mut child_idxs = vec![];
-        let (children, reason) = f(node.value.clone());
-        for child in children {
+        for child in f(node.value.clone()) {
             let child_idx = self.nodes.len();
             child_idxs.push(child_idx);
 
@@ -136,7 +134,7 @@ impl Explore for TreeTracer<SearchNode> {
         }
 
         self.nodes[node_idx].children = child_idxs;
-        self.nodes[node_idx].reason = Some(reason);
+        self.nodes[node_idx].reason = Some(String::new());
         true
     }
 

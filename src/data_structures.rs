@@ -157,7 +157,10 @@ impl<T> AppendTree<T> {
                 // Add a new node to the whole tree, and push it into
                 // this node's children.
                 let child_idx = num_nodes;
-                node.contents.push(Content::Child { tag, idx: child_idx });
+                node.contents.push(Content::Child {
+                    tag,
+                    idx: child_idx,
+                });
                 self.nodes.push(AppendTreeNode::new());
                 Ok(AppendTreeNodeID(child_idx))
             }
