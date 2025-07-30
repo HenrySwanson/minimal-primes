@@ -406,14 +406,7 @@ mod tests {
     declare_test_for_base!(test_base_5, 5, Status::Complete);
     declare_test_for_base!(test_base_6, 6, Status::Complete);
     declare_test_for_base!(test_base_7, 7, Status::Complete);
-    declare_test_for_base!(
-        test_base_8,
-        8,
-        Status::IncompleteSimple(IncompleteBranches {
-            composites: vec!["10*1"], // 8^n + 1, sum of cubes
-            eventual_primes: vec![]
-        })
-    );
+    declare_test_for_base!(test_base_8, 8, Status::Complete);
     declare_test_for_base!(
         test_base_9,
         9,

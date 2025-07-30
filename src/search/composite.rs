@@ -4,11 +4,13 @@
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_integer::Integer;
+use num_prime::ExactRoots;
 use num_traits::identities::One;
 
 use crate::digits::Digit;
 use crate::digits::DigitSeq;
 use crate::families::Family;
+use crate::families::Sequence;
 use crate::math::gcd_reduce;
 use crate::search::SimpleNode;
 
@@ -152,6 +154,43 @@ pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUi
     Some((even_gcd, odd_gcd))
 }
 
-pub fn composite_checks_for_simple(node: &SimpleNode) -> bool {
-    false // TODO: real checks!
+pub fn composite_checks_for_simple(base: u8, node: &SimpleNode) -> bool {
+    // Get the sequence for this. As a reminder, it looks like:
+    // (k B^n + c) / d, where d = B-1
+    let sequence = match node.sequence {
+        Some(s) => s,
+        None => return false, // nothing we can check :(
+    };
+
+    check_sum_diff_of_cubes(sequence, base)
+}
+
+fn check_sum_diff_of_cubes(sequence: Sequence, base: u8) -> bool {
+    // We need B to be a cube, and also k and c.
+    // What about d? We can mostly ignore it, but we do have to be careful
+    // that neither of the factors is smaller than d, otherwise we could
+    // unwittingly be factoring into p * 1.
+    let (cbrt_k, cbrt_c) = match (
+        base.cbrt_exact(),
+        sequence.k.cbrt_exact(),
+        sequence.c.cbrt_exact(),
+    ) {
+        (Some(_cbrt_base), Some(cbrt_k), Some(cbrt_c)) => {
+            let cbrt_k: i64 = cbrt_k
+                .try_into()
+                .expect("cube root should be small enough to fit in i64");
+            (cbrt_k, cbrt_c)
+        }
+        _ => return false,
+    };
+
+    // It's a possibility! Now check the factor size.
+    // a^3 + b^3 = (a + b)(a^2 - ab + b^2)
+    let d = sequence.d.try_into().expect("d should be small");
+    let x = cbrt_k + cbrt_c;
+    let y = cbrt_k * cbrt_k - cbrt_k * cbrt_c + cbrt_c * cbrt_c;
+    x.abs() > d && y.abs() > d
+
+    // TODO: if that check fails, we should retry with higher n! we might
+    // still be composite, and we should check another time
 }

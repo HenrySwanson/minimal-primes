@@ -325,7 +325,7 @@ impl SearchContext {
         // composite tests that we can only do on simple families. We should
         // only do them once though.
         if !node.composite_tested {
-            if composite_checks_for_simple(&node) {
+            if composite_checks_for_simple(self.base, &node) {
                 debug!("  Discarding {}, is always composite", node.family);
                 debug_to_tree!(self.tracer, "Discarding, is always composite");
                 return vec![];

@@ -181,7 +181,10 @@ impl<T: std::fmt::Display> AppendTree<T> {
         for content in &node.contents {
             match content {
                 Content::Item(t) => println!("{:indent$}{}", "", t, indent = indent * 2),
-                Content::Child { tag, idx: child_idx } => {
+                Content::Child {
+                    tag,
+                    idx: child_idx,
+                } => {
                     println!("{:indent$}{}", "", tag, indent = indent * 2);
                     self.pretty_print_helper(*child_idx, indent + 1);
                 }
