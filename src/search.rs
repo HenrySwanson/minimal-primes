@@ -442,7 +442,7 @@ impl SearchContext {
         // p does not divide BASE (e.g. 7)
         // -------------------------------
         // This is how we detect families like 4[6]9 being divisible by 7.
-        for stride in 1..=2 {
+        for stride in 1..=3 {
             if let Some(factors) = find_perpetual_factor(self.base, family, stride) {
                 debug!(
                     "  {} is divisible by {}",

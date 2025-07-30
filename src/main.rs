@@ -426,15 +426,7 @@ mod tests {
         test_base_16,
         16,
         Status::IncompleteSimple(IncompleteBranches {
-            composites: vec![
-                // (8*16^(n+1) + 15^2 - 8*16) / 15
-                // = (2^(4n+7)+97) / 15
-                // unknown
-                "8*F",
-                // (2153*16^(n+1) + 97) / 15
-                // unknown, but there's that 97 again
-                "8F8*F",
-            ],
+            composites: vec![],
             eventual_primes: vec!["88F*", "90*91", "F8*F"]
         })
     );
