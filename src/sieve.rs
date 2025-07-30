@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use bitvec::prelude::BitVec;
 use log::debug;
 use num_bigint::BigUint;
-use num_integer::Integer;
 use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
 use num_prime::buffer::NaiveBuffer;
 use num_prime::nt_funcs::is_prime;
@@ -186,7 +185,7 @@ fn baby_step_giant_step(
             // Here is a convenient place to check d
             if
             /* p < seq.d && */
-            slice.seq.d.is_multiple_of(&p) {
+            slice.seq.d.is_multiple_of(p) {
                 // TODO: log something
                 skip[i] = true;
                 return 0;
