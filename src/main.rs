@@ -375,19 +375,35 @@ fn do_sieve(cmd: &SieveArgs) {
 
 #[cfg(test)]
 mod tests {
+    use regex::Regex;
+
     use super::*;
 
     use std::io;
 
-    // TODO: name exactly which branches can't be resolved
+    struct IncompleteBranches {
+        /// There are some branches that we know are composite, but the
+        /// program can't prove it yet.
+        composites: Vec<&'static str>,
+        /// These are branches that do eventually become prime, but take
+        /// an extremely long time to reach that point, so we don't run
+        /// them all the way, just verify that they're still in our search
+        /// set.
+        eventual_primes: Vec<&'static str>,
+    }
+
     enum Status {
         /// Completely solved; all branches eliminated.
         Complete,
-        /// Can get all the minimal primes, but there's some branches
-        /// we can't realize are composite.
-        StrayBranches { unresolved: Vec<&'static str> },
-        /// Not solved yet. Limit the number of iterations.
-        Unsolved { max_weight: usize },
+        /// Not complete, we can eliminate all non-simple families,
+        /// but some simple families can't be resolved.
+        IncompleteSimple(IncompleteBranches),
+        /// The number of families grows dramatically, with no signs of
+        /// being reducible. This means there's something about our
+        /// first stage that can be improved.
+        Explodes,
+        /// Something else!
+        Other,
     }
 
     macro_rules! declare_test_for_base {
@@ -408,98 +424,235 @@ mod tests {
     declare_test_for_base!(
         test_base_8,
         8,
-        Status::StrayBranches {
-            unresolved: vec!["10*1"],
-        }
+        Status::IncompleteSimple(IncompleteBranches {
+            composites: vec!["10*1"], // 8^n + 1, sum of cubes
+            eventual_primes: vec![]
+        })
     );
     declare_test_for_base!(
         test_base_9,
         9,
-        Status::StrayBranches {
-            unresolved: vec!["1*"]
-        }
+        Status::IncompleteSimple(IncompleteBranches {
+            composites: vec![
+                // (9^n - 1) / 8: unusual
+                // for even n, this is difference of squares (the 8 doesn't matter)
+                // for odd n, this is an even number:
+                //   9^(2k+1) mod 16 = 9 * 81^k = 9
+                "1*"
+            ],
+            eventual_primes: vec![]
+        })
     );
     declare_test_for_base!(test_base_10, 10, Status::Complete);
     declare_test_for_base!(test_base_11, 11, Status::Complete);
     declare_test_for_base!(test_base_12, 12, Status::Complete);
-    declare_test_for_base!(test_base_13, 13, Status::Unsolved { max_weight: 7 });
+    declare_test_for_base!(
+        test_base_13,
+        13,
+        Status::IncompleteSimple(IncompleteBranches {
+            composites: vec![],
+            // 32021 digits :(
+            eventual_primes: vec!["80*111"]
+        })
+    );
     declare_test_for_base!(test_base_14, 14, Status::Complete);
     declare_test_for_base!(test_base_15, 15, Status::Complete);
-    declare_test_for_base!(test_base_16, 16, Status::Unsolved { max_weight: 10 });
-    declare_test_for_base!(test_base_17, 17, Status::Unsolved { max_weight: 4 });
+    declare_test_for_base!(
+        test_base_16,
+        16,
+        Status::IncompleteSimple(IncompleteBranches {
+            composites: vec![
+                // (4*16^(n+1) - 49) / 15
+                // difference of squares
+                "4*1",
+                // (8*16^(n+1) + 15^2 - 8*16) / 15
+                // = (2^(4n+7)+97) / 15
+                // unknown
+                "8*F", //
+                // 9*16^n - 1
+                // difference of squares
+                "8F*", //
+                // (2535*16^(n+2) - 1215) / 15
+                // unknown
+                "A8F*AF",
+                // (2153*16^(n+1) + 97) / 15
+                // unknown, but there's that 97 again
+                "8F8*F",
+            ],
+            eventual_primes: vec!["88F*", "90*91", "F8*F"]
+        })
+    );
+    declare_test_for_base!(test_base_17, 17, Status::Explodes);
     declare_test_for_base!(test_base_18, 18, Status::Complete);
-    declare_test_for_base!(test_base_19, 19, Status::Unsolved { max_weight: 3 });
-    // 20 fails to understand that [G]*[I]*9 is composite, and expands it forever
-    declare_test_for_base!(test_base_20, 20, Status::Unsolved { max_weight: 50 });
-    declare_test_for_base!(test_base_21, 21, Status::Unsolved { max_weight: 4 });
-    declare_test_for_base!(test_base_22, 22, Status::Unsolved { max_weight: 5 });
-    declare_test_for_base!(test_base_23, 23, Status::Unsolved { max_weight: 3 });
+    declare_test_for_base!(test_base_19, 19, Status::Explodes);
+    // 20 fails to understand that [G]*[I]*9 is composite, and expands it forever.
+    declare_test_for_base!(test_base_20, 20, Status::Other);
+    // ramps up to tens of thousands of branches, but then drops to 400ish and
+    // oscillates for a while. unfortunately, it starts going back up again.
+    declare_test_for_base!(test_base_21, 21, Status::Explodes);
+    declare_test_for_base!(test_base_22, 22, Status::Explodes);
+    declare_test_for_base!(test_base_23, 23, Status::Explodes);
     declare_test_for_base!(
         test_base_24,
         24,
-        Status::StrayBranches {
-            unresolved: vec!["6*1"]
-        }
+        Status::IncompleteSimple(IncompleteBranches {
+            // (6*24^(n+1) - 121) / 23
+            // (2^(3n+2) * 3^(n+2) - 11^2) / 23
+            // feels like difference of squares on even n, something
+            // else on odd n
+            composites: vec!["6*1"],
+            eventual_primes: vec![]
+        })
     );
-    declare_test_for_base!(test_base_25, 25, Status::Unsolved { max_weight: 3 });
-    declare_test_for_base!(test_base_26, 26, Status::Unsolved { max_weight: 3 });
-    declare_test_for_base!(test_base_27, 27, Status::Unsolved { max_weight: 3 });
-    declare_test_for_base!(test_base_28, 28, Status::Unsolved { max_weight: 3 });
-    declare_test_for_base!(test_base_29, 29, Status::Unsolved { max_weight: 2 });
+    declare_test_for_base!(test_base_25, 25, Status::Explodes);
+    declare_test_for_base!(test_base_26, 26, Status::Explodes);
+    declare_test_for_base!(test_base_27, 27, Status::Explodes);
+    declare_test_for_base!(test_base_28, 28, Status::Explodes);
+    declare_test_for_base!(test_base_29, 29, Status::Explodes);
     // 30 is solvable, but takes too long, even with --release
-    declare_test_for_base!(test_base_30, 30, Status::Unsolved { max_weight: 50 });
+    declare_test_for_base!(
+        test_base_30,
+        30,
+        Status::IncompleteSimple(IncompleteBranches {
+            composites: vec![],
+            eventual_primes: vec!["C0*1"] // 1024 digits
+        })
+    );
 
     fn test_for_base(base: u8, status: Status) {
-        match status {
-            Status::Complete => {
-                // Simulate it for the full duration
-                let max_weight = get_max_weight(base);
-                let results = calculate_full(base, max_weight);
-                compare_primes(base, &results.primes, true);
-                assert!(
-                    results.simple_families.is_empty() && results.other_families.is_empty(),
-                    "Some branches were not eliminated!\n{}\n{}",
-                    results.simple_families.iter().format("\n"),
-                    results.other_families.iter().format("\n")
-                );
+        // Complete is just a shortcut for "nothing incomplete", so let's
+        // reduce our casework.
+        let expected_incomplete = match status {
+            Status::Complete => IncompleteBranches {
+                composites: vec![],
+                eventual_primes: vec![],
+            },
+            Status::IncompleteSimple(branches) => branches,
+            Status::Explodes | Status::Other => {
+                // this is real bad. just run it a short amount to make sure
+                // it's not panicking or anything.
+                // TODO: compare the results of this to the expected ones,
+                // to make sure we're not discovering fake primes or anything
+                do_search(&SearchArgs {
+                    base: base,
+                    max_weight: Some(5),
+                    max_iter: Some(10_000),
+                    with_sieve: false,
+                    n_hi: 0,
+                    p_max: 0,
+                    tree_log: false,
+                });
+                return;
             }
-            Status::StrayBranches { unresolved } => {
-                // Simulate it for the full duration
-                let max_weight = get_max_weight(base) + 1;
-                let results = calculate(base, max_weight);
-                compare_primes(base, &results.primes, false);
+        };
 
-                assert!(
-                    results.other_families.is_empty(),
-                    "Got some non-simple families:\n{}",
-                    results.other_families.iter().format("\n")
-                );
+        // Figure out the equivalent command
+        let cmd = SearchArgs {
+            base: base,
+            max_weight: None,
+            max_iter: None,
+            with_sieve: true,
+            n_hi: 500,
+            // seems to work better than p = 1M, should this be backported
+            // to the actual CLI command?
+            p_max: 1_000,
+            tree_log: false,
+        };
 
-                let mut simple_strings: Vec<_> = results
-                    .simple_families
-                    .iter()
-                    // TODO: better method here
-                    .map(|x| x.to_string().split(" -- ").next().unwrap().to_owned())
-                    .collect();
-                simple_strings.sort();
+        // First stage
+        let mut results = first_stage(&cmd);
 
-                assert_eq!(
-                    simple_strings,
-                    unresolved,
-                    "Didn't get the expected unsolved branches:\n{}\nvs\n{}",
-                    results.simple_families.iter().format("\n"),
-                    results.other_families.iter().format("\n")
-                );
-            }
-            Status::Unsolved { max_weight } => {
-                let results = calculate(base, max_weight);
-                compare_primes(base, &results.primes, false);
-                assert!(
-                    !results.simple_families.is_empty() || !results.other_families.is_empty(),
-                    "All branches were eliminated, this test should be marked Complete!"
-                );
+        // Remove any composite branches that are expected to be present.
+        for composite in expected_incomplete.composites {
+            match results
+                .simple_families
+                .iter()
+                .position(|family| family.pattern() == composite)
+            {
+                Some(i) => {
+                    results.simple_families.remove(i);
+                }
+                None => panic!(
+                    "Expected to find composite family {}, but it was not present",
+                    composite
+                ),
             }
         }
+
+        // Do intermediate and second stages
+        let unsolved_families =
+            intermediate_stage(cmd.base, results.simple_families, &mut results.primes);
+
+        let (primes, unsolved) = second_stage(&cmd, unsolved_families, results.primes);
+
+        // Compare the primes we got to the primes we expect, except for the ones we
+        // know we're missing.
+        compare_primes(
+            base,
+            &primes,
+            expected_incomplete
+                .eventual_primes
+                .iter()
+                .map(|s| Regex::new(&format!("^{s}$")).unwrap())
+                .collect(),
+        );
+
+        // We should also check that these eventual primes show up in our unsolved
+        // list. Otherwise that'd mean we forgot them somehow.
+        let mut unsolved: Vec<_> = unsolved.iter().map(|f| f.pattern()).collect();
+        unsolved.sort();
+        assert_eq!(unsolved, expected_incomplete.eventual_primes);
+
+        //     match status {
+        //         Status::Complete => {
+        //             // Simulate it for the full duration
+        //             let max_weight = get_max_weight(base);
+        //             let results = calculate_full(base, max_weight);
+        //             compare_primes(base, &results.primes, true);
+        //             assert!(
+        //                 results.simple_families.is_empty() && results.other_families.is_empty(),
+        //                 "Some branches were not eliminated!\n{}\n{}",
+        //                 results.simple_families.iter().format("\n"),
+        //                 results.other_families.iter().format("\n")
+        //             );
+        //         }
+        //         Status::StrayBranches { unresolved } => {
+        //             // Simulate it for the full duration
+        //             let max_weight = get_max_weight(base) + 1;
+        //             let results = calculate(base, max_weight);
+        //             compare_primes(base, &results.primes, false);
+
+        //             assert!(
+        //                 results.other_families.is_empty(),
+        //                 "Got some non-simple families:\n{}",
+        //                 results.other_families.iter().format("\n")
+        //             );
+
+        //             let mut simple_strings: Vec<_> = results
+        //                 .simple_families
+        //                 .iter()
+        //                 // TODO: better method here
+        //                 .map(|x| x.to_string().split(" -- ").next().unwrap().to_owned())
+        //                 .collect();
+        //             simple_strings.sort();
+
+        //             assert_eq!(
+        //                 simple_strings,
+        //                 unresolved,
+        //                 "Didn't get the expected unsolved branches:\n{}\nvs\n{}",
+        //                 results.simple_families.iter().format("\n"),
+        //                 results.other_families.iter().format("\n")
+        //             );
+        //         }
+        //         Status::Unsolved { max_weight } => {
+        //             let results = calculate(base, max_weight);
+        //             compare_primes(base, &results.primes, false);
+        //             assert!(
+        //                 !results.simple_families.is_empty() || !results.other_families.is_empty(),
+        //                 "All branches were eliminated, this test should be marked Complete!"
+        //             );
+        //         }
+        //     }
     }
 
     fn calculate(base: u8, max_weight: usize) -> SearchResults {
@@ -534,7 +687,7 @@ mod tests {
             .expect("nonempty ground truth")
     }
 
-    fn compare_primes(base: u8, primes: &CandidateSequences, require_all: bool) {
+    fn compare_primes(base: u8, primes: &CandidateSequences, exceptions: Vec<Regex>) {
         let mut truth_iter = iter_ground_truth(base).peekable();
         let mut iter = primes.iter().map(|seq| seq.to_string()).peekable();
 
@@ -567,10 +720,13 @@ mod tests {
             };
             match cmp {
                 // truth < actual, so we skipped something we were
-                // supposed to see. this might be okay.
+                // supposed to see. this might be okay, if it's in
+                // our exception list
                 std::cmp::Ordering::Less => {
                     let p = truth_iter.next().unwrap();
-                    if require_all {
+                    if exceptions.iter().any(|re| re.is_match(&p)) {
+                        // great, allowable exception
+                    } else {
                         println!("Didn't see expected prime: {}", p);
                         fail = true;
                     }

@@ -194,6 +194,11 @@ impl SimpleFamily {
             Some(repeats_required)
         }
     }
+
+    #[cfg(test)]
+    pub fn pattern(&self) -> String {
+        format!("{}{}*{}", self.before, self.center, self.after)
+    }
 }
 
 impl TryFrom<Family> for SimpleFamily {
