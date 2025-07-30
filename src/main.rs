@@ -7,7 +7,6 @@ use crate::sieve::SequenceSlice;
 use clap::Parser;
 use itertools::Itertools;
 use log::LevelFilter;
-use num_bigint::{BigInt, BigUint};
 use num_prime::nt_funcs::is_prime;
 
 mod data_structures;
@@ -281,7 +280,8 @@ fn second_stage(
     let mut remaining_branches: Vec<_> = unsolved_families
         .iter()
         .map(|simple| {
-            let seq = Sequence::from_family(&simple, base);
+            let seq = Sequence::try_from_family(&simple, base)
+                .expect("must be small enough to fit into sieve");
             (simple, seq)
         })
         .collect();
@@ -587,73 +587,6 @@ mod tests {
         let mut unsolved: Vec<_> = unsolved.iter().map(|f| f.pattern()).collect();
         unsolved.sort();
         assert_eq!(unsolved, expected_incomplete.eventual_primes);
-
-        //     match status {
-        //         Status::Complete => {
-        //             // Simulate it for the full duration
-        //             let max_weight = get_max_weight(base);
-        //             let results = calculate_full(base, max_weight);
-        //             compare_primes(base, &results.primes, true);
-        //             assert!(
-        //                 results.simple_families.is_empty() && results.other_families.is_empty(),
-        //                 "Some branches were not eliminated!\n{}\n{}",
-        //                 results.simple_families.iter().format("\n"),
-        //                 results.other_families.iter().format("\n")
-        //             );
-        //         }
-        //         Status::StrayBranches { unresolved } => {
-        //             // Simulate it for the full duration
-        //             let max_weight = get_max_weight(base) + 1;
-        //             let results = calculate(base, max_weight);
-        //             compare_primes(base, &results.primes, false);
-
-        //             assert!(
-        //                 results.other_families.is_empty(),
-        //                 "Got some non-simple families:\n{}",
-        //                 results.other_families.iter().format("\n")
-        //             );
-
-        //             let mut simple_strings: Vec<_> = results
-        //                 .simple_families
-        //                 .iter()
-        //                 // TODO: better method here
-        //                 .map(|x| x.to_string().split(" -- ").next().unwrap().to_owned())
-        //                 .collect();
-        //             simple_strings.sort();
-
-        //             assert_eq!(
-        //                 simple_strings,
-        //                 unresolved,
-        //                 "Didn't get the expected unsolved branches:\n{}\nvs\n{}",
-        //                 results.simple_families.iter().format("\n"),
-        //                 results.other_families.iter().format("\n")
-        //             );
-        //         }
-        //         Status::Unsolved { max_weight } => {
-        //             let results = calculate(base, max_weight);
-        //             compare_primes(base, &results.primes, false);
-        //             assert!(
-        //                 !results.simple_families.is_empty() || !results.other_families.is_empty(),
-        //                 "All branches were eliminated, this test should be marked Complete!"
-        //             );
-        //         }
-        //     }
-    }
-
-    fn calculate(base: u8, max_weight: usize) -> SearchResults {
-        search_for_simple_families(base, Some(max_weight), None, false, false)
-    }
-
-    fn calculate_full(base: u8, max_weight: usize) -> SearchResults {
-        do_search(&SearchArgs {
-            base,
-            max_weight: Some(max_weight),
-            max_iter: None,
-            with_sieve: true,
-            n_hi: 5000,
-            p_max: 1_000_000,
-            tree_log: false,
-        })
     }
 
     fn iter_ground_truth(base: u8) -> impl Iterator<Item = String> {
@@ -663,13 +596,6 @@ mod tests {
         io::BufReader::new(file)
             .lines()
             .map(|line| line.expect("read line"))
-    }
-
-    fn get_max_weight(base: u8) -> usize {
-        iter_ground_truth(base)
-            .map(|s| s.len())
-            .max()
-            .expect("nonempty ground truth")
     }
 
     fn compare_primes(base: u8, primes: &CandidateSequences, exceptions: Vec<Regex>) {

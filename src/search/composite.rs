@@ -10,6 +10,7 @@ use crate::digits::Digit;
 use crate::digits::DigitSeq;
 use crate::families::Family;
 use crate::math::gcd_reduce;
+use crate::search::SimpleNode;
 
 /// Checks whether this family shares a factor with the base.
 /// Basically just checks the last digit.
@@ -149,4 +150,8 @@ pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUi
     debug_assert_ne!(odd_gcd, BigUint::ZERO);
 
     Some((even_gcd, odd_gcd))
+}
+
+pub fn composite_checks_for_simple(node: &SimpleNode) -> bool {
+    false // TODO: real checks!
 }

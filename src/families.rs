@@ -266,7 +266,8 @@ impl Sequence {
         }
     }
 
-    pub fn from_family(simple: &SimpleFamily, base: u8) -> Self {
+    // TODO: better error type
+    pub fn try_from_family(simple: &SimpleFamily, base: u8) -> Result<Self, String> {
         // Compute the sequence for this family: xy*z
         let x = simple.before.value(base);
         let y = simple.center.0;
@@ -279,11 +280,11 @@ impl Sequence {
 
         // Try to fit it into the appropriate ranges
         let k = u64::try_from(k)
-            .unwrap_or_else(|e| panic!("Can't convert {} to u64", e.into_original()));
+            .map_err(|e| format!("Can't convert {} to u64 for {}", e.into_original(), simple))?;
         let c = i64::try_from(c)
-            .unwrap_or_else(|e| panic!("Can't convert {} to i64", e.into_original()));
+            .map_err(|e| format!("Can't convert {} to i64 for {}", e.into_original(), simple))?;
 
-        Sequence::new(k, c, d)
+        Ok(Sequence::new(k, c, d))
     }
 
     pub fn compute_term(&self, n: u32, base: u64) -> BigUint {

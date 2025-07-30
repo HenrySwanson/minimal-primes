@@ -15,8 +15,9 @@ use crate::data_structures::{
     is_proper_substring, AppendTree, AppendTreeNodeID, CandidateSequences,
 };
 use crate::digits::DigitSeq;
-use crate::families::{Family, SimpleFamily};
+use crate::families::{Family, Sequence, SimpleFamily};
 use crate::math::gcd_reduce;
+use crate::search::composite::composite_checks_for_simple;
 use crate::SearchResults;
 
 macro_rules! log_to_tree {
@@ -100,7 +101,8 @@ pub fn search_for_simple_families(
     for node in explorer.iter().cloned() {
         match node.family {
             NodeType::Arbitrary(family) => ret.other_families.push(family),
-            NodeType::Simple(simple_family) => ret.simple_families.push(simple_family),
+            // TODO: return the whole node, so the other stages can benefit here!
+            NodeType::Simple(node) => ret.simple_families.push(node.family),
         }
     }
 
@@ -143,7 +145,19 @@ pub struct SearchNode {
 #[derive(Debug, Clone)]
 enum NodeType {
     Arbitrary(Family),
-    Simple(SimpleFamily),
+    Simple(SimpleNode),
+}
+
+#[derive(Debug, Clone)]
+struct SimpleNode {
+    family: SimpleFamily,
+    // Some simple families are too large to fit into
+    // native integer types :/ Hopefully they get killed
+    // by other means in the first stage, since otherwise
+    // they'll fail in the second stage since we can't
+    // make a sequence for them.
+    sequence: Option<Sequence>,
+    composite_tested: bool,
 }
 
 enum Never {}
@@ -182,9 +196,9 @@ impl SearchContext {
                 debug!(" Exploring {}", family);
                 self.explore_family(family)
             }
-            NodeType::Simple(family) => {
-                debug!(" Exploring simple {}", family);
-                self.explore_simple_family(family)
+            NodeType::Simple(node) => {
+                debug!(" Exploring simple {}", node.family);
+                self.explore_simple_family(node)
             }
         };
         self.stats.num_branches_explored += 1;
@@ -249,8 +263,13 @@ impl SearchContext {
         // Check if this family is simple or not. If it is, we should
         // re-enqueue it as such. (Note: this is after composite check!)
         let mut family = match SimpleFamily::try_from(family) {
-            Ok(simple) => {
-                return vec![NodeType::Simple(simple)];
+            Ok(family) => {
+                let sequence = Sequence::try_from_family(&family, self.base).ok();
+                return vec![NodeType::Simple(SimpleNode {
+                    family,
+                    sequence,
+                    composite_tested: false,
+                })];
             }
             // can't convert, put it back to normal
             Err(f) => f,
@@ -298,23 +317,34 @@ impl SearchContext {
         children.into_iter().map(NodeType::Arbitrary).collect()
     }
 
-    fn explore_simple_family(&mut self, mut family: SimpleFamily) -> Vec<NodeType> {
+    fn explore_simple_family(&mut self, mut node: SimpleNode) -> Vec<NodeType> {
         // There's a lot less we can do here! We can't split anything,
         // we can't reduce cores, etc, etc.
-        // Even composite testing isn't very useful here, since we
-        // can't get here without passing through a composite test.
-        // All we can do is add another digit and see if it becomes
-        // prime or not. Or contains another prime.
 
-        // Test if it contains a prime
+        // We should do a composite test though; there's some specialized
+        // composite tests that we can only do on simple families. We should
+        // only do them once though.
+        if !node.composite_tested {
+            if composite_checks_for_simple(&node) {
+                debug!("  Discarding {}, is always composite", node.family);
+                debug_to_tree!(self.tracer, "Discarding, is always composite");
+                return vec![];
+            }
+            node.composite_tested = true;
+        }
+
+        // Other that that, all we can do is add another digit and see if it
+        // becomes prime or not. Or contains another prime.
+
         let start = Instant::now();
         for prime in self.primes.iter() {
             self.stats.num_simple_substring_checks += 1;
-            if family
+            if node
+                .family
                 .will_contain_at(prime)
-                .is_some_and(|n| n <= family.min_repeats)
+                .is_some_and(|n| n <= node.family.min_repeats)
             {
-                debug!("  Discarding {}, contains prime {}", family, prime);
+                debug!("  Discarding {}, contains prime {}", node.family, prime);
                 debug_to_tree!(self.tracer, "Discarding, contains prime {}", prime);
                 self.stats.duration_simple_substring_checks += start.elapsed();
                 return vec![];
@@ -323,18 +353,18 @@ impl SearchContext {
         self.stats.duration_simple_substring_checks += start.elapsed();
 
         // Test if it is a prime
-        let value = family.value(self.base);
+        let value = node.family.value(self.base);
 
         if self.test_for_prime(&value) {
-            debug!("  Saving {}, is prime", family);
+            debug!("  Saving {}, is prime", node.family);
             debug_to_tree!(self.tracer, "Saving, is prime");
-            let seq = family.sequence();
+            let seq = node.family.sequence();
             self.primes.insert(seq);
             return vec![];
         }
 
-        family.min_repeats += 1;
-        vec![NodeType::Simple(family)]
+        node.family.min_repeats += 1;
+        vec![NodeType::Simple(node)]
     }
 
     fn reduce_cores(&mut self, mut family: Family) -> Family {
@@ -595,7 +625,7 @@ impl std::fmt::Display for NodeType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             NodeType::Arbitrary(p) => p.fmt(f),
-            NodeType::Simple(p) => p.fmt(f),
+            NodeType::Simple(node) => node.family.fmt(f),
         }
     }
 }
@@ -604,7 +634,7 @@ impl std::fmt::Display for SearchNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.family {
             NodeType::Arbitrary(p) => p.fmt(f),
-            NodeType::Simple(p) => p.fmt(f),
+            NodeType::Simple(node) => node.family.fmt(f),
         }
     }
 }
@@ -613,7 +643,9 @@ impl Weight for SearchNode {
     fn weight(&self) -> usize {
         match &self.family {
             NodeType::Arbitrary(x) => x.weight(),
-            NodeType::Simple(x) => x.before.0.len() + x.min_repeats + x.after.0.len(),
+            NodeType::Simple(node) => {
+                node.family.before.0.len() + node.family.min_repeats + node.family.after.0.len()
+            }
         }
     }
 }
