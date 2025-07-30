@@ -8,87 +8,13 @@ use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
 use num_prime::buffer::NaiveBuffer;
 use num_prime::nt_funcs::is_prime;
 
-use crate::math::gcd_reduce;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Sequence {
-    pub k: u64,
-    pub c: i64,
-    pub d: u64,
-}
+use crate::families::Sequence;
 
 #[derive(Debug)]
 pub struct SequenceSlice {
     pub seq: Sequence,
     n_lo: usize,
     n_bitvec: BitVec,
-}
-
-impl Sequence {
-    pub fn new(k: u64, c: i64, d: u64) -> Self {
-        assert_ne!(k, 0);
-        assert_ne!(c, 0);
-        assert_ne!(d, 0);
-        // k and c have to be opposites mod d
-        assert_eq!(k.checked_add_signed(c).unwrap() % d, 0);
-
-        // Do some quick reduction to put it in lowest terms
-        let gcd = gcd_reduce([k, c.unsigned_abs(), d]);
-
-        Self {
-            k: k / gcd,
-            // casting is okay because 0 < gcd <= |c|
-            c: c / (gcd as i64),
-            d: d / gcd,
-        }
-    }
-
-    pub fn compute_term(&self, n: u32, base: u64) -> BigUint {
-        let bn = BigUint::from(base).pow(n);
-        let kbnc = if self.c > 0 {
-            self.k * bn + self.c.unsigned_abs()
-        } else {
-            self.k * bn - self.c.unsigned_abs()
-        };
-        let (q, r) = kbnc.div_rem(&self.d.into());
-        debug_assert_eq!(r, BigUint::ZERO);
-        q
-    }
-
-    fn check_term_equal(&self, base: u64, p: u64, n: usize) -> bool {
-        let mut x = u128::from(p);
-        x *= u128::from(self.d);
-        if self.c > 0 {
-            let c = u128::from(self.c.unsigned_abs());
-
-            x = match x.checked_sub(c) {
-                Some(x) => x,
-                None => return false,
-            };
-        } else {
-            x += u128::from(self.c.unsigned_abs());
-        }
-
-        if x % u128::from(self.k) != 0 {
-            return false;
-        }
-        x /= u128::from(self.k);
-
-        for _ in 0..n {
-            if x % u128::from(base) != 0 {
-                return false;
-            }
-            x /= u128::from(base);
-        }
-
-        x == 1
-    }
-}
-
-impl std::fmt::Display for Sequence {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}*b^n+{})/{}", self.k, self.c, self.d)
-    }
 }
 
 impl SequenceSlice {

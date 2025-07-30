@@ -1,7 +1,11 @@
 use itertools::Itertools;
-use num_bigint::BigUint;
+use num_bigint::{BigInt, BigUint};
+use num_integer::Integer;
 
-use crate::digits::{Digit, DigitSeq};
+use crate::{
+    digits::{Digit, DigitSeq},
+    math::gcd_reduce,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Family {
@@ -16,6 +20,13 @@ pub struct SimpleFamily {
     pub center: Digit,
     pub min_repeats: usize,
     pub after: DigitSeq,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Sequence {
+    pub k: u64,
+    pub c: i64,
+    pub d: u64,
 }
 
 impl Family {
@@ -236,6 +247,87 @@ impl TryFrom<Family> for SimpleFamily {
     }
 }
 
+impl Sequence {
+    pub fn new(k: u64, c: i64, d: u64) -> Self {
+        assert_ne!(k, 0);
+        assert_ne!(c, 0);
+        assert_ne!(d, 0);
+        // k and c have to be opposites mod d
+        assert_eq!(k.checked_add_signed(c).unwrap() % d, 0);
+
+        // Do some quick reduction to put it in lowest terms
+        let gcd = gcd_reduce([k, c.unsigned_abs(), d]);
+
+        Self {
+            k: k / gcd,
+            // casting is okay because 0 < gcd <= |c|
+            c: c / (gcd as i64),
+            d: d / gcd,
+        }
+    }
+
+    pub fn from_family(simple: &SimpleFamily, base: u8) -> Self {
+        // Compute the sequence for this family: xy*z
+        let x = simple.before.value(base);
+        let y = simple.center.0;
+        let z = simple.after.value(base);
+
+        let b_z = BigUint::from(base).pow(simple.after.0.len() as u32);
+        let d = u64::from(base) - 1;
+        let k = (x * d + y) * &b_z;
+        let c = BigInt::from(d * z) - BigInt::from(y * b_z);
+
+        // Try to fit it into the appropriate ranges
+        let k = u64::try_from(k)
+            .unwrap_or_else(|e| panic!("Can't convert {} to u64", e.into_original()));
+        let c = i64::try_from(c)
+            .unwrap_or_else(|e| panic!("Can't convert {} to i64", e.into_original()));
+
+        Sequence::new(k, c, d)
+    }
+
+    pub fn compute_term(&self, n: u32, base: u64) -> BigUint {
+        let bn = BigUint::from(base).pow(n);
+        let kbnc = if self.c > 0 {
+            self.k * bn + self.c.unsigned_abs()
+        } else {
+            self.k * bn - self.c.unsigned_abs()
+        };
+        let (q, r) = kbnc.div_rem(&self.d.into());
+        debug_assert_eq!(r, BigUint::ZERO);
+        q
+    }
+
+    pub fn check_term_equal(&self, base: u64, p: u64, n: usize) -> bool {
+        let mut x = u128::from(p);
+        x *= u128::from(self.d);
+        if self.c > 0 {
+            let c = u128::from(self.c.unsigned_abs());
+
+            x = match x.checked_sub(c) {
+                Some(x) => x,
+                None => return false,
+            };
+        } else {
+            x += u128::from(self.c.unsigned_abs());
+        }
+
+        if x % u128::from(self.k) != 0 {
+            return false;
+        }
+        x /= u128::from(self.k);
+
+        for _ in 0..n {
+            if x % u128::from(base) != 0 {
+                return false;
+            }
+            x /= u128::from(base);
+        }
+
+        x == 1
+    }
+}
+
 impl std::fmt::Display for Family {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         debug_assert_eq!(self.digitseqs.len(), self.cores.len() + 1);
@@ -258,5 +350,11 @@ impl std::fmt::Display for SimpleFamily {
             "{}{}*{} -- x{}",
             self.before, self.center, self.after, self.min_repeats
         )
+    }
+}
+
+impl std::fmt::Display for Sequence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}*b^n+{})/{}", self.k, self.c, self.d)
     }
 }

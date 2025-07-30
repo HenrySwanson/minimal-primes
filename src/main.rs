@@ -1,7 +1,8 @@
 use crate::data_structures::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
-use crate::search::{search_for_simple_families, Family, SimpleFamily, Stats};
-use crate::sieve::{Sequence, SequenceSlice};
+use crate::families::{Family, Sequence, SimpleFamily};
+use crate::search::{search_for_simple_families, Stats};
+use crate::sieve::SequenceSlice;
 
 use clap::Parser;
 use itertools::Itertools;
@@ -11,6 +12,7 @@ use num_prime::nt_funcs::is_prime;
 
 mod data_structures;
 mod digits;
+mod families;
 mod logging;
 mod math;
 mod search;
@@ -279,24 +281,7 @@ fn second_stage(
     let mut remaining_branches: Vec<_> = unsolved_families
         .iter()
         .map(|simple| {
-            // Compute the sequence for this family: xy*z
-            let x = simple.before.value(base);
-            let y = simple.center.0;
-            let z = simple.after.value(base);
-
-            let b_z = BigUint::from(base).pow(simple.after.0.len() as u32);
-            let d = u64::from(base) - 1;
-            let k = (x * d + y) * &b_z;
-            let c = BigInt::from(d * z) - BigInt::from(y * b_z);
-
-            // Try to fit it into the appropriate ranges
-            let k = u64::try_from(k)
-                .unwrap_or_else(|e| panic!("Can't convert {} to u64", e.into_original()));
-            let c = i64::try_from(c)
-                .unwrap_or_else(|e| panic!("Can't convert {} to i64", e.into_original()));
-
-            let seq = Sequence::new(k, c, d);
-
+            let seq = Sequence::from_family(&simple, base);
             (simple, seq)
         })
         .collect();

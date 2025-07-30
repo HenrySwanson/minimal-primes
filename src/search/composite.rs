@@ -6,9 +6,9 @@ use num_bigint::BigUint;
 use num_integer::Integer;
 use num_traits::identities::One;
 
-use super::families::Family;
 use crate::digits::Digit;
 use crate::digits::DigitSeq;
+use crate::families::Family;
 use crate::math::gcd_reduce;
 
 /// Checks whether this family shares a factor with the base.

@@ -1,6 +1,5 @@
 mod composite;
 mod explore;
-mod families;
 
 use std::time::{Duration, Instant};
 
@@ -16,10 +15,9 @@ use crate::data_structures::{
     is_proper_substring, AppendTree, AppendTreeNodeID, CandidateSequences,
 };
 use crate::digits::DigitSeq;
+use crate::families::{Family, SimpleFamily};
 use crate::math::gcd_reduce;
 use crate::SearchResults;
-
-pub use self::families::{Family, SimpleFamily};
 
 macro_rules! log_to_tree {
     ($tracer:expr, $lvl:expr, $($arg:tt)+) => {
