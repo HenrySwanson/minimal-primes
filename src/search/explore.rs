@@ -1,3 +1,5 @@
+use std::ops::ControlFlow;
+
 use crate::data_structures::WeightedVec;
 
 pub struct Frontier<T> {
@@ -20,18 +22,19 @@ impl<T: Weight> Frontier<T> {
     }
 
     // TODO: return some richer type from the closure?
-    pub fn explore_next(&mut self, f: impl FnOnce(T) -> Vec<T>) -> bool {
+    pub fn explore_next(&mut self, f: impl FnOnce(T) -> Vec<T>) -> ControlFlow<()> {
         // Pop out an element of least weight
         let layer = match self.by_weight.find_first_non_empty_layer_mut() {
             Some(layer) => layer,
-            None => return false,
+            None => return ControlFlow::Break(()),
         };
 
         let node = layer.pop_front().expect("non-empty layer");
         for child in f(node) {
             self.put(child);
         }
-        true
+
+        ControlFlow::Continue(())
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &T> {
@@ -40,6 +43,10 @@ impl<T: Weight> Frontier<T> {
 
     pub fn len(&self) -> usize {
         self.by_weight.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_weight.is_empty()
     }
 
     pub fn min_weight(&self) -> Option<usize> {

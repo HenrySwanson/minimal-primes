@@ -1,6 +1,7 @@
 mod composite;
 mod explore;
 
+use std::ops::ControlFlow;
 use std::time::{Duration, Instant};
 
 use itertools::Itertools;
@@ -41,72 +42,120 @@ pub fn search_for_simple_families(
     stop_when_simple: bool,
     tree_log: bool,
 ) -> SearchResults {
-    let mut ctx = SearchContext::new(base, tree_log);
-    let initial_node = SearchNode {
-        family: NodeType::Arbitrary(Family::any(base)),
-        id: ctx.tracer.root(),
-    };
-    let mut explorer = Frontier::start(initial_node);
+    let mut tree = SearchTree::new(base, tree_log);
 
-    while let Some(weight) = explorer.min_weight() {
+    tree.explore_until(|tree| {
+        let weight = match tree.frontier.min_weight() {
+            Some(w) => w,
+            // this means the frontier is empty!
+            None => return ControlFlow::Break(()),
+        };
+
         if let Some(max) = max_weight {
             if weight > max {
                 info!("Reached weight cutoff; stopping...");
-                break;
+                return ControlFlow::Break(());
             }
         }
 
         if let Some(max) = max_iter {
-            if ctx.iter >= max {
+            if tree.ctx.iter >= max {
                 info!("Reached iteration cutoff; stopping...");
-                break;
+                return ControlFlow::Break(());
             }
         }
 
         if stop_when_simple && {
-            explorer
+            tree.frontier
                 .iter()
                 .all(|node| matches!(node.family, NodeType::Simple(_)))
         } {
             info!("All remaining families are simple; stopping...");
-            break;
+            return ControlFlow::Break(());
         }
 
         info!(
             "Iteration {} - Weight {} - {} branches",
-            ctx.iter,
+            tree.ctx.iter,
             weight,
-            explorer.len()
+            tree.frontier.len()
         );
 
-        explorer.explore_next(|node| ctx.explore_node(node));
-        ctx.iter += 1;
+        ControlFlow::Continue(())
+    });
+
+    tree.into_results()
+}
+
+pub struct SearchTree {
+    /// Nodes that we haven't explored yet
+    pub frontier: Frontier<SearchNode>,
+    /// Everything else
+    pub ctx: SearchContext,
+}
+
+impl SearchTree {
+    pub fn new(base: u8, tree_log: bool) -> Self {
+        let ctx = SearchContext::new(base, tree_log);
+        let initial_node = SearchNode {
+            family: NodeType::Arbitrary(Family::any(base)),
+            id: ctx.tracer.root(),
+        };
+        let frontier = Frontier::start(initial_node);
+
+        Self { frontier, ctx }
     }
 
-    ctx.primes.sort();
+    pub fn explore_until(
+        &mut self,
+        mut stop_condition: impl FnMut(&SearchTree) -> ControlFlow<()>,
+    ) {
+        loop {
+            if stop_condition(self).is_break() {
+                break;
+            }
 
-    // print the tree to stdout if we're tracing
-    match ctx.tracer {
-        Tracer::Real(t, _) => t.pretty_print_to_stdout(),
-        Tracer::Dummy(_) => {}
-    }
-
-    // Pull the unsolved branches and return them
-    let mut ret = SearchResults {
-        primes: ctx.primes,
-        simple_families: vec![],
-        other_families: vec![],
-        stats: ctx.stats,
-    };
-    for node in explorer.iter().cloned() {
-        match node.family {
-            NodeType::Arbitrary(family) => ret.other_families.push(family),
-            // TODO: return the whole node, so the other stages can benefit here!
-            NodeType::Simple(node) => ret.simple_families.push(node.family),
+            // Explore and break if nothing happened
+            if self.explore_once().is_break() {
+                break;
+            }
         }
     }
 
-    ret
+    fn explore_once(&mut self) -> ControlFlow<()> {
+        self.frontier
+            .explore_next(|node| self.ctx.explore_node(node))?;
+
+        self.ctx.iter += 1;
+        ControlFlow::Continue(())
+    }
+
+    pub fn into_results(mut self) -> SearchResults {
+        self.ctx.primes.sort();
+
+        // print the tree to stdout if we're tracing
+        match self.ctx.tracer {
+            Tracer::Real(t, _) => t.pretty_print_to_stdout(),
+            Tracer::Dummy(_) => {}
+        }
+
+        // Pull the unsolved branches and return them
+        let mut ret = SearchResults {
+            primes: self.ctx.primes,
+            simple_families: vec![],
+            other_families: vec![],
+            stats: self.ctx.stats,
+        };
+        for node in self.frontier.iter().cloned() {
+            match node.family {
+                NodeType::Arbitrary(family) => ret.other_families.push(family),
+                // TODO: return the whole node, so the other stages can benefit here!
+                NodeType::Simple(node) => ret.simple_families.push(node.family),
+            }
+        }
+
+        ret
+    }
 }
 
 #[derive(Debug, Default)]
@@ -137,7 +186,7 @@ pub struct SearchContext {
 }
 
 #[derive(Debug, Clone)]
-pub struct SearchNode {
+struct SearchNode {
     family: NodeType,
     id: AppendTreeNodeID,
 }
