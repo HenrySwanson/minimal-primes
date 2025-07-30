@@ -407,20 +407,7 @@ mod tests {
     declare_test_for_base!(test_base_6, 6, Status::Complete);
     declare_test_for_base!(test_base_7, 7, Status::Complete);
     declare_test_for_base!(test_base_8, 8, Status::Complete);
-    declare_test_for_base!(
-        test_base_9,
-        9,
-        Status::IncompleteSimple(IncompleteBranches {
-            composites: vec![
-                // (9^n - 1) / 8: unusual
-                // for even n, this is difference of squares (the 8 doesn't matter)
-                // for odd n, this is an even number:
-                //   9^(2k+1) mod 16 = 9 * 81^k = 9
-                "1*"
-            ],
-            eventual_primes: vec![]
-        })
-    );
+    declare_test_for_base!(test_base_9, 9, Status::Complete);
     declare_test_for_base!(test_base_10, 10, Status::Complete);
     declare_test_for_base!(test_base_11, 11, Status::Complete);
     declare_test_for_base!(test_base_12, 12, Status::Complete);
@@ -440,19 +427,10 @@ mod tests {
         16,
         Status::IncompleteSimple(IncompleteBranches {
             composites: vec![
-                // (4*16^(n+1) - 49) / 15
-                // difference of squares
-                "4*1",
                 // (8*16^(n+1) + 15^2 - 8*16) / 15
                 // = (2^(4n+7)+97) / 15
                 // unknown
-                "8*F", //
-                // 9*16^n - 1
-                // difference of squares
-                "8F*", //
-                // (2535*16^(n+2) - 1215) / 15
-                // unknown
-                "A8F*AF",
+                "8*F",
                 // (2153*16^(n+1) + 97) / 15
                 // unknown, but there's that 97 again
                 "8F8*F",

@@ -162,27 +162,28 @@ pub fn composite_checks_for_simple(base: u8, node: &SimpleNode) -> bool {
         None => return false, // nothing we can check :(
     };
 
-    check_sum_diff_of_cubes(sequence, base)
+    check_sum_diff_of_cubes(base, &sequence) || check_diff_of_squares(base, &sequence)
 }
 
-fn check_sum_diff_of_cubes(sequence: Sequence, base: u8) -> bool {
+macro_rules! bail_if_none {
+    ($e:expr) => {
+        match $e {
+            Some(x) => x,
+            None => return false,
+        }
+    };
+}
+
+fn check_sum_diff_of_cubes(base: u8, sequence: &Sequence) -> bool {
     // We need B to be a cube, and also k and c.
     // What about d? We can mostly ignore it, but we do have to be careful
     // that neither of the factors is smaller than d, otherwise we could
     // unwittingly be factoring into p * 1.
-    let (cbrt_k, cbrt_c) = match (
-        base.cbrt_exact(),
-        sequence.k.cbrt_exact(),
-        sequence.c.cbrt_exact(),
-    ) {
-        (Some(_cbrt_base), Some(cbrt_k), Some(cbrt_c)) => {
-            let cbrt_k: i64 = cbrt_k
-                .try_into()
-                .expect("cube root should be small enough to fit in i64");
-            (cbrt_k, cbrt_c)
-        }
-        _ => return false,
-    };
+    let _cbrt_base = bail_if_none!(base.cbrt_exact());
+    let cbrt_k: i64 = bail_if_none!(sequence.k.cbrt_exact())
+        .try_into()
+        .expect("cube root should be small enough to fit in i64");
+    let cbrt_c = bail_if_none!(sequence.c.cbrt_exact());
 
     // It's a possibility! Now check the factor size.
     // a^3 + b^3 = (a + b)(a^2 - ab + b^2)
@@ -193,4 +194,20 @@ fn check_sum_diff_of_cubes(sequence: Sequence, base: u8) -> bool {
 
     // TODO: if that check fails, we should retry with higher n! we might
     // still be composite, and we should check another time
+    // TODO: also log (to tree) what the specific reason is!
+}
+
+fn check_diff_of_squares(base: u8, sequence: &Sequence) -> bool {
+    // we need the base, k and -c to be squares
+    let _sqrt_base = bail_if_none!(base.sqrt_exact());
+    let sqrt_k: i64 = bail_if_none!(sequence.k.sqrt_exact())
+        .try_into()
+        .expect("square root should be small enough to fit in i64");
+    let sqrt_neg_c = bail_if_none!((-sequence.c).sqrt_exact());
+
+    // Check the factor size
+    // TODO: for 1* in base 9, this won't work! you need to actually implement
+    // the fancy "definitely composite after n but maybe prime before that"
+    // tracking.
+    true
 }
