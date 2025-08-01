@@ -24,7 +24,7 @@ struct Args {
     command: Command,
 
     /// Log level
-    #[arg(long, global = true, default_value_t = LevelFilter::Warn)]
+    #[arg(long, global = true, default_value_t = LevelFilter::Info)]
     log_level: LevelFilter,
 }
 
