@@ -464,7 +464,17 @@ mod tests {
     // ramps up to tens of thousands of branches, but then drops to 400ish and
     // oscillates for a while. unfortunately, it starts going back up again.
     declare_test_for_base!(test_base_21, 21, Status::Explodes);
-    declare_test_for_base!(test_base_22, 22, Status::Explodes);
+    declare_test_for_base!(
+        test_base_22,
+        22,
+        Status::IncompleteSimple(IncompleteBranches {
+            composites: vec![],
+            eventual_primes: vec![
+                "I*AF",   // 628 digits
+                "K0*EC1", // 764 digits
+            ]
+        })
+    );
     declare_test_for_base!(test_base_23, 23, Status::Explodes);
     declare_test_for_base!(
         test_base_24,
@@ -483,7 +493,6 @@ mod tests {
     declare_test_for_base!(test_base_27, 27, Status::Explodes);
     declare_test_for_base!(test_base_28, 28, Status::Explodes);
     declare_test_for_base!(test_base_29, 29, Status::Explodes);
-    // 30 is solvable, but takes too long, even with --release
     declare_test_for_base!(
         test_base_30,
         30,
