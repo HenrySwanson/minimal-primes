@@ -11,14 +11,14 @@ use log::{debug, trace};
 use num_bigint::BigUint;
 use num_prime::nt_funcs::is_prime;
 
-use self::composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
+use self::composite::{find_even_odd_factor, find_periodic_factor, shares_factor_with_base};
 use self::explore::{Frontier, Weight};
 use crate::data_structures::{
     is_proper_substring, AppendTree, AppendTreeNodeID, CandidateSequences,
 };
 use crate::digits::DigitSeq;
 use crate::families::{Core, Family, Sequence, SimpleFamily};
-use crate::search::composite::composite_checks_for_simple;
+use crate::search::composite::{composite_checks_for_simple, find_guaranteed_factor};
 use crate::SearchResults;
 
 #[macro_export]
@@ -453,8 +453,14 @@ impl SearchContext {
         // p does not divide BASE (e.g. 7)
         // -------------------------------
         // This is how we detect families like 4[6]9 being divisible by 7.
-        for stride in 1..=3 {
-            if let Some(factors) = find_perpetual_factor(self.base, family, stride) {
+        if let Some(divisor) = find_guaranteed_factor(self.base, family) {
+            debug!("  {} is divisible by {}", family, divisor);
+            debug_to_tree!(self.tracer, "Divisible by {}", divisor);
+            return true;
+        }
+        // start at stride 2; `find_guaranteed_factor` effectively handles stride 1
+        for stride in 2..=3 {
+            if let Some(factors) = find_periodic_factor(self.base, family, stride) {
                 debug!(
                     "  {} is divisible by {}",
                     family,

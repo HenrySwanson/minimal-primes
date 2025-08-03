@@ -22,8 +22,22 @@ pub fn shares_factor_with_base(base: u8, family: &Family) -> Option<u8> {
     nontrivial_gcd(&d.0, &base)
 }
 
+/// Given a family of the shape xLyMz..., checks whether it has a single factor
+/// dividing every member of the family.
+pub fn find_guaranteed_factor(base: u8, family: &Family) -> Option<BigUint> {
+    let mut gcd = family.contract().value(base);
+
+    for (i, core) in family.cores.iter().enumerate() {
+        for d in core.iter() {
+            gcd = nontrivial_gcd(&gcd, &family.substitute(i, d).value(base))?;
+        }
+    }
+
+    Some(gcd)
+}
+
 /// Given a family of the shape xLz, checks whether there are any "periodic"
-/// factors, up to the given limit.
+/// factors, up to the given limit. Only works on families with one core.
 ///
 /// For a period n, a periodic factor sequence is a list of numbers f_1, ..., f_n
 /// such that f_i divides xL^(i+kn)z for all k.
@@ -31,9 +45,7 @@ pub fn shares_factor_with_base(base: u8, family: &Family) -> Option<u8> {
 /// For example, a period-1 factor is a single number that divides xz, xLz, xLLz, ...,
 /// and a period-2 factor is two numbers N and M such that N divides xz, xLLz, xL^4z, ...,
 /// and M divides xLz, xLLLz, xL^5z, ....
-///
-/// TODO: period one but allow multiple cores
-pub fn find_perpetual_factor(base: u8, family: &Family, stride: usize) -> Option<Vec<BigUint>> {
+pub fn find_periodic_factor(base: u8, family: &Family, stride: usize) -> Option<Vec<BigUint>> {
     let one = BigUint::from(1_u32);
 
     // TODO: generalize
