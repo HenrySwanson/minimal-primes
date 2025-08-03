@@ -38,58 +38,6 @@ macro_rules! debug_to_tree {
     };
 }
 
-pub fn search_for_simple_families(
-    base: u8,
-    max_weight: Option<usize>,
-    max_iter: Option<usize>,
-    stop_when_simple: bool,
-    tree_log: bool,
-) -> SearchResults {
-    let mut tree = SearchTree::new(base, tree_log);
-
-    tree.explore_until(|tree| {
-        let weight = match tree.frontier.min_weight() {
-            Some(w) => w,
-            // this means the frontier is empty!
-            None => return ControlFlow::Break(()),
-        };
-
-        if let Some(max) = max_weight {
-            if weight > max {
-                info!("Reached weight cutoff; stopping...");
-                return ControlFlow::Break(());
-            }
-        }
-
-        if let Some(max) = max_iter {
-            if tree.ctx.iter >= max {
-                info!("Reached iteration cutoff; stopping...");
-                return ControlFlow::Break(());
-            }
-        }
-
-        if stop_when_simple && {
-            tree.frontier
-                .iter()
-                .all(|node| matches!(node.family, NodeType::Simple(_)))
-        } {
-            info!("All remaining families are simple; stopping...");
-            return ControlFlow::Break(());
-        }
-
-        info!(
-            "Iteration {} - Weight {} - {} branches",
-            tree.ctx.iter,
-            weight,
-            tree.frontier.len()
-        );
-
-        ControlFlow::Continue(())
-    });
-
-    tree.into_results()
-}
-
 pub struct SearchTree {
     /// Nodes that we haven't explored yet
     pub frontier: Frontier<SearchNode>,
@@ -107,6 +55,12 @@ impl SearchTree {
         let frontier = Frontier::start(initial_node);
 
         Self { frontier, ctx }
+    }
+
+    pub fn all_nodes_simple(&self) -> bool {
+        self.frontier
+            .iter()
+            .all(|node| matches!(node.family, NodeType::Simple(_)))
     }
 
     pub fn explore_until(
@@ -189,7 +143,7 @@ pub struct SearchContext {
 }
 
 #[derive(Debug, Clone)]
-struct SearchNode {
+pub struct SearchNode {
     family: NodeType,
     id: AppendTreeNodeID,
 }

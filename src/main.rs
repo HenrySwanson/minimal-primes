@@ -1,12 +1,14 @@
+use std::ops::ControlFlow;
+
 use crate::data_structures::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
 use crate::families::{Family, Sequence, SimpleFamily};
-use crate::search::{search_for_simple_families, Stats};
+use crate::search::{SearchTree, Stats};
 use crate::sieve::SequenceSlice;
 
 use clap::Parser;
 use itertools::Itertools;
-use log::LevelFilter;
+use log::{info, LevelFilter};
 use num_prime::nt_funcs::is_prime;
 
 mod data_structures;
@@ -105,19 +107,14 @@ fn main() {
     }
 }
 
-pub struct SearchResults {
-    pub primes: CandidateSequences,
-    pub simple_families: Vec<SimpleFamily>,
-    pub other_families: Vec<Family>,
-    pub stats: Stats,
-}
-
 fn do_search(cmd: &SearchArgs) -> SearchResults {
-    let mut results = first_stage(cmd);
-
-    if !cmd.with_sieve {
-        return results;
-    }
+    let mut results = first_stage(
+        cmd.base,
+        cmd.max_weight,
+        cmd.max_iter,
+        cmd.with_sieve,
+        cmd.tree_log,
+    );
 
     if !results.other_families.is_empty() {
         println!("Not all remaining branches are simple! Must bail out now.");
@@ -147,14 +144,59 @@ fn do_search(cmd: &SearchArgs) -> SearchResults {
     }
 }
 
-fn first_stage(cmd: &SearchArgs) -> SearchResults {
-    let results = search_for_simple_families(
-        cmd.base,
-        cmd.max_weight,
-        cmd.max_iter,
-        cmd.with_sieve,
-        cmd.tree_log,
-    );
+pub struct SearchResults {
+    pub primes: CandidateSequences,
+    pub simple_families: Vec<SimpleFamily>,
+    pub other_families: Vec<Family>,
+    pub stats: Stats,
+}
+
+fn first_stage(
+    base: u8,
+    max_weight: Option<usize>,
+    max_iter: Option<usize>,
+    stop_when_simple: bool,
+    tree_log: bool,
+) -> SearchResults {
+    let mut tree = SearchTree::new(base, tree_log);
+
+    tree.explore_until(|tree| {
+        let weight = match tree.frontier.min_weight() {
+            Some(w) => w,
+            // this means the frontier is empty!
+            None => return ControlFlow::Break(()),
+        };
+
+        if let Some(max) = max_weight {
+            if weight > max {
+                info!("Reached weight cutoff; stopping...");
+                return ControlFlow::Break(());
+            }
+        }
+
+        if let Some(max) = max_iter {
+            if tree.ctx.iter >= max {
+                info!("Reached iteration cutoff; stopping...");
+                return ControlFlow::Break(());
+            }
+        }
+
+        if stop_when_simple && tree.all_nodes_simple() {
+            info!("All remaining families are simple; stopping...");
+            return ControlFlow::Break(());
+        }
+
+        info!(
+            "Iteration {} - Weight {} - {} branches",
+            tree.ctx.iter,
+            weight,
+            tree.frontier.len()
+        );
+
+        ControlFlow::Continue(())
+    });
+
+    let results = tree.into_results();
 
     println!("---- BRANCHES REMAINING ----");
     for f in results.simple_families.iter() {
@@ -543,7 +585,7 @@ mod tests {
         };
 
         // First stage
-        let mut results = first_stage(&cmd);
+        let mut results = first_stage(base, None, None, true, false);
 
         // Remove any composite branches that are expected to be present.
         for composite in expected_incomplete.composites {
