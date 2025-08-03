@@ -19,7 +19,7 @@ impl SearchContext {
     /// We check n from 1 to `max_repeats`.
     pub fn split_on_repeat(&mut self, family: &Family, max_repeats: usize) -> Option<Vec<Family>> {
         for (i, core) in family.cores.iter().enumerate() {
-            for d in core.iter().copied() {
+            for d in core.iter() {
                 for n in 2..=max_repeats {
                     // Check whether x y^n z contains a prime subword
                     let seq = family.substitute_multiple(i, std::iter::repeat_n(d, n));
@@ -88,13 +88,12 @@ impl SearchContext {
 
         let contracted = family.contract().value(self.base);
 
-        for d in family.cores[0].iter().copied() {
+        for d in family.cores[0].iter() {
             let g = gcd_reduce(
                 // We want to try "no digits" and "all digits except d"
                 std::iter::once(contracted.clone()).chain(
                     family.cores[0]
                         .iter()
-                        .copied()
                         .filter(|d2| *d2 != d)
                         .map(|d2| family.substitute(0, d2).value(self.base)),
                 ),
@@ -119,7 +118,7 @@ impl SearchContext {
     /// we can reduce the family a bit.
     pub fn split_on_incompatible_digits(&mut self, family: &Family) -> Option<Vec<Family>> {
         for (i, core) in family.cores.iter().enumerate() {
-            for (a, b) in core.iter().copied().tuple_combinations() {
+            for (a, b) in core.iter().tuple_combinations() {
                 if a == b {
                     continue;
                 }

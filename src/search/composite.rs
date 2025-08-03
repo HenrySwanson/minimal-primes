@@ -9,6 +9,7 @@ use num_traits::identities::One;
 
 use crate::digits::Digit;
 use crate::digits::DigitSeq;
+use crate::families::Core;
 use crate::families::Family;
 use crate::families::Sequence;
 use crate::math::gcd_reduce;
@@ -55,13 +56,10 @@ pub fn find_perpetual_factor(base: u8, family: &Family, stride: usize) -> Option
         let g = gcd_reduce(
             // The smaller of the two sets: xL^iz
             core.iter()
-                .copied()
                 .combinations_with_replacement(i)
                 .chain(
                     // The larger of the two sets: xL^(i+stride)z
-                    core.iter()
-                        .copied()
-                        .combinations_with_replacement(i + stride),
+                    core.iter().combinations_with_replacement(i + stride),
                 )
                 .map(|center| {
                     DigitSeq::concat_value(
@@ -96,17 +94,16 @@ pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUi
     fn family_iter_helper<'f>(
         base: u8,
         x: &'f DigitSeq,
-        a: &'f [Digit],
+        a: &'f Core,
         y: &'f DigitSeq,
-        b: &'f [Digit],
+        b: &'f Core,
         z: &'f DigitSeq,
         a_repeat: usize,
         b_repeat: usize,
     ) -> impl Iterator<Item = BigUint> + 'f {
         a.iter()
-            .copied()
             .combinations_with_replacement(a_repeat)
-            .cartesian_product(b.iter().copied().combinations_with_replacement(b_repeat))
+            .cartesian_product(b.iter().combinations_with_replacement(b_repeat))
             .map(move |(a_choices, b_choices)| {
                 let mut seq = x.clone();
                 seq += DigitSeq(a_choices.clone());

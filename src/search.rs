@@ -433,7 +433,7 @@ impl SearchContext {
             // NOTE: this is where we generate minimal primes of (weight + 1), so
             // next loop, those should all be available.
             let mut allowed_digits = vec![];
-            for digit in core.iter().copied() {
+            for digit in core.iter() {
                 let seq = old_family.substitute(i, digit);
 
                 if let Some(p) = self.test_for_contained_prime(&seq).cloned() {

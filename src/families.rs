@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use itertools::Itertools;
 use num_bigint::{BigInt, BigUint};
 use num_integer::Integer;
@@ -70,7 +68,10 @@ impl Family {
         // Delete [0]* at the beginning of a family
         if let Some(first_core) = self.cores.first() {
             let first_seq = &self.digitseqs[0];
-            if first_seq.0.is_empty() && first_core.len() == 1 && first_core[0] == Digit(0) {
+            if first_seq.0.is_empty()
+                && first_core.len() == 1
+                && first_core.iter().next().unwrap() == Digit(0)
+            {
                 self.digitseqs.remove(0);
                 self.cores.remove(0);
             }
@@ -112,7 +113,6 @@ impl Family {
     pub fn split_left(&self, slot: usize) -> Vec<Self> {
         self.cores[slot]
             .iter()
-            .copied()
             // skip 0 if it'd be the first digit
             .filter(|digit| !(digit.0 == 0 && slot == 0 && self.digitseqs[0].0.is_empty()))
             .map(|digit| {
@@ -127,7 +127,6 @@ impl Family {
     pub fn split_right(&self, slot: usize) -> Vec<Self> {
         self.cores[slot]
             .iter()
-            .copied()
             .map(|digit| {
                 // If the invariant is true, we'll definitely have an entry
                 // at slot + 1.
@@ -162,13 +161,17 @@ impl Core {
     pub fn clear(&mut self) {
         self.digits.clear();
     }
-}
 
-impl Deref for Core {
-    type Target = [Digit];
+    pub fn iter(&self) -> impl Iterator<Item = Digit> + Clone + '_ {
+        self.digits.iter().copied()
+    }
 
-    fn deref(&self) -> &Self::Target {
-        &self.digits
+    pub fn is_empty(&self) -> bool {
+        self.digits.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.digits.len()
     }
 }
 
@@ -262,7 +265,7 @@ impl TryFrom<Family> for SimpleFamily {
         }
 
         // Great! Pull out the bits we want.
-        let center = family.cores[0][0];
+        let center = family.cores[0].iter().next().unwrap();
         let mut after = family.digitseqs.pop().unwrap();
         let mut before = family.digitseqs.pop().unwrap();
 
