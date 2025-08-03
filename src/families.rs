@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use itertools::Itertools;
 use num_bigint::{BigInt, BigUint};
 use num_integer::Integer;
@@ -11,7 +13,12 @@ use crate::{
 pub struct Family {
     // invariant: digitseqs.len() = cores.len() + 1
     pub digitseqs: Vec<DigitSeq>,
-    pub cores: Vec<Vec<Digit>>,
+    pub cores: Vec<Core>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Core {
+    digits: Vec<Digit>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,7 +40,7 @@ impl Family {
     pub fn any(base: u8) -> Self {
         Self {
             digitseqs: vec![DigitSeq::new(), DigitSeq::new()],
-            cores: vec![(0..base).map(Digit).collect()],
+            cores: vec![Core::full(base)],
         }
     }
 
@@ -129,6 +136,39 @@ impl Family {
                 new
             })
             .collect()
+    }
+}
+
+impl Core {
+    pub fn new(digits: Vec<Digit>) -> Self {
+        Self { digits }
+    }
+
+    pub fn full(base: u8) -> Self {
+        Self {
+            digits: (0..base).map(Digit).collect(),
+        }
+    }
+
+    pub fn remove(&mut self, d: Digit) {
+        self.digits.retain(|d2| d != *d2);
+    }
+
+    pub fn without(mut self, d: Digit) -> Self {
+        self.remove(d);
+        self
+    }
+
+    pub fn clear(&mut self) {
+        self.digits.clear();
+    }
+}
+
+impl Deref for Core {
+    type Target = [Digit];
+
+    fn deref(&self) -> &Self::Target {
+        &self.digits
     }
 }
 

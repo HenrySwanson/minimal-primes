@@ -17,7 +17,7 @@ use crate::data_structures::{
     is_proper_substring, AppendTree, AppendTreeNodeID, CandidateSequences,
 };
 use crate::digits::DigitSeq;
-use crate::families::{Family, Sequence, SimpleFamily};
+use crate::families::{Core, Family, Sequence, SimpleFamily};
 use crate::math::gcd_reduce;
 use crate::search::composite::composite_checks_for_simple;
 use crate::SearchResults;
@@ -454,7 +454,7 @@ impl SearchContext {
                 }
             }
 
-            *core = allowed_digits;
+            *core = Core::new(allowed_digits);
         }
         // Now we've reduced the core, and have a new family.
         debug!("  Reducing {} to {}", old_family, family);

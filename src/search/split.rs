@@ -28,7 +28,7 @@ impl SearchContext {
                         debug!("  {} contains a prime {}", seq, p);
 
                         // Split into n families, x (L-y) (y (L-y))^i z for i in 0..n
-                        let yless_core: Vec<_> = core.iter().copied().filter(|x| *x != d).collect();
+                        let yless_core = core.clone().without(d);
                         let mut first_child = family.clone();
                         first_child.cores[i] = yless_core.clone();
 
@@ -66,7 +66,7 @@ impl SearchContext {
     }
 
     /// Given a family `xLz`, if there's some y in L for which `x (L-y) z` is always composite,
-    /// then we can split the family as `x (L-y) y (L-y) z`
+    /// then we can split the family as `x L y (L-y) z`
     pub fn split_on_necessary_digit(&mut self, family: &Family) -> Option<Family> {
         // There's a case in base 11 (and probably others) where we have
         // just one core, where all the digits except one are even, and so
@@ -103,11 +103,7 @@ impl SearchContext {
             if g != BigUint::one() {
                 // Got a match! Return xLyLz
                 let mut new = family.clone();
-                let d_less_core = family.cores[0]
-                    .iter()
-                    .copied()
-                    .filter(|d2| *d2 != d)
-                    .collect();
+                let d_less_core = family.cores[0].clone().without(d);
 
                 new.digitseqs.insert(1, d.into());
                 new.cores.insert(1, d_less_core);
@@ -155,18 +151,8 @@ impl SearchContext {
                         // without b.
                         let mut without_a = family.clone();
                         let mut without_b = family.clone();
-
-                        // TODO: we do this a lot, make it easier!
-                        without_a.cores[i] = family.cores[i]
-                            .iter()
-                            .copied()
-                            .filter(|d| *d != a)
-                            .collect();
-                        without_b.cores[i] = family.cores[i]
-                            .iter()
-                            .copied()
-                            .filter(|d| *d != b)
-                            .collect();
+                        without_a.cores[i].remove(a);
+                        without_b.cores[i].remove(b);
 
                         return Some(vec![without_a, without_b]);
                     }
@@ -189,20 +175,9 @@ impl SearchContext {
                         );
 
                         let mut new = family.clone();
-                        new.cores[i] = family.cores[i]
-                            .iter()
-                            .copied()
-                            .filter(|d| *d != b)
-                            .collect();
+                        new.cores[i].remove(b);
                         new.digitseqs.insert(i + 1, DigitSeq::new());
-                        new.cores.insert(
-                            i + 1,
-                            family.cores[i]
-                                .iter()
-                                .copied()
-                                .filter(|d| *d != a)
-                                .collect(),
-                        );
+                        new.cores.insert(i + 1, family.cores[i].without(a));
 
                         return Some(vec![new]);
                     }
@@ -220,20 +195,9 @@ impl SearchContext {
                         );
 
                         let mut new = family.clone();
-                        new.cores[i] = family.cores[i]
-                            .iter()
-                            .copied()
-                            .filter(|d| *d != a)
-                            .collect();
+                        new.cores[i].remove(a);
                         new.digitseqs.insert(i + 1, DigitSeq::new());
-                        new.cores.insert(
-                            i + 1,
-                            family.cores[i]
-                                .iter()
-                                .copied()
-                                .filter(|d| *d != b)
-                                .collect(),
-                        );
+                        new.cores.insert(i + 1, family.cores[i].without(b));
 
                         return Some(vec![new]);
                     }
