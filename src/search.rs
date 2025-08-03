@@ -1,5 +1,6 @@
 mod composite;
 mod explore;
+mod split;
 
 use std::ops::ControlFlow;
 use std::time::{Duration, Instant};
@@ -21,6 +22,7 @@ use crate::math::gcd_reduce;
 use crate::search::composite::composite_checks_for_simple;
 use crate::SearchResults;
 
+#[macro_export]
 macro_rules! log_to_tree {
     ($tracer:expr, $lvl:expr, $($arg:tt)+) => {
         if log::log_enabled!($lvl) {
@@ -29,9 +31,10 @@ macro_rules! log_to_tree {
     };
 }
 
+#[macro_export]
 macro_rules! debug_to_tree {
     ($tracer:expr, $($arg:tt)+) => {
-        log_to_tree!($tracer, log::Level::Debug, $($arg)+)
+        crate::log_to_tree!($tracer, log::Level::Debug, $($arg)+)
     };
 }
 
@@ -524,234 +527,6 @@ impl SearchContext {
         }
 
         false
-    }
-
-    fn split_on_repeat(&mut self, family: &Family, max_repeats: usize) -> Option<Vec<Family>> {
-        for (i, core) in family.cores.iter().enumerate() {
-            for d in core.iter().copied() {
-                for n in 2..=max_repeats {
-                    // Check whether x y^n z contains a prime subword
-                    let seq = family.substitute_multiple(i, std::iter::repeat_n(d, n));
-                    if let Some(p) = self.test_for_contained_prime(&seq) {
-                        assert_ne!(&seq, p);
-                        debug!("  {} contains a prime {}", seq, p);
-
-                        // Split into n families, x (L-y) (y (L-y))^i z for i in 0..n
-                        let yless_core: Vec<_> = core.iter().copied().filter(|x| *x != d).collect();
-                        let mut first_child = family.clone();
-                        first_child.cores[i] = yless_core.clone();
-
-                        let mut children = vec![first_child];
-
-                        while children.len() < n {
-                            let mut new = children.last().unwrap().clone();
-                            new.digitseqs.insert(i + 1, d.into());
-                            new.cores.insert(i + 1, yless_core.clone());
-                            children.push(new);
-                        }
-
-                        // Simplify everything (don't do it while we're generating families),
-                        // since that'd mess with indices).
-                        for child in children.iter_mut() {
-                            child.simplify();
-                        }
-
-                        debug!(
-                            "  {} split into {}",
-                            family,
-                            children.iter().format(" and ")
-                        );
-                        debug_to_tree!(
-                            self.tracer,
-                            "Splitting into {}",
-                            children.iter().format(" and ")
-                        );
-                        return Some(children);
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    fn split_on_necessary_digit(&mut self, family: &Family) -> Option<Family> {
-        // There's a case in base 11 (and probably others) where we have
-        // just one core, where all the digits except one are even, and so
-        // is the rest of the number.
-        // This tells me that we are required to have at least one of that digit,
-        // or else we'll forever be even.
-        // This function detects that situation and splits the family accordingly.
-        // TODO: generalize to multiple cores!
-        // TODO: generalize to multiple digits?
-        // TODO: does this belong in composite? not quite i think
-
-        if family.cores.len() != 1 {
-            return None;
-        }
-
-        if family.cores[0].len() <= 1 {
-            return None;
-        }
-
-        let contracted = family.contract().value(self.base);
-
-        for d in family.cores[0].iter().copied() {
-            let g = gcd_reduce(
-                // We want to try "no digits" and "all digits except d"
-                std::iter::once(contracted.clone()).chain(
-                    family.cores[0]
-                        .iter()
-                        .copied()
-                        .filter(|d2| *d2 != d)
-                        .map(|d2| family.substitute(0, d2).value(self.base)),
-                ),
-            );
-
-            if g != BigUint::one() {
-                // Got a match! Return xLyLz
-                let mut new = family.clone();
-                let d_less_core = family.cores[0]
-                    .iter()
-                    .copied()
-                    .filter(|d2| *d2 != d)
-                    .collect();
-
-                new.digitseqs.insert(1, d.into());
-                new.cores.insert(1, d_less_core);
-                debug!("  {} must have a {}, transforming into {}", family, d, new);
-                debug_to_tree!(self.tracer, "Must have a {}, transforming to {}", d, new);
-                return Some(new);
-            }
-        }
-        None
-    }
-
-    /// If we have a family X[abY]Z, check whether XabZ or XbaZ is forbidden.
-    /// If so, we can reduce the family a bit.
-    fn split_on_incompatible_digits(&mut self, family: &Family) -> Option<Vec<Family>> {
-        for (i, core) in family.cores.iter().enumerate() {
-            for (a, b) in core.iter().copied().tuple_combinations() {
-                if a == b {
-                    continue;
-                }
-
-                // Check whether we can substitute a and b in either order.
-                let seq_ab = family.substitute_multiple(i, [a, b]);
-                let seq_ba = family.substitute_multiple(i, [b, a]);
-
-                // TODO: no need to clone this!
-                match (
-                    self.test_for_contained_prime(&seq_ab).cloned(),
-                    self.test_for_contained_prime(&seq_ba).cloned(),
-                ) {
-                    (Some(p), Some(q)) => {
-                        // We can't have both a and b in this core.
-                        // Split into X[aY]Z and X[bY]Z
-                        assert_ne!(seq_ab, p);
-                        assert_ne!(seq_ba, q);
-                        debug!(
-                            "  {} contains a prime {} and {} contains a prime {}",
-                            seq_ab, p, seq_ba, q
-                        );
-                        debug_to_tree!(
-                            self.tracer,
-                            "digits {a} and {b} are incompatible in core {i}"
-                        );
-
-                        // Best case scenario! Just make two copies, one without a and one
-                        // without b.
-                        let mut without_a = family.clone();
-                        let mut without_b = family.clone();
-
-                        // TODO: we do this a lot, make it easier!
-                        without_a.cores[i] = family.cores[i]
-                            .iter()
-                            .copied()
-                            .filter(|d| *d != a)
-                            .collect();
-                        without_b.cores[i] = family.cores[i]
-                            .iter()
-                            .copied()
-                            .filter(|d| *d != b)
-                            .collect();
-
-                        return Some(vec![without_a, without_b]);
-                    }
-                    (Some(p), None) => {
-                        // a can't occur before b
-                        // Reduce to X[bY][aY]Z
-
-                        // TODO: this makes things so much worse! we get families
-                        // with oodles of cores, like
-                        // DEBUG -  Exploring E[06EG]*[06CF]*[06CG]*[06CEG]*[0CF]*F[0]*[0]*[06A]*[06F]*[06]*[06]*6
-                        // Fortunately, the branch above is fine, and actually downright helpful, but
-                        // this one makes things pretty unpleasant. Gotta investigate that later.
-                        continue;
-
-                        assert_ne!(seq_ab, p);
-                        debug!("  {} contains a prime {}", seq_ab, p);
-                        debug_to_tree!(
-                            self.tracer,
-                            "digits {a} and {b} are semi-incompatible in core {i}"
-                        );
-
-                        let mut new = family.clone();
-                        new.cores[i] = family.cores[i]
-                            .iter()
-                            .copied()
-                            .filter(|d| *d != b)
-                            .collect();
-                        new.digitseqs.insert(i + 1, DigitSeq::new());
-                        new.cores.insert(
-                            i + 1,
-                            family.cores[i]
-                                .iter()
-                                .copied()
-                                .filter(|d| *d != a)
-                                .collect(),
-                        );
-
-                        return Some(vec![new]);
-                    }
-                    (None, Some(q)) => {
-                        // b can't occur before a
-                        // Reduce to X[aY][bY]Z
-
-                        continue; // see above
-
-                        assert_ne!(seq_ba, q);
-                        debug!("  {} contains a prime {}", seq_ba, q);
-                        debug_to_tree!(
-                            self.tracer,
-                            "digits {b} and {a} are semi-incompatible in core {i}"
-                        );
-
-                        let mut new = family.clone();
-                        new.cores[i] = family.cores[i]
-                            .iter()
-                            .copied()
-                            .filter(|d| *d != a)
-                            .collect();
-                        new.digitseqs.insert(i + 1, DigitSeq::new());
-                        new.cores.insert(
-                            i + 1,
-                            family.cores[i]
-                                .iter()
-                                .copied()
-                                .filter(|d| *d != b)
-                                .collect(),
-                        );
-
-                        return Some(vec![new]);
-                    }
-                    (None, None) => {
-                        // nope, nothing we can do
-                    }
-                }
-            }
-        }
-
-        None
     }
 }
 
