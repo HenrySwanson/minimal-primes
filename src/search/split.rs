@@ -1,12 +1,10 @@
 use itertools::Itertools;
 use log::debug;
-use num_bigint::BigUint;
-use num_traits::One;
 
 use crate::debug_to_tree;
-use crate::digits::DigitSeq;
+use crate::digits::{Digit, DigitSeq};
 use crate::families::Family;
-use crate::math::gcd_reduce;
+use crate::search::gcd::nontrivial_gcd;
 use crate::search::SearchContext;
 
 // TODO: this probably shouldn't be searchcontext, but this works well now
@@ -81,25 +79,30 @@ impl SearchContext {
         if family.cores.len() != 1 {
             return None;
         }
+        let only_core = &family.cores[0];
 
-        if family.cores[0].len() <= 1 {
+        if only_core.len() <= 1 {
             return None;
         }
 
         let contracted = family.contract().value(self.base);
 
-        for d in family.cores[0].iter() {
-            let g = gcd_reduce(
-                // We want to try "no digits" and "all digits except d"
-                std::iter::once(contracted.clone()).chain(
-                    family.cores[0]
-                        .iter()
-                        .filter(|d2| *d2 != d)
-                        .map(|d2| family.substitute(0, d2).value(self.base)),
-                ),
-            );
+        let try_digit = |d: Digit| -> Option<()> {
+            let mut g = contracted.clone();
+            // We want to try "no digits" and "all digits except d"
+            for d2 in only_core.iter() {
+                if d2 == d {
+                    continue;
+                }
 
-            if g != BigUint::one() {
+                g = nontrivial_gcd(&g, &family.substitute(0, d2).value(self.base))?;
+            }
+
+            Some(())
+        };
+
+        for d in family.cores[0].iter() {
+            if let Some(()) = try_digit(d) {
                 // Got a match! Return xLyLz
                 let mut new = family.clone();
                 let d_less_core = family.cores[0].clone().without(d);

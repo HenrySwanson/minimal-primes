@@ -1,15 +1,15 @@
 mod composite;
 mod explore;
+mod gcd;
 mod split;
 
 use std::ops::ControlFlow;
 use std::time::{Duration, Instant};
 
 use itertools::Itertools;
-use log::{debug, info, trace};
+use log::{debug, trace};
 use num_bigint::BigUint;
 use num_prime::nt_funcs::is_prime;
-use num_traits::One;
 
 use self::composite::{find_even_odd_factor, find_perpetual_factor, shares_factor_with_base};
 use self::explore::{Frontier, Weight};
@@ -18,7 +18,6 @@ use crate::data_structures::{
 };
 use crate::digits::DigitSeq;
 use crate::families::{Core, Family, Sequence, SimpleFamily};
-use crate::math::gcd_reduce;
 use crate::search::composite::composite_checks_for_simple;
 use crate::SearchResults;
 

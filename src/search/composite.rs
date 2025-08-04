@@ -3,16 +3,13 @@
 
 use itertools::Itertools;
 use num_bigint::BigUint;
-use num_integer::Integer;
 use num_prime::ExactRoots;
-use num_traits::identities::One;
 
-use crate::digits::Digit;
 use crate::digits::DigitSeq;
 use crate::families::Core;
 use crate::families::Family;
 use crate::families::Sequence;
-use crate::math::gcd_reduce;
+use crate::search::gcd::nontrivial_gcd;
 use crate::search::SimpleNode;
 
 /// Checks whether this family shares a factor with the base.
@@ -22,13 +19,7 @@ pub fn shares_factor_with_base(base: u8, family: &Family) -> Option<u8> {
     let last_seq = family.digitseqs.last().expect("digitseqs nonempty");
     let d = last_seq.0.last()?;
 
-    let gcd = d.0.gcd(&base);
-    debug_assert!(gcd != 0);
-    if gcd != 1 {
-        Some(gcd)
-    } else {
-        None
-    }
+    nontrivial_gcd(&d.0, &base)
 }
 
 /// Given a family of the shape xLz, checks whether there are any "periodic"
@@ -52,26 +43,24 @@ pub fn find_perpetual_factor(base: u8, family: &Family, stride: usize) -> Option
     let core = &family.cores[0];
 
     let mut gcds = vec![];
-    for i in 0..stride {
-        let g = gcd_reduce(
-            // The smaller of the two sets: xL^iz
-            core.iter()
-                .combinations_with_replacement(i)
-                .chain(
-                    // The larger of the two sets: xL^(i+stride)z
-                    core.iter().combinations_with_replacement(i + stride),
-                )
-                .map(|center| {
-                    DigitSeq::concat_value(
-                        [&family.digitseqs[0], &center.into(), &family.digitseqs[1]],
-                        base,
-                    )
-                }),
-        );
+    for k in 0..stride {
+        let mut g = BigUint::ZERO;
 
-        // If any of the GCDs are 1, bail out immediately.
-        if g == BigUint::one() {
-            return None;
+        // TODO: shouldn't this be cartesian product??
+        for center in core.iter().combinations_with_replacement(k) {
+            let value = DigitSeq::concat_value(
+                [&family.digitseqs[0], &center.into(), &family.digitseqs[1]],
+                base,
+            );
+            g = nontrivial_gcd(&g, &value)?;
+        }
+
+        for center in core.iter().combinations_with_replacement(k + stride) {
+            let value = DigitSeq::concat_value(
+                [&family.digitseqs[0], &center.into(), &family.digitseqs[1]],
+                base,
+            );
+            g = nontrivial_gcd(&g, &value)?;
         }
 
         gcds.push(g);
@@ -115,7 +104,7 @@ pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUi
             })
     }
 
-    let bar = |&(repeat_a, repeat_b)| {
+    let bar = |repeat_a, repeat_b| {
         family_iter_helper(
             base,
             &family.digitseqs[0],
@@ -132,17 +121,19 @@ pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUi
     // - even number of A+B: x(AA)*y(BB)*z, xA(AA)*yB(BB)*z
     // -  odd number of A+B: xA(AA)*y(BB)*z, z(AA)*yB(BB)*z
     let even_repeats: [(usize, usize); 6] = [(0, 0), (2, 0), (0, 2), (1, 1), (1, 3), (3, 1)];
-    let even_gcd = gcd_reduce(even_repeats.iter().flat_map(bar));
-
-    if even_gcd == BigUint::one() {
-        return None;
+    let mut even_gcd = BigUint::ZERO;
+    for (repeat_a, repeat_b) in even_repeats {
+        for value in bar(repeat_a, repeat_b) {
+            even_gcd = nontrivial_gcd(&even_gcd, &value)?;
+        }
     }
 
     let odd_repeats: [(usize, usize); 6] = [(1, 0), (3, 0), (1, 2), (0, 1), (2, 1), (0, 3)];
-    let odd_gcd = gcd_reduce(odd_repeats.iter().flat_map(bar));
-
-    if odd_gcd == BigUint::one() {
-        return None;
+    let mut odd_gcd = BigUint::ZERO;
+    for (repeat_a, repeat_b) in odd_repeats {
+        for value in bar(repeat_a, repeat_b) {
+            odd_gcd = nontrivial_gcd(&odd_gcd, &value)?;
+        }
     }
 
     debug_assert_ne!(even_gcd, BigUint::ZERO);

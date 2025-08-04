@@ -15,7 +15,6 @@ mod data_structures;
 mod digits;
 mod families;
 mod logging;
-mod math;
 mod search;
 mod sieve;
 

@@ -2,10 +2,7 @@ use itertools::Itertools;
 use num_bigint::{BigInt, BigUint};
 use num_integer::Integer;
 
-use crate::{
-    digits::{Digit, DigitSeq},
-    math::gcd_reduce,
-};
+use crate::digits::{Digit, DigitSeq};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Family {
@@ -299,7 +296,7 @@ impl Sequence {
         assert_eq!(k.checked_add_signed(c).unwrap() % d, 0);
 
         // Do some quick reduction to put it in lowest terms
-        let gcd = gcd_reduce([k, c.unsigned_abs(), d]);
+        let gcd = k.gcd(&c.unsigned_abs()).gcd(&d);
 
         Self {
             k: k / gcd,
