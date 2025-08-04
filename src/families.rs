@@ -107,6 +107,26 @@ impl Family {
         output
     }
 
+    pub fn substitute_two(
+        &self,
+        slot_i: usize,
+        digit_i: Digit,
+        slot_j: usize,
+        digit_j: Digit,
+    ) -> DigitSeq {
+        let mut output = DigitSeq::new();
+        for (k, fixed) in self.digitseqs.iter().enumerate() {
+            output += fixed;
+            if k == slot_i {
+                output += digit_i;
+            }
+            if k == slot_j {
+                output += digit_j;
+            }
+        }
+        output
+    }
+
     pub fn split_left(&self, slot: usize) -> Vec<Self> {
         self.cores[slot]
             .iter()

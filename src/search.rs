@@ -18,7 +18,9 @@ use crate::data_structures::{
 };
 use crate::digits::DigitSeq;
 use crate::families::{Core, Family, Sequence, SimpleFamily};
-use crate::search::composite::{composite_checks_for_simple, find_guaranteed_factor};
+use crate::search::composite::{
+    composite_checks_for_simple, find_guaranteed_factor, find_two_factors,
+};
 use crate::SearchResults;
 
 #[macro_export]
@@ -469,6 +471,19 @@ impl SearchContext {
                 debug_to_tree!(self.tracer, "Divisible by {}", factors.iter().format(","));
                 return true;
             }
+        }
+        if let Some((even_factor, odd_factor)) = find_two_factors(self.base, family) {
+            debug!(
+                "  {} is divisible by either {} or {}",
+                family, even_factor, odd_factor
+            );
+            debug_to_tree!(
+                self.tracer,
+                "Divisible by either {} or {}",
+                even_factor,
+                odd_factor
+            );
+            return true;
         }
 
         if let Some((even_factor, odd_factor)) = find_even_odd_factor(self.base, family) {

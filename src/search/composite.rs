@@ -83,6 +83,73 @@ pub fn find_periodic_factor(base: u8, family: &Family, stride: usize) -> Option<
     Some(gcds)
 }
 
+/// This is the most complex check we have, I think.
+///
+/// Given a family x_1 L_1 ... x_n L_n, and some index m, partitions the elements
+/// in that family into two parts:
+/// - those with an even number of digits contributed from L_m
+/// - those with an odd number of digits
+///
+/// If those families each have common factors, returns them.
+pub fn find_two_factors(base: u8, family: &Family) -> Option<(BigUint, BigUint)> {
+    for i in 0..family.cores.len() {
+        if let Some(factors) = find_two_factors_helper(base, family, i) {
+            return Some(factors);
+        }
+    }
+    None
+}
+
+fn find_two_factors_helper(base: u8, family: &Family, i: usize) -> Option<(BigUint, BigUint)> {
+    let core_i = &family.cores[i];
+
+    // gcd(∅, j, ii) for all j≠i
+    let mut even_gcd = family.contract().value(base);
+    for (j, core_j) in family.cores.iter().enumerate() {
+        if i == j {
+            continue;
+        }
+
+        for d in core_j.iter() {
+            let val = family.substitute(j, d).value(base);
+            even_gcd = nontrivial_gcd(&even_gcd, &val)?;
+        }
+    }
+    for d1 in core_i.iter() {
+        for d2 in core_i.iter() {
+            let val = family.substitute_multiple(i, [d1, d2]).value(base);
+            even_gcd = nontrivial_gcd(&even_gcd, &val)?;
+        }
+    }
+
+    // gcd(i, ij, iii) for all j≠i
+    let mut odd_gcd = BigUint::ZERO;
+    for d1 in core_i.iter() {
+        let val = family.substitute(i, d1).value(base);
+        odd_gcd = nontrivial_gcd(&odd_gcd, &val)?;
+
+        for (j, core_j) in family.cores.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+
+            for dj in core_j.iter() {
+                let val = family.substitute_two(i, d1, j, dj).value(base);
+                odd_gcd = nontrivial_gcd(&odd_gcd, &val)?;
+            }
+        }
+
+        for d2 in core_i.iter() {
+            for d3 in core_i.iter() {
+                let val = family.substitute_multiple(i, [d1, d2, d3]).value(base);
+                odd_gcd = nontrivial_gcd(&odd_gcd, &val)?;
+            }
+        }
+    }
+
+    Some((even_gcd, odd_gcd))
+}
+
 pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUint)> {
     // Similar to find_perpetual_factor, but checks strings of even length and odd length separately.
 
@@ -210,4 +277,31 @@ fn check_diff_of_squares(base: u8, sequence: &Sequence) -> bool {
     // the fancy "definitely composite after n but maybe prime before that"
     // tracking.
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::digits::Digit;
+
+    use super::*;
+
+    #[test]
+    fn example_11() {
+        // TODO: we need a better way to construct a family!
+
+        // 44[0]∗A[1]∗1 should be composite by looking at slot 2
+        let base = 11;
+        let mut family = Family::any(base);
+        family.digitseqs = vec![
+            DigitSeq(vec![Digit(4), Digit(4)]),
+            DigitSeq(vec![Digit(10)]),
+            DigitSeq(vec![Digit(1)]),
+        ];
+        family.cores = vec![Core::new(vec![Digit(0)]), Core::new(vec![Digit(1)])];
+
+        assert_eq!(
+            Some((BigUint::from(3_u32), BigUint::from(2_u32))),
+            find_two_factors_helper(base, &family, 1)
+        );
+    }
 }
