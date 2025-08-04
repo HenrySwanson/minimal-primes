@@ -199,6 +199,58 @@ impl SearchContext {
 
         None
     }
+
+    /// Given a family `xLyMz`, with a in L, and b in M, if `xaybz` is forbidden,
+    /// then we could split the family into `x(L-a)yMz` and `xLy(M-b)z`.
+    /// Because this would cause duplication issues though (consider strings with
+    /// neither a nor b), we need to split it differently:
+    /// - with no a: x(L-a)yMz
+    /// - with an a: x(L-a)aLy(M-b)z
+    pub fn split_on_incompatible_digits_different_cores(
+        &mut self,
+        family: &Family,
+    ) -> Option<Vec<Family>> {
+        // iterate over unordered pairs of cores
+        for (j, core_j) in family.cores.iter().enumerate() {
+            for (i, core_i) in family.cores.iter().enumerate() {
+                if i > j {
+                    break;
+                }
+                // i <= j
+
+                for a in core_i.iter() {
+                    for b in core_j.iter() {
+                        // Check whether we can substitute in a and b
+                        let seq = family.substitute_two(i, a, j, b);
+
+                        if let Some(p) = self.test_for_contained_prime(&seq).cloned() {
+                            assert_ne!(seq, p);
+
+                            debug!("  {} contains a prime {}", seq, p);
+                            debug_to_tree!(
+                                self.tracer,
+                                "digits {a} and {b} are incompatible in slots {i} and {j}"
+                            );
+
+                            // We can split the family into two:
+                            // - with no a: x(L-a)yMz
+                            // - with an a: x(L-a)aLy(M-b)z
+                            let mut without_a = family.clone();
+                            without_a.cores[i].remove(a);
+                            let mut with_a = without_a.clone();
+                            with_a.cores[j].remove(b);
+                            with_a.digitseqs.insert(i + 1, DigitSeq(vec![a]));
+                            with_a.cores.insert(i + 1, family.cores[i].clone());
+
+                            return Some(vec![without_a, with_a]);
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
 }
 
 /// Given a family X[abY]Z for which XabZ is forbidden,

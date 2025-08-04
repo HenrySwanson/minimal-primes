@@ -291,6 +291,10 @@ impl SearchContext {
             if let Some(children) = self.split_on_incompatible_digits(&family) {
                 return children.into_iter().map(NodeType::Arbitrary).collect();
             }
+
+            if let Some(children) = self.split_on_incompatible_digits_different_cores(&family) {
+                return children.into_iter().map(NodeType::Arbitrary).collect();
+            }
         }
 
         if family.weight() >= 2 {
