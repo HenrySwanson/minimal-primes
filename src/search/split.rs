@@ -169,15 +169,6 @@ impl SearchContext {
                     }
                     (Some(p), None) => {
                         // a can't occur before b
-                        // Reduce to X[bY][aY]Z
-
-                        // TODO: this makes things so much worse! we get families
-                        // with oodles of cores, like
-                        // DEBUG -  Exploring E[06EG]*[06CF]*[06CG]*[06CEG]*[0CF]*F[0]*[0]*[06A]*[06F]*[06]*[06]*6
-                        // Fortunately, the branch above is fine, and actually downright helpful, but
-                        // this one makes things pretty unpleasant. Gotta investigate that later.
-                        continue;
-
                         assert_ne!(seq_ab, p);
                         debug!("  {} contains a prime {}", seq_ab, p);
                         debug_to_tree!(
@@ -185,19 +176,10 @@ impl SearchContext {
                             "digits {a} and {b} are semi-incompatible in core {i}"
                         );
 
-                        let mut new = family.clone();
-                        new.cores[i].remove(b);
-                        new.digitseqs.insert(i + 1, DigitSeq::new());
-                        new.cores.insert(i + 1, family.cores[i].without(a));
-
-                        return Some(vec![new]);
+                        return Some(do_split_for_semi_incompatible(family, i, a, b));
                     }
                     (None, Some(q)) => {
-                        // b can't occur before a
-                        // Reduce to X[aY][bY]Z
-
-                        continue; // see above
-
+                        // b can't occur before a; converse of the previous branch
                         assert_ne!(seq_ba, q);
                         debug!("  {} contains a prime {}", seq_ba, q);
                         debug_to_tree!(
@@ -205,12 +187,8 @@ impl SearchContext {
                             "digits {b} and {a} are semi-incompatible in core {i}"
                         );
 
-                        let mut new = family.clone();
-                        new.cores[i].remove(a);
-                        new.digitseqs.insert(i + 1, DigitSeq::new());
-                        new.cores.insert(i + 1, family.cores[i].without(b));
-
-                        return Some(vec![new]);
+                        // note that b and a are switched!
+                        return Some(do_split_for_semi_incompatible(family, i, b, a));
                     }
                     (None, None) => {
                         // nope, nothing we can do
@@ -221,4 +199,23 @@ impl SearchContext {
 
         None
     }
+}
+
+/// Given a family X[abY]Z for which XabZ is forbidden,
+/// splits it into:
+/// - families with no a: X[bY]Z
+/// - families with an a: X[bY]a[aY]Z
+///
+/// We could reduce to X[bY][aY]Z, but this is leads to huge families.
+/// I think it's because XyyyZ can be parsed into that pattern multiple
+/// ways.
+fn do_split_for_semi_incompatible(family: &Family, i: usize, a: Digit, b: Digit) -> Vec<Family> {
+    let mut without_a = family.clone();
+    without_a.cores[i].remove(a);
+    let mut with_a = without_a.clone();
+    with_a.digitseqs.insert(i + 1, DigitSeq(vec![a]));
+    with_a
+        .cores
+        .insert(i + 1, family.cores[i].clone().without(b));
+    vec![without_a, with_a]
 }

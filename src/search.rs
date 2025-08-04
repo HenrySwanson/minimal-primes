@@ -288,14 +288,14 @@ impl SearchContext {
         }
 
         if family.weight() >= 2 {
-            if let Some(child) = self.split_on_necessary_digit(&family) {
-                return vec![NodeType::Arbitrary(child)];
+            if let Some(children) = self.split_on_incompatible_digits(&family) {
+                return children.into_iter().map(NodeType::Arbitrary).collect();
             }
         }
 
         if family.weight() >= 2 {
-            if let Some(children) = self.split_on_incompatible_digits(&family) {
-                return children.into_iter().map(NodeType::Arbitrary).collect();
+            if let Some(child) = self.split_on_necessary_digit(&family) {
+                return vec![NodeType::Arbitrary(child)];
             }
         }
 
@@ -305,7 +305,7 @@ impl SearchContext {
         let weight = family.weight();
         let slot = (2 * weight) % family.cores.len();
         debug_assert!(!family.cores[slot].is_empty());
-        let mut children = if family.weight() == 1 {
+        let mut children = if family.weight() % 2 == 1 {
             debug!("  Splitting {} left on core {}", family, slot);
             debug_to_tree!(self.tracer, "Splitting left on core {}", slot);
             family.split_left(slot)
