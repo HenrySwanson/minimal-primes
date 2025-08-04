@@ -137,7 +137,9 @@ impl SearchContext {
                 ) {
                     (Some(p), Some(q)) => {
                         // We can't have both a and b in this core.
-                        // Split into X[aY]Z and X[bY]Z
+                        // We could split into X[aY]Z and X[bY]Z, but that
+                        // has potential duplicates. So let's split into three:
+                        // X[Y]Z, X[Y]a[aY]Z, X[Y]b[bY]Z
                         assert_ne!(seq_ab, p);
                         assert_ne!(seq_ba, q);
                         debug!(
@@ -149,14 +151,21 @@ impl SearchContext {
                             "digits {a} and {b} are incompatible in core {i}"
                         );
 
-                        // Best case scenario! Just make two copies, one without a and one
-                        // without b.
-                        let mut without_a = family.clone();
-                        let mut without_b = family.clone();
-                        without_a.cores[i].remove(a);
-                        without_b.cores[i].remove(b);
+                        // Make three children
+                        let mut with_neither = family.clone();
+                        let mut with_a = family.clone();
+                        let mut with_b = family.clone();
+                        with_neither.cores[i].remove(a);
+                        with_neither.cores[i].remove(b);
+                        let neither_core = &with_neither.cores[i];
+                        with_a.cores.insert(i, neither_core.clone());
+                        with_a.digitseqs.insert(i + 1, DigitSeq(vec![a]));
+                        with_a.cores[i + 1].remove(b);
+                        with_b.cores.insert(i, neither_core.clone());
+                        with_b.digitseqs.insert(i + 1, DigitSeq(vec![b]));
+                        with_b.cores[i + 1].remove(a);
 
-                        return Some(vec![without_a, without_b]);
+                        return Some(vec![with_neither, with_a, with_b]);
                     }
                     (Some(p), None) => {
                         // a can't occur before b

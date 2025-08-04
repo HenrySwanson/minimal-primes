@@ -479,9 +479,6 @@ mod tests {
                 // k=1*16+9=25, c=16*0-9=-9
                 // alternating difference of squares and even
                 "19*",
-                // it's a duplicate that comes from `split_on_incompatible`
-                // TODO: fix that!
-                "19*",
                 // k=(0*16+9)B=9B, c = 16*8-9*B=-25
                 // alternating difference of squares and even
                 "9*8",
