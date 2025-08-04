@@ -285,23 +285,99 @@ mod tests {
 
     use super::*;
 
+    fn parse_family(input: &str, base: u8) -> Family {
+        let base: u32 = base.into();
+        let mut digitseqs = vec![];
+        let mut cores = vec![];
+
+        fn string_to_vec_digit(s: &str, base: u32) -> Vec<Digit> {
+            s.split_inclusive(|_| true)
+                .map(|ch| Digit(u8::from_str_radix(&ch, base).unwrap()))
+                .collect()
+        }
+
+        for s in input.split('*') {
+            // s should be `x[y]` (the * is removed), or `z` for the last one
+            if let Some(s) = s.strip_suffix(']') {
+                let (x, y) = s.split_once('[').unwrap();
+                digitseqs.push(DigitSeq(string_to_vec_digit(x, base)));
+                cores.push(Core::new(string_to_vec_digit(y, base)));
+            } else {
+                digitseqs.push(DigitSeq(string_to_vec_digit(s, base)));
+            }
+        }
+
+        assert_eq!(digitseqs.len(), cores.len() + 1);
+        Family { digitseqs, cores }
+    }
+
+    #[test]
+    fn example_5() {
+        // Base 10: 46*9 should be divisible by 7 always
+        let base = 10;
+        let family = parse_family("4[6]*9", base);
+        assert_eq!(
+            Some(BigUint::from(7_u32)),
+            find_guaranteed_factor(base, &family)
+        );
+    }
+
+    #[test]
+    fn example_7() {
+        // Base 9: 61* should be divisible by 2 and 5 alternately
+        let base = 9;
+        let family = parse_family("6[1]*", base);
+        assert_eq!(
+            Some(vec![BigUint::from(2_u32), BigUint::from(5_u32)]),
+            find_periodic_factor(base, &family, 2)
+        );
+    }
+
+    #[test]
+    fn example_8() {
+        // Base 16: 8A0A*1 should be divisible by 7, 13, 3
+        let base = 16;
+        let family = parse_family("8A0[A]*1", base);
+        assert_eq!(
+            Some(vec![
+                BigUint::from(7_u32),
+                BigUint::from(13_u32),
+                BigUint::from(3_u32)
+            ]),
+            find_periodic_factor(base, &family, 3)
+        );
+    }
+
+    #[test]
+    fn example_10() {
+        // Base 10: 90*80*1 is always divisible by 9
+        let base = 10;
+        let family = parse_family("9[0]*8[0]*1", base);
+        assert_eq!(
+            Some(BigUint::from(9_u32)),
+            find_guaranteed_factor(base, &family)
+        );
+    }
+
     #[test]
     fn example_11() {
-        // TODO: we need a better way to construct a family!
-
-        // 44[0]∗A[1]∗1 should be composite by looking at slot 2
+        // Base 11: 44[0]*A[1]*1 should be composite by looking at slot 2
         let base = 11;
-        let mut family = Family::any(base);
-        family.digitseqs = vec![
-            DigitSeq(vec![Digit(4), Digit(4)]),
-            DigitSeq(vec![Digit(10)]),
-            DigitSeq(vec![Digit(1)]),
-        ];
-        family.cores = vec![Core::new(vec![Digit(0)]), Core::new(vec![Digit(1)])];
-
+        let family = parse_family("44[0]*A[1]*1", base);
         assert_eq!(
             Some((BigUint::from(3_u32), BigUint::from(2_u32))),
             find_two_factors_helper(base, &family, 1)
+        );
+    }
+
+    #[test]
+    fn example_12() {
+        // Base 9: 1*61*
+        let base = 9;
+        let family = parse_family("[1]*6[1]*", base);
+        assert_eq!(
+            Some((BigUint::from(2_u32), BigUint::from(5_u32))),
+            find_even_odd_factor(base, &family)
         );
     }
 }

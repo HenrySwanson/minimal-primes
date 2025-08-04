@@ -474,12 +474,12 @@ impl SearchContext {
         }
         if let Some((even_factor, odd_factor)) = find_two_factors(self.base, family) {
             debug!(
-                "  {} is divisible by either {} or {}",
+                "  {} is divisible by either {} or {} (#1)",
                 family, even_factor, odd_factor
             );
             debug_to_tree!(
                 self.tracer,
-                "Divisible by either {} or {}",
+                "Divisible by either {} or {} (#1)",
                 even_factor,
                 odd_factor
             );
@@ -488,12 +488,12 @@ impl SearchContext {
 
         if let Some((even_factor, odd_factor)) = find_even_odd_factor(self.base, family) {
             debug!(
-                "  {} is divisible by either {} or {}",
+                "  {} is divisible by either {} or {} (#2)",
                 family, even_factor, odd_factor
             );
             debug_to_tree!(
                 self.tracer,
-                "Divisible by either {} or {}",
+                "Divisible by either {} or {} (#2)",
                 even_factor,
                 odd_factor
             );
