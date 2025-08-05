@@ -229,7 +229,9 @@ pub fn composite_checks_for_simple(base: u8, node: &SimpleNode) -> bool {
         None => return false, // nothing we can check :(
     };
 
-    check_sum_diff_of_cubes(base, &sequence) || check_diff_of_squares(base, &sequence)
+    check_sum_diff_of_cubes(base, &sequence)
+        || check_diff_of_squares(base, &sequence)
+        || check_diff_of_squares_or_divisor(base, &sequence)
 }
 
 macro_rules! bail_if_none {
@@ -277,6 +279,55 @@ fn check_diff_of_squares(base: u8, sequence: &Sequence) -> bool {
     // the fancy "definitely composite after n but maybe prime before that"
     // tracking.
     true
+}
+
+// TODO: i feel like this could be simplified
+fn check_diff_of_squares_or_divisor(base: u8, sequence: &Sequence) -> bool {
+    // maybe kB^n+c factors in alternating ways
+    // - difference of squares
+    // - common factor
+    //
+    // this can happen when k is a square or when kB is a square. -c has to
+    // be a square either way though.
+    bail_if_none!((-sequence.c).sqrt_exact());
+
+    let base: u64 = base.into();
+    let kb = sequence.k.checked_mul(base).unwrap();
+    if sequence.k.is_square() {
+        // Factors as a difference of squares for even n. Now we just
+        // need to see if the odd n terms have a shared factor.
+        // It suffices to check n=1 and n=3.
+        let base: u64 = base.into();
+        let a = kb.checked_add_signed(sequence.c).unwrap() / sequence.d;
+        let b = kb
+            .checked_mul(base * base)
+            .unwrap()
+            .checked_add_signed(sequence.c)
+            .unwrap()
+            / sequence.d;
+        if nontrivial_gcd(&a, &b).is_some() {
+            println!("{sequence} is composite ({a} and {b})");
+            return true;
+        }
+    }
+
+    if kb.is_square() {
+        // Factors as a difference of squares for odd n. Check
+        // the even terms for common factors.
+        let a = sequence.k.checked_add_signed(sequence.c).unwrap() / sequence.d;
+        let b = kb
+            .checked_mul(base)
+            .unwrap()
+            .checked_add_signed(sequence.c)
+            .unwrap()
+            / sequence.d;
+        if nontrivial_gcd(&a, &b).is_some() {
+            println!("{sequence} is composite ({a} and {b})");
+            return true;
+        }
+    }
+
+    false
 }
 
 #[cfg(test)]

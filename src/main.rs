@@ -410,7 +410,7 @@ mod tests {
     struct IncompleteBranches {
         /// There are some branches that we know are composite, but the
         /// program can't prove it yet.
-        composites: Vec<&'static str>,
+        // composites: Vec<&'static str>,
         /// These are branches that do eventually become prime, but take
         /// an extremely long time to reach that point, so we don't run
         /// them all the way, just verify that they're still in our search
@@ -456,7 +456,6 @@ mod tests {
         test_base_13,
         13,
         Status::IncompleteSimple(IncompleteBranches {
-            composites: vec![],
             // 32021 digits :(
             eventual_primes: vec!["80*111"]
         })
@@ -467,7 +466,6 @@ mod tests {
         test_base_16,
         16,
         Status::IncompleteSimple(IncompleteBranches {
-            composites: vec![],
             eventual_primes: vec!["88F*", "90*91", "F8*F"]
         })
     );
@@ -475,14 +473,6 @@ mod tests {
         test_base_17,
         17,
         Status::IncompleteSimple(IncompleteBranches {
-            composites: vec![
-                // k=1*16+9=25, c=16*0-9=-9
-                // alternating difference of squares and even
-                "19*",
-                // k=(0*16+9)B=9B, c = 16*8-9*B=-25
-                // alternating difference of squares and even
-                "9*8",
-            ],
             eventual_primes: vec![
                 "A0*1", // 1357 digits
                 "A*GF", // 2016 digits
@@ -500,20 +490,6 @@ mod tests {
         test_base_19,
         19,
         Status::IncompleteSimple(IncompleteBranches {
-            // TODO: are these composite???
-            composites: vec![
-                // (24, -6, 18) => could do (4, -1, 3)
-                // alternating squares and divisible by 5
-                "16*",
-                // (2904, -6, 18) => (484, -1, 3)
-                // 484 = 22^2
-                // alternating squares and divisible by 5
-                "896*",
-                // (5472, -162, 18) => (304, -9, 1)
-                // 304 = 16 * 19
-                // alternating difference of squares and divisible by 5
-                "FI*A"
-            ],
             eventual_primes: vec![
                 "6*FA",   // 507 digits
                 "8C96*",  // 626 digits
@@ -525,8 +501,7 @@ mod tests {
                 "90*G",   // 42996 digits
                 "4F0*6",  // 49850 digits
                 "FG6*",   // 110986 digits
-                // known to be unsolved
-                "EE16*",
+                "EE16*",  // known to be unsolved
                 // this is a tricky one! it gets eliminated
                 // by FA6*, but that one's not discovered yet
                 "FFFA6*",
@@ -540,7 +515,6 @@ mod tests {
         test_base_22,
         22,
         Status::IncompleteSimple(IncompleteBranches {
-            composites: vec![],
             eventual_primes: vec![
                 "I*AF",   // 628 digits
                 "K0*EC1", // 764 digits
@@ -551,7 +525,6 @@ mod tests {
         test_base_23,
         23,
         Status::IncompleteSimple(IncompleteBranches {
-            composites: vec![],
             eventual_primes: vec![
                 "C0*MLC",   // 507 digits
                 "IF*A",     // 527 digits
@@ -593,11 +566,6 @@ mod tests {
         test_base_24,
         24,
         Status::IncompleteSimple(IncompleteBranches {
-            // (6*24^(n+1) - 121) / 23
-            // (2^(3n+2) * 3^(n+2) - 11^2) / 23
-            // feels like difference of squares on even n, something
-            // else on odd n
-            composites: vec!["6*1"],
             eventual_primes: vec![]
         })
     );
@@ -607,7 +575,6 @@ mod tests {
         test_base_26,
         26,
         Status::IncompleteSimple(IncompleteBranches {
-            composites: vec![],
             eventual_primes: vec![
                 "40*GL",  // 512 digits
                 "K0*IP",  // 656 digits
@@ -638,7 +605,6 @@ mod tests {
         test_base_28,
         28,
         Status::IncompleteSimple(IncompleteBranches {
-            composites: vec![],
             eventual_primes: vec![
                 "4O*09",  // 617 digits
                 "LK*F",   // 927 digits
@@ -659,7 +625,6 @@ mod tests {
         test_base_30,
         30,
         Status::IncompleteSimple(IncompleteBranches {
-            composites: vec![],
             eventual_primes: vec!["C0*1"] // 1024 digits
         })
     );
@@ -669,7 +634,6 @@ mod tests {
         // reduce our casework.
         let expected_incomplete = match status {
             Status::Complete => IncompleteBranches {
-                composites: vec![],
                 eventual_primes: vec![],
             },
             Status::IncompleteSimple(branches) => branches,
@@ -708,21 +672,23 @@ mod tests {
         let mut results = first_stage(base, None, None, true, false);
 
         // Remove any composite branches that are expected to be present.
-        for composite in expected_incomplete.composites {
-            match results
-                .simple_families
-                .iter()
-                .position(|family| family.pattern() == composite)
-            {
-                Some(i) => {
-                    results.simple_families.remove(i);
-                }
-                None => panic!(
-                    "Expected to find composite family {}, but it was not present",
-                    composite
-                ),
-            }
-        }
+        // TODO: all composites are detected right now, but re-use this for
+        // unsolved families maybe?
+        // for composite in expected_incomplete.composites {
+        //     match results
+        //         .simple_families
+        //         .iter()
+        //         .position(|family| family.pattern() == composite)
+        //     {
+        //         Some(i) => {
+        //             results.simple_families.remove(i);
+        //         }
+        //         None => panic!(
+        //             "Expected to find composite family {}, but it was not present",
+        //             composite
+        //         ),
+        //     }
+        // }
 
         // Do intermediate and second stages
         let unsolved_families =
