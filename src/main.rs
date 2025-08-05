@@ -496,12 +496,46 @@ mod tests {
         })
     );
     declare_test_for_base!(test_base_18, 18, Status::Complete);
-    declare_test_for_base!(test_base_19, 19, Status::Explodes);
-    // 20 fails to understand that [G]*[I]*9 is composite, and expands it forever.
-    declare_test_for_base!(test_base_20, 20, Status::Other);
-    // ramps up to tens of thousands of branches, but then drops to 400ish and
-    // oscillates for a while. unfortunately, it starts going back up again.
-    declare_test_for_base!(test_base_21, 21, Status::Explodes);
+    declare_test_for_base!(
+        test_base_19,
+        19,
+        Status::IncompleteSimple(IncompleteBranches {
+            // TODO: are these composite???
+            composites: vec![
+                // (24, -6, 18) => could do (4, -1, 3)
+                // alternating squares and divisible by 5
+                "16*",
+                // (2904, -6, 18) => (484, -1, 3)
+                // 484 = 22^2
+                // alternating squares and divisible by 5
+                "896*",
+                // (5472, -162, 18) => (304, -9, 1)
+                // 304 = 16 * 19
+                // alternating difference of squares and divisible by 5
+                "FI*A"
+            ],
+            eventual_primes: vec![
+                "6*FA",   // 507 digits
+                "8C96*",  // 626 digits
+                "40G*1",  // 1334 digits
+                "E9*E",   // 1465 digits
+                "G*1",    // 2035 digits
+                "FA6*",   // 9293 digits
+                "E0*111", // 16416 digits
+                "90*G",   // 42996 digits
+                "4F0*6",  // 49850 digits
+                "FG6*",   // 110986 digits
+                // known to be unsolved
+                "EE16*",
+                // this is a tricky one! it gets eliminated
+                // by FA6*, but that one's not discovered yet
+                "FFFA6*",
+            ]
+        })
+    );
+    declare_test_for_base!(test_base_20, 20, Status::Complete);
+    // one of the branches doesn't fit into a u64 :(
+    declare_test_for_base!(test_base_21, 21, Status::Other);
     declare_test_for_base!(
         test_base_22,
         22,
@@ -513,7 +547,48 @@ mod tests {
             ]
         })
     );
-    declare_test_for_base!(test_base_23, 23, Status::Explodes);
+    declare_test_for_base!(
+        test_base_23,
+        23,
+        Status::IncompleteSimple(IncompleteBranches {
+            composites: vec![],
+            eventual_primes: vec![
+                "C0*MLC",   // 507 digits
+                "IF*A",     // 527 digits
+                "K*EL",     // 582 digits
+                "FA*CC",    // 924 digits
+                "F*G",      // 1092 digits
+                "FFFFFK*C", // 1119 digits
+                "9F*A",     // 1308 digits
+                "696E*",    // 1358 digits
+                "G*09",     // 1381 digits
+                "E0*KLE",   // 1658 digits
+                "E*L6",     // 1713 digits
+                "9EE6E*",   // 2187 digits
+                "IK*FFF",   // 2605 digits
+                "K*LLF",    // 2808 digits
+                "KLF*",     // 2874 digits
+                "EL*6",     // 3261 digits
+                "K*L",      // 3762 digits
+                "FFFK*C",   // 4465 digits
+                "F*KC",     // 5569 digits
+                "IIE*L",    // 8122 digits
+                "G*9",      // 9526 digits
+                "AIF*",     // 21145 digits
+                "K9AE*",    // 23278 digits
+                "96E*",     // 25513 digits
+                "80*1",     // 119216 digits
+                "9E*",      // 800874 digits
+                "F*GI",     // eventually gets killed by F*G
+                "F*KG",     // same
+                "F*KAG",    // same
+                "G*69",     // eventually gets killed by G*9
+                "AIIF*",    // eventually gets killed by AIF*
+                "80*81",    // eventually gets killed by 80*1
+                "0K*L", "0G*09", // leading zeros! wtf!?
+            ]
+        })
+    );
     declare_test_for_base!(
         test_base_24,
         24,
@@ -526,10 +601,59 @@ mod tests {
             eventual_primes: vec![]
         })
     );
-    declare_test_for_base!(test_base_25, 25, Status::Explodes);
-    declare_test_for_base!(test_base_26, 26, Status::Explodes);
-    declare_test_for_base!(test_base_27, 27, Status::Explodes);
-    declare_test_for_base!(test_base_28, 28, Status::Explodes);
+    // It works but takes a long time
+    declare_test_for_base!(test_base_25, 25, Status::Other);
+    declare_test_for_base!(
+        test_base_26,
+        26,
+        Status::IncompleteSimple(IncompleteBranches {
+            composites: vec![],
+            eventual_primes: vec![
+                "40*GL",  // 512 digits
+                "K0*IP",  // 656 digits
+                "G*OO9",  // 1108 digits
+                "G*9",    // 1160 digits
+                "A*06F",  // 1296 digits
+                "KIA*F",  // 1301 digits
+                "F*PCF",  // 1572 digits
+                "M*P",    // 8773 digits
+                "I*GL",   // unsolved!
+                "A*6F",   // unsolved!
+                "AM*P",   // eventually killed by M*P
+                "K0*IPP", // eventually killed by K0*IP
+                "KKIA*F", // eventually killed by KIA*F
+                "G*O9",   // eventually killed by G*9
+                "IG*9",   // same
+            ]
+        })
+    );
+    // takes a really long time (first stage ends at weight 100!)
+    // but does eventually start sieving.
+    // the ones that takes the longest to resolve look like
+    // K[0]*K0KKK...KKKF6A
+    // [0K]*K0KKK...KKKF6A
+    // [0K]*K[0]*KKK...KKKF6A
+    declare_test_for_base!(test_base_27, 27, Status::Other);
+    declare_test_for_base!(
+        test_base_28,
+        28,
+        Status::IncompleteSimple(IncompleteBranches {
+            composites: vec![],
+            eventual_primes: vec![
+                "4O*09",  // 617 digits
+                "LK*F",   // 927 digits
+                "A*6F",   // 1425 digits
+                "QO*69",  // 4242 digits
+                "O4O*9",  // 94538 digits
+                "OA*F",   // unsolved!
+                "0QO*69", // leading zeros! wtf!?
+            ]
+        })
+    );
+    // after about a half hour and 860k iterations, it's starting
+    // to go down from 130k branches, but it's not done yet.
+    // after an hour and 1.3M iterations, it's stalled out around
+    // 6k branches at weight 29, and going back up :(
     declare_test_for_base!(test_base_29, 29, Status::Explodes);
     declare_test_for_base!(
         test_base_30,

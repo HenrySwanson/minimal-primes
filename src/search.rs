@@ -16,7 +16,7 @@ use self::explore::{Frontier, Weight};
 use crate::data_structures::{
     is_proper_substring, AppendTree, AppendTreeNodeID, CandidateSequences,
 };
-use crate::digits::DigitSeq;
+use crate::digits::{Digit, DigitSeq};
 use crate::families::{Core, Family, Sequence, SimpleFamily};
 use crate::search::composite::{
     composite_checks_for_simple, find_guaranteed_factor, find_two_factors,
@@ -226,6 +226,24 @@ impl SearchContext {
     }
 
     fn explore_family(&mut self, family: Family) -> Vec<NodeType> {
+        // We can sometimes produce families that begin with 0. We could
+        // simplify these to remove the zero, but that would cause duplication
+        // with other families. So we just kill them here.
+        // TODO: can we kill them elsewhere? maybe some post-processing step in
+        // the explore_node? this feels iffy
+        if family
+            .digitseqs
+            .first()
+            .expect("must have 1+ digit sequences")
+            .0
+            .first()
+            == Some(&Digit(0))
+        {
+            debug!("  Discarding {}, leading zero", family);
+            debug_to_tree!(self.tracer, "Discarding, leading zero");
+            return vec![];
+        }
+
         // Test this for primality
         // TODO: normally we've tested this already, in reduce_cores,
         // but split_on_repeat can produce strings we've never tested :/
