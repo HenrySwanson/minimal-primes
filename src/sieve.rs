@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use bitvec::prelude::BitVec;
-use log::debug;
+use log::{debug, info};
 use num_bigint::BigUint;
 use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
 use num_prime::buffer::NaiveBuffer;
@@ -113,15 +113,15 @@ pub fn sieve(
 
 pub fn last_resort(base: u8, slice: &SequenceSlice) -> Option<(usize, BigUint)> {
     // Lastly, iterate through the remaining numbers and see if they're prime
-    debug!(
-        "{}/{} remaining",
+    info!(
+        "{} has {}/{} terms remaining",
+        slice.seq,
         slice.n_bitvec.count_ones(),
         slice.n_bitvec.len()
     );
     for i in slice.n_bitvec.iter_ones() {
         let exponent = slice.n_lo + i;
 
-        // TODO: re-use the previous computation?
         let value = slice.seq.compute_term(exponent as u32, base.into());
         debug!("  Check {} at n={}", slice.seq, exponent);
 
@@ -222,7 +222,7 @@ fn baby_step_giant_step(
 
     // Take some baby steps
     let (baby_table, order) = baby_steps(base, p, num_baby_steps, slices[0].n_lo);
-    assert!(
+    debug_assert!(
         baby_table.keys().all(|x| *x != 0),
         "should never see 0s in baby_table when b has an inverse"
     );
@@ -249,9 +249,8 @@ fn baby_step_giant_step(
     let bm = binv.powm(m, &p);
     let mut ckb = ck;
 
-    // We know that the order divides p-1, so worst-case scenario,
-    // we can use that as the order.
-    let mut order: usize = (p - 1).try_into().unwrap();
+    // Along the way, we'll try to find the order.
+    let mut order = None;
     let mut idx_of_first_solution: Option<usize> = None;
 
     // Also set an array for tracking the actual solutions we find.
@@ -283,7 +282,7 @@ fn baby_step_giant_step(
                 if idx_of_first_solution == Some(idx) {
                     let old_soln = solutions[idx].expect("first solution");
                     assert!(exp > old_soln);
-                    order = exp - old_soln;
+                    order = Some(exp - old_soln);
                     idx_of_first_solution = None; // don't need it anymore
                 } else {
                     // Save it normally
@@ -301,6 +300,8 @@ fn baby_step_giant_step(
 
     // Okay, after all that, what do we have?
     // We have some solutions to some of the sequences, and hopefully we have an order.
+    // If we don't, just use p-1.
+    let order = order.unwrap_or((p - 1) as usize);
     for (idx, slice) in slices.iter_mut().enumerate() {
         if skip[idx] {
             continue;
@@ -320,18 +321,18 @@ fn baby_steps(
 ) -> (HashMap<u64, usize>, Option<usize>) {
     let start_exp: u64 = start_exp.try_into().unwrap();
 
-    let mut map = HashMap::new();
+    let mut map = HashMap::with_capacity(num_baby_steps);
     let initial_value = base.powm(start_exp, &p);
     let mut value = initial_value;
     for i in 0..num_baby_steps {
-        map.insert(value, i);
-        value = value.mulm(base, &p);
-
-        // We've looped all the way around! No need to insert any more entries,
-        // we can return with knowledge of the order.
-        if value == initial_value {
-            return (map, Some(i + 1));
+        // Insert and check if it was already there
+        if map.insert(value, i).is_some() {
+            // We've looped all the way around! No need to insert any more entries,
+            // we can return with knowledge of the order.
+            return (map, Some(i));
         }
+
+        value = value.mulm(base, &p);
     }
 
     (map, None)
