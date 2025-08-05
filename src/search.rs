@@ -306,10 +306,30 @@ impl SearchContext {
         // If we couldn't eliminate the family, let's split it, left or right.
         // We can't split on a non-empty core, but after we simplify, we shouldn't
         // have to worry about that.
-        let weight = family.weight();
-        let slot = (2 * weight) % family.cores.len();
+
+        // Which core do we split on? And should we split left or right?
+        // We want to pick arbitrarily and get a good distribution over the cores.
+        // Previously, we just used the weight of the family as a counter, and
+        // looked at it mod (#cores) and mod 2 to make that decision. But that
+        // resulted in occasional "resonance", where we'd keep making the same
+        // decision over and over again. So instead, we still use the family weight,
+        // but we jumble it up with some silly nonsense in order to get a more
+        // unpredictable sequence.
+        fn bit_mixer(h: usize) -> usize {
+            // stolen from murmur3's finalizer
+            let mut h = h as u64;
+            h ^= h >> 33;
+            h = h.wrapping_mul(0xff51afd7ed558ccd);
+            h ^= h >> 33;
+            h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
+            h ^= h >> 33;
+            h as usize
+        }
+        let magic = bit_mixer(family.weight());
+
+        let slot = magic % family.cores.len();
         debug_assert!(!family.cores[slot].is_empty());
-        let mut children = if family.weight() % 2 == 1 {
+        let mut children = if magic % 2 == 1 {
             debug!("  Splitting {} left on core {}", family, slot);
             debug_to_tree!(self.tracer, "Splitting left on core {}", slot);
             family.split_left(slot)
