@@ -269,10 +269,10 @@ fn check_sum_diff_of_cubes(base: u8, sequence: &Sequence) -> bool {
 fn check_diff_of_squares(base: u8, sequence: &Sequence) -> bool {
     // we need the base, k and -c to be squares
     let _sqrt_base = bail_if_none!(base.sqrt_exact());
-    let sqrt_k: i64 = bail_if_none!(sequence.k.sqrt_exact())
+    let _sqrt_k: i64 = bail_if_none!(sequence.k.sqrt_exact())
         .try_into()
         .expect("square root should be small enough to fit in i64");
-    let sqrt_neg_c = bail_if_none!((-sequence.c).sqrt_exact());
+    let _sqrt_neg_c = bail_if_none!((-sequence.c).sqrt_exact());
 
     // Check the factor size
     // TODO: for 1* in base 9, this won't work! you need to actually implement
@@ -297,7 +297,6 @@ fn check_diff_of_squares_or_divisor(base: u8, sequence: &Sequence) -> bool {
         // Factors as a difference of squares for even n. Now we just
         // need to see if the odd n terms have a shared factor.
         // It suffices to check n=1 and n=3.
-        let base: u64 = base.into();
         let a = kb.checked_add_signed(sequence.c).unwrap() / sequence.d;
         let b = kb
             .checked_mul(base * base)
@@ -343,7 +342,7 @@ mod tests {
 
         fn string_to_vec_digit(s: &str, base: u32) -> Vec<Digit> {
             s.split_inclusive(|_| true)
-                .map(|ch| Digit(u8::from_str_radix(&ch, base).unwrap()))
+                .map(|ch| Digit(u8::from_str_radix(ch, base).unwrap()))
                 .collect()
         }
 

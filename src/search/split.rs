@@ -23,7 +23,7 @@ impl SearchContext {
                     let seq = family.substitute_multiple(i, std::iter::repeat_n(d, n));
                     if let Some(p) = self.test_for_contained_prime(&seq) {
                         assert_ne!(&seq, p);
-                        debug!("  {} contains a prime {}", seq, p);
+                        debug!("  {seq} contains a prime {p}");
 
                         // Split into n families, x (L-y) (y (L-y))^i z for i in 0..n
                         let yless_core = core.clone().without(d);
@@ -109,7 +109,7 @@ impl SearchContext {
 
                 new.digitseqs.insert(1, d.into());
                 new.cores.insert(1, d_less_core);
-                debug!("  {} must have a {}, transforming into {}", family, d, new);
+                debug!("  {family} must have a {d}, transforming into {new}");
                 debug_to_tree!(self.tracer, "Must have a {}, transforming to {}", d, new);
                 return Some(new);
             }
@@ -142,10 +142,7 @@ impl SearchContext {
                         // X[Y]Z, X[Y]a[aY]Z, X[Y]b[bY]Z
                         assert_ne!(seq_ab, p);
                         assert_ne!(seq_ba, q);
-                        debug!(
-                            "  {} contains a prime {} and {} contains a prime {}",
-                            seq_ab, p, seq_ba, q
-                        );
+                        debug!("  {seq_ab} contains a prime {p} and {seq_ba} contains a prime {q}");
                         debug_to_tree!(
                             self.tracer,
                             "digits {a} and {b} are incompatible in core {i}"
@@ -170,7 +167,7 @@ impl SearchContext {
                     (Some(p), None) => {
                         // a can't occur before b
                         assert_ne!(seq_ab, p);
-                        debug!("  {} contains a prime {}", seq_ab, p);
+                        debug!("  {seq_ab} contains a prime {p}");
                         debug_to_tree!(
                             self.tracer,
                             "digits {a} and {b} are semi-incompatible in core {i}"
@@ -181,7 +178,7 @@ impl SearchContext {
                     (None, Some(q)) => {
                         // b can't occur before a; converse of the previous branch
                         assert_ne!(seq_ba, q);
-                        debug!("  {} contains a prime {}", seq_ba, q);
+                        debug!("  {seq_ba} contains a prime {q}");
                         debug_to_tree!(
                             self.tracer,
                             "digits {b} and {a} are semi-incompatible in core {i}"
@@ -226,7 +223,7 @@ impl SearchContext {
                         if let Some(p) = self.test_for_contained_prime(&seq).cloned() {
                             assert_ne!(seq, p);
 
-                            debug!("  {} contains a prime {}", seq, p);
+                            debug!("  {seq} contains a prime {p}");
                             debug_to_tree!(
                                 self.tracer,
                                 "digits {a} and {b} are incompatible in slots {i} and {j}"

@@ -160,10 +160,7 @@ fn baby_step_giant_step(
             // If c is zero, this is always divisible by p, otherwise, it never
             // is.
             // The former situation should never arise in practice.
-            debug!(
-                "Completely skipping prime {}, it divides the base b={}",
-                p, base
-            );
+            debug!("Completely skipping prime {p}, it divides the base b={base}");
             for slice in slices {
                 assert_ne!(
                     slice.seq.c.unsigned_abs() % p,
@@ -372,8 +369,7 @@ mod tests {
             if is_prime {
                 assert!(
                     is_remaining,
-                    "{} = {} is prime at n={}, but was removed from the list",
-                    elt, seq, exp
+                    "{elt} = {seq} is prime at n={exp}, but was removed from the list"
                 );
             // If it's composite, we might have eliminated it. Specifically,
             // if it has small factors, we should have been able to eliminate it.
@@ -396,8 +392,7 @@ mod tests {
         let num_remaining = slice.n_bitvec.count_ones();
         assert!(
             num_remaining < 20,
-            "Expected to eliminate more options, there are {} remaining",
-            num_remaining
+            "Expected to eliminate more options, there are {num_remaining} remaining"
         );
     }
 

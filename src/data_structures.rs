@@ -128,6 +128,12 @@ impl CandidateSequences {
     }
 }
 
+impl Default for CandidateSequences {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> AppendTree<T> {
     pub fn new() -> Self {
         let root = AppendTreeNode::new();

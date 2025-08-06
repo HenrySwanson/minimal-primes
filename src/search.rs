@@ -35,7 +35,7 @@ macro_rules! log_to_tree {
 #[macro_export]
 macro_rules! debug_to_tree {
     ($tracer:expr, $($arg:tt)+) => {
-        crate::log_to_tree!($tracer, log::Level::Debug, $($arg)+)
+        $crate::log_to_tree!($tracer, log::Level::Debug, $($arg)+)
     };
 }
 
@@ -200,7 +200,7 @@ impl SearchContext {
         // We want to explore all possible children with weight one more than this one.
         let children = match node.family {
             NodeType::Arbitrary(family) => {
-                debug!(" Exploring {}", family);
+                debug!(" Exploring {family}");
                 self.explore_family(family)
             }
             NodeType::Simple(node) => {
@@ -209,7 +209,8 @@ impl SearchContext {
             }
         };
         self.stats.num_branches_explored += 1;
-        let children = children
+
+        children
             .into_iter()
             .map(|family| {
                 let child_id = self
@@ -221,8 +222,7 @@ impl SearchContext {
                     id: child_id,
                 }
             })
-            .collect();
-        children
+            .collect()
     }
 
     fn explore_family(&mut self, family: Family) -> Vec<NodeType> {
@@ -239,7 +239,7 @@ impl SearchContext {
             .first()
             == Some(&Digit(0))
         {
-            debug!("  Discarding {}, leading zero", family);
+            debug!("  Discarding {family}, leading zero");
             debug_to_tree!(self.tracer, "Discarding, leading zero");
             return vec![];
         }
@@ -253,15 +253,15 @@ impl SearchContext {
         // can that be improved?
         if let Some(p) = self.test_for_contained_prime(&seq).cloned() {
             assert_ne!(seq, p);
-            debug!("  Discarding {}, contains prime {}", family, p);
+            debug!("  Discarding {family}, contains prime {p}");
             debug_to_tree!(self.tracer, "Discarding, contains prime {}", p);
             return vec![];
         }
 
-        trace!("  Testing for primality {}", seq);
+        trace!("  Testing for primality {seq}");
         let value = seq.value(self.base);
         if self.test_for_prime(&value) {
-            debug!("  Saving {}, contracts to prime", family);
+            debug!("  Saving {family}, contracts to prime");
             debug_to_tree!(self.tracer, "Saving, contracts to prime");
             self.primes.insert(seq);
             return vec![];
@@ -271,7 +271,7 @@ impl SearchContext {
         let mut family = self.reduce_cores(family);
         family.simplify();
         if family.cores.is_empty() {
-            debug!("  {} was reduced to trivial string", family);
+            debug!("  {family} was reduced to trivial string");
             debug_to_tree!(self.tracer, "Reduced to trivial string");
             return vec![];
         }
@@ -279,7 +279,7 @@ impl SearchContext {
         // Now, run some tests to see whether this family is guaranteed to
         // be composite.
         if self.test_for_perpetual_composite(&family) {
-            debug!("  Discarding {}, is always composite", family);
+            debug!("  Discarding {family}, is always composite");
             debug_to_tree!(self.tracer, "Discarding, is always composite");
             return vec![];
         }
@@ -348,11 +348,11 @@ impl SearchContext {
         let slot = magic % family.cores.len();
         debug_assert!(!family.cores[slot].is_empty());
         let mut children = if magic % 2 == 1 {
-            debug!("  Splitting {} left on core {}", family, slot);
+            debug!("  Splitting {family} left on core {slot}");
             debug_to_tree!(self.tracer, "Splitting left on core {}", slot);
             family.split_left(slot)
         } else {
-            debug!("  Splitting {} right on core {}", family, slot);
+            debug!("  Splitting {family} right on core {slot}");
             debug_to_tree!(self.tracer, "Splitting right on core {}", slot);
             family.split_right(slot)
         };
@@ -435,15 +435,15 @@ impl SearchContext {
 
                 if let Some(p) = self.test_for_contained_prime(&seq).cloned() {
                     assert_ne!(seq, p);
-                    debug!("  Discarding {}, contains prime {}", seq, p);
+                    debug!("  Discarding {seq}, contains prime {p}");
                     debug_to_tree!(self.tracer, "Discarding {}, contains prime {}", seq, p);
                     continue;
                 }
 
-                trace!("  Testing for primality {}", seq);
+                trace!("  Testing for primality {seq}");
                 let value = seq.value(self.base);
                 if self.test_for_prime(&value) {
-                    debug!("  Saving {}, is prime", seq);
+                    debug!("  Saving {seq}, is prime");
                     debug_to_tree!(self.tracer, "Saving {}, is prime", seq);
                     self.primes.insert(seq);
                 } else {
@@ -454,7 +454,7 @@ impl SearchContext {
             *core = Core::new(allowed_digits);
         }
         // Now we've reduced the core, and have a new family.
-        debug!("  Reducing {} to {}", old_family, family);
+        debug!("  Reducing {old_family} to {family}");
         debug_to_tree!(self.tracer, "Reducing to {}", family);
         family
     }
@@ -490,7 +490,7 @@ impl SearchContext {
 
         // p divides BASE (e.g., 2, 5)
         if let Some(factor) = shares_factor_with_base(self.base, family) {
-            debug!("  {} has divisor {}", family, factor);
+            debug!("  {family} has divisor {factor}");
             debug_to_tree!(self.tracer, "Has divisor {}", factor);
             return true;
         }
@@ -498,7 +498,7 @@ impl SearchContext {
         // -------------------------------
         // This is how we detect families like 4[6]9 being divisible by 7.
         if let Some(divisor) = find_guaranteed_factor(self.base, family) {
-            debug!("  {} is divisible by {}", family, divisor);
+            debug!("  {family} is divisible by {divisor}");
             debug_to_tree!(self.tracer, "Divisible by {}", divisor);
             return true;
         }
@@ -515,10 +515,7 @@ impl SearchContext {
             }
         }
         if let Some((even_factor, odd_factor)) = find_two_factors(self.base, family) {
-            debug!(
-                "  {} is divisible by either {} or {} (#1)",
-                family, even_factor, odd_factor
-            );
+            debug!("  {family} is divisible by either {even_factor} or {odd_factor} (#1)");
             debug_to_tree!(
                 self.tracer,
                 "Divisible by either {} or {} (#1)",
@@ -529,10 +526,7 @@ impl SearchContext {
         }
 
         if let Some((even_factor, odd_factor)) = find_even_odd_factor(self.base, family) {
-            debug!(
-                "  {} is divisible by either {} or {} (#2)",
-                family, even_factor, odd_factor
-            );
+            debug!("  {family} is divisible by either {even_factor} or {odd_factor} (#2)");
             debug_to_tree!(
                 self.tracer,
                 "Divisible by either {} or {} (#2)",

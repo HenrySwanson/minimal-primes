@@ -132,7 +132,7 @@ fn do_search(cmd: &SearchArgs) -> SearchResults {
     );
     println!("{} branches unsolved", unsolved.len());
     for x in &unsolved {
-        println!("{}", x);
+        println!("{x}");
     }
 
     SearchResults {
@@ -199,10 +199,10 @@ fn first_stage(
 
     println!("---- BRANCHES REMAINING ----");
     for f in results.simple_families.iter() {
-        println!("{}", f);
+        println!("{f}");
     }
     for f in results.other_families.iter() {
-        println!("{}", f);
+        println!("{f}");
     }
     println!("---- MINIMAL PRIMES ----");
     println!("{}", results.primes.iter().format(", "));
@@ -267,12 +267,12 @@ fn intermediate_process_family(
             Some(n) => {
                 if n <= family.min_repeats {
                     // we can discard this immediately!
-                    println!("  Discarding {}, contains prime {}", family, p);
+                    println!("  Discarding {family}, contains prime {p}");
                     return None;
                 }
 
                 // Otherwise, take the the running minimum of these
-                println!("  {} will contain {} after {} more repeats", family, p, n);
+                println!("  {family} will contain {p} after {n} more repeats");
                 repeats_until_prime = Some(repeats_until_prime.map_or(n, |m| n.min(m)));
             }
         }
@@ -281,7 +281,7 @@ fn intermediate_process_family(
     let repeats_until_prime = match repeats_until_prime {
         Some(n) => n,
         None => {
-            println!("  {} will not contain any known minimal primes", family);
+            println!("  {family} will not contain any known minimal primes");
             return Some(family);
         }
     };
@@ -294,7 +294,7 @@ fn intermediate_process_family(
         let value = family.value(base);
 
         if is_prime(&value, None).probably() {
-            println!("  Saving {}, is prime", family);
+            println!("  Saving {family}, is prime");
             let seq = family.sequence();
             primes.insert(seq);
             return None;
@@ -305,7 +305,7 @@ fn intermediate_process_family(
     }
 
     // Didn't become prime, discard it
-    println!("  {} did not become prime, discarding", family);
+    println!("  {family} did not become prime, discarding");
     None
 }
 
@@ -321,7 +321,7 @@ fn second_stage(
     let mut remaining_branches: Vec<_> = unsolved_families
         .iter()
         .map(|simple| {
-            let seq = Sequence::try_from_family(&simple, base)
+            let seq = Sequence::try_from_family(simple, base)
                 .expect("must be small enough to fit into sieve");
             (simple, seq)
         })
@@ -345,13 +345,13 @@ fn second_stage(
                 .iter()
                 .find(|p| simple.will_contain_at(p).is_some_and(|n| n < n_lo))
             {
-                println!("{} can be eliminated, since it contains {}", simple, p);
+                println!("{simple} can be eliminated, since it contains {p}");
                 continue;
             }
 
             // Do we give up on this sequence?
             if n_lo >= cmd.n_hi {
-                println!("Reached limit on n for {}", simple);
+                println!("Reached limit on n for {simple}");
                 unsolved_branches.push(simple.clone());
                 continue;
             }
@@ -375,11 +375,11 @@ fn second_stage(
                 Some((i, p)) => {
                     let digitseq =
                         DigitSeq(p.to_radix_be(base.into()).into_iter().map(Digit).collect());
-                    println!("Found prime at exponent {}: {}", i, digitseq);
+                    println!("Found prime at exponent {i}: {digitseq}");
                     primes.insert(digitseq);
                 }
                 None => {
-                    println!("Unable to find prime in the given range: {}", simple);
+                    println!("Unable to find prime in the given range: {simple}");
                     remaining_branches.push((simple, slice.seq))
                 }
             }
@@ -643,7 +643,7 @@ mod tests {
                 // TODO: compare the results of this to the expected ones,
                 // to make sure we're not discovering fake primes or anything
                 do_search(&SearchArgs {
-                    base: base,
+                    base,
                     max_weight: Some(5),
                     max_iter: Some(10_000),
                     with_sieve: false,
@@ -657,7 +657,7 @@ mod tests {
 
         // Figure out the equivalent command
         let cmd = SearchArgs {
-            base: base,
+            base,
             max_weight: None,
             max_iter: None,
             with_sieve: true,
@@ -719,7 +719,7 @@ mod tests {
 
     fn iter_ground_truth(base: u8) -> impl Iterator<Item = String> {
         use io::BufRead;
-        let file_path = format!("mepn-data/minimal.{}.txt", base);
+        let file_path = format!("mepn-data/minimal.{base}.txt");
         let file = std::fs::File::open(file_path).expect("open ground truth file");
         io::BufReader::new(file)
             .lines()
@@ -766,7 +766,7 @@ mod tests {
                     if exceptions.iter().any(|re| re.is_match(&p)) {
                         // great, allowable exception
                     } else {
-                        println!("Didn't see expected prime: {}", p);
+                        println!("Didn't see expected prime: {p}");
                         fail = true;
                     }
                 }
@@ -774,7 +774,7 @@ mod tests {
                 // shouldn't be there. this is always a failure.
                 std::cmp::Ordering::Greater => {
                     let p = iter.next().unwrap();
-                    println!("Got extra unexpected prime: {}", p);
+                    println!("Got extra unexpected prime: {p}");
                     fail = true;
                 }
                 // all is well, just increment both iterators

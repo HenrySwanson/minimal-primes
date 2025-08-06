@@ -35,6 +35,12 @@ impl DigitSeq {
     }
 }
 
+impl Default for DigitSeq {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl std::ops::Add for DigitSeq {
     type Output = DigitSeq;
 
@@ -115,7 +121,7 @@ impl std::fmt::Display for Digit {
             0..=9 => d + b'0',
             10..=35 => d - 10 + b'A',
             _ => {
-                return write!(f, "({})", d);
+                return write!(f, "({d})");
             }
         };
         f.write_char(ch as char)
