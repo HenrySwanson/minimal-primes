@@ -325,14 +325,14 @@ fn baby_steps(
     let initial_value = base.powm(start_exp, &p);
     let mut value = initial_value;
     for i in 0..num_baby_steps {
-        // Insert and check if it was already there
-        if map.insert(value, i).is_some() {
-            // We've looped all the way around! No need to insert any more entries,
-            // we can return with knowledge of the order.
-            return (map, Some(i));
-        }
-
+        map.insert(value, i);
         value = value.mulm(base, &p);
+
+        // We've looped all the way around! No need to insert any more entries,
+        // we can return with knowledge of the order.
+        if value == initial_value {
+            return (map, Some(i + 1));
+        }
     }
 
     (map, None)
