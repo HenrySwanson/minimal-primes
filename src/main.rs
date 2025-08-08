@@ -251,6 +251,17 @@ fn first_stage(
         results.stats.num_simple_substring_checks,
         results.stats.duration_simple_substring_checks.as_millis()
     );
+    let branch_stats = &results.stats.branch_stats;
+    println!("{} branches eliminated with leading zeros", branch_stats.leading_zeros);
+    println!("{} branches eliminated for containing a prime", branch_stats.contains_prime);
+    println!("{} branches eliminated by discovering a new prime", branch_stats.is_new_prime);
+    println!("{} branches eliminated for compositeness", branch_stats.detected_composite);
+    println!("{} branches simplified into simple families", branch_stats.simplified);
+    println!("{} branches split on a limited digit", branch_stats.split_on_limited_digit);
+    println!("{} branches split on incompatible digits (same core)", branch_stats.split_on_incompatible_same_core);
+    println!("{} branches split on incompatible digits (different cores)", branch_stats.split_on_incompatible_different_cores);
+    println!("{} branches split on a necessary digit", branch_stats.split_on_necessary_digit);
+    println!("{} branches explored generically", branch_stats.explored_generically);
 
     results
 }

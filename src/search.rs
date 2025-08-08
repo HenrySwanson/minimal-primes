@@ -125,6 +125,22 @@ pub struct Stats {
     pub num_simple_substring_checks: usize,
     pub duration_simple_substring_checks: Duration,
     pub num_branches_explored: usize,
+    pub branch_stats: BranchStats,
+}
+
+#[derive(Debug, Default)]
+pub struct BranchStats {
+    pub leading_zeros: usize,
+    pub contains_prime: usize,
+    pub is_new_prime: usize,
+    pub is_trivial_string: usize,
+    pub detected_composite: usize,
+    pub simplified: usize,
+    pub split_on_limited_digit: usize,
+    pub split_on_incompatible_same_core: usize,
+    pub split_on_incompatible_different_cores: usize,
+    pub split_on_necessary_digit: usize,
+    pub explored_generically: usize,
 }
 
 pub struct SearchContext {
@@ -241,6 +257,7 @@ impl SearchContext {
         {
             debug!("  Discarding {family}, leading zero");
             debug_to_tree!(self.tracer, "Discarding, leading zero");
+            self.stats.branch_stats.leading_zeros += 1;
             return vec![];
         }
 
@@ -255,6 +272,7 @@ impl SearchContext {
             assert_ne!(seq, p);
             debug!("  Discarding {family}, contains prime {p}");
             debug_to_tree!(self.tracer, "Discarding, contains prime {}", p);
+            self.stats.branch_stats.contains_prime += 1;
             return vec![];
         }
 
@@ -264,6 +282,7 @@ impl SearchContext {
             debug!("  Saving {family}, contracts to prime");
             debug_to_tree!(self.tracer, "Saving, contracts to prime");
             self.primes.insert(seq);
+            self.stats.branch_stats.is_new_prime += 1;
             return vec![];
         }
 
@@ -273,6 +292,7 @@ impl SearchContext {
         if family.cores.is_empty() {
             debug!("  {family} was reduced to trivial string");
             debug_to_tree!(self.tracer, "Reduced to trivial string");
+            self.stats.branch_stats.is_trivial_string += 1;
             return vec![];
         }
 
@@ -281,6 +301,7 @@ impl SearchContext {
         if self.test_for_perpetual_composite(&family) {
             debug!("  Discarding {family}, is always composite");
             debug_to_tree!(self.tracer, "Discarding, is always composite");
+            self.stats.branch_stats.detected_composite += 1;
             return vec![];
         }
 
@@ -290,6 +311,7 @@ impl SearchContext {
         let mut family = match SimpleFamily::try_from(family) {
             Ok(family) => {
                 let sequence = Sequence::try_from_family(&family, self.base).ok();
+                self.stats.branch_stats.simplified += 1;
                 return vec![NodeType::Simple(SimpleNode {
                     family,
                     sequence,
@@ -301,22 +323,28 @@ impl SearchContext {
         };
 
         // Let's see if we can split it in an interesting way
-        if let Some(children) = self.split_on_repeat(&family, 3) {
+        if let Some(children) = self.split_on_limited_digit(&family, 3) {
+            self.stats.branch_stats.split_on_limited_digit += 1;
             return children.into_iter().map(NodeType::Arbitrary).collect();
         }
 
         if family.weight() >= 2 {
             if let Some(children) = self.split_on_incompatible_digits(&family) {
+                self.stats.branch_stats.split_on_incompatible_same_core += 1;
                 return children.into_iter().map(NodeType::Arbitrary).collect();
             }
 
             if let Some(children) = self.split_on_incompatible_digits_different_cores(&family) {
+                self.stats
+                    .branch_stats
+                    .split_on_incompatible_different_cores += 1;
                 return children.into_iter().map(NodeType::Arbitrary).collect();
             }
         }
 
         if family.weight() >= 2 {
             if let Some(child) = self.split_on_necessary_digit(&family) {
+                self.stats.branch_stats.split_on_necessary_digit += 1;
                 return vec![NodeType::Arbitrary(child)];
             }
         }
@@ -369,6 +397,7 @@ impl SearchContext {
             children.push(family);
         }
 
+        self.stats.branch_stats.explored_generically += 1;
         children.into_iter().map(NodeType::Arbitrary).collect()
     }
 

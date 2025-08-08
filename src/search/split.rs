@@ -15,7 +15,7 @@ impl SearchContext {
     /// This is extended to multiple cores in a straightforward way.
     ///
     /// We check n from 1 to `max_repeats`.
-    pub fn split_on_repeat(&mut self, family: &Family, max_repeats: usize) -> Option<Vec<Family>> {
+    pub fn split_on_limited_digit(&mut self, family: &Family, max_repeats: usize) -> Option<Vec<Family>> {
         for (i, core) in family.cores.iter().enumerate() {
             for d in core.iter() {
                 for n in 2..=max_repeats {
