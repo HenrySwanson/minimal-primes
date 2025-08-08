@@ -43,27 +43,21 @@ enum Command {
 struct SearchArgs {
     /// Base, e.g., decimal, binary, etc.
     base: u8,
-
     /// Stop exploring when families get above this weight.
     #[arg(long)]
     max_weight: Option<usize>,
-
     /// Stop exploring after a specific number of iterations.
     #[arg(long)]
     max_iter: Option<usize>,
-
-    /// Switch over to sieving after all remaining families are simple.
+    /// Do not continue onwards to sieving.
     #[arg(long)]
-    with_sieve: bool,
-
+    first_stage_only: bool,
     /// upper bound for n
     #[arg(long, default_value_t = 5_000)]
     n_hi: usize,
-
     /// max p to sieve with
     #[arg(long, default_value_t = 1_000_000)]
     p_max: u64,
-
     /// whether to log the whole search tree
     #[arg(long)]
     tree_log: bool,
@@ -131,6 +125,11 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) -> SearchResults {
         cmd.tree_log,
         stop_signal,
     );
+
+    if cmd.first_stage_only {
+        println!("Done with first stage, stopping early!");
+        return results;
+    }
 
     if !results.other_families.is_empty() {
         println!("Not all remaining branches are simple! Must bail out now.");
@@ -252,16 +251,46 @@ fn first_stage(
         results.stats.duration_simple_substring_checks.as_millis()
     );
     let branch_stats = &results.stats.branch_stats;
-    println!("{} branches eliminated with leading zeros", branch_stats.leading_zeros);
-    println!("{} branches eliminated for containing a prime", branch_stats.contains_prime);
-    println!("{} branches eliminated by discovering a new prime", branch_stats.is_new_prime);
-    println!("{} branches eliminated for compositeness", branch_stats.detected_composite);
-    println!("{} branches simplified into simple families", branch_stats.simplified);
-    println!("{} branches split on a limited digit", branch_stats.split_on_limited_digit);
-    println!("{} branches split on incompatible digits (same core)", branch_stats.split_on_incompatible_same_core);
-    println!("{} branches split on incompatible digits (different cores)", branch_stats.split_on_incompatible_different_cores);
-    println!("{} branches split on a necessary digit", branch_stats.split_on_necessary_digit);
-    println!("{} branches explored generically", branch_stats.explored_generically);
+    println!(
+        "{} branches eliminated with leading zeros",
+        branch_stats.leading_zeros
+    );
+    println!(
+        "{} branches eliminated for containing a prime",
+        branch_stats.contains_prime
+    );
+    println!(
+        "{} branches eliminated by discovering a new prime",
+        branch_stats.is_new_prime
+    );
+    println!(
+        "{} branches eliminated for compositeness",
+        branch_stats.detected_composite
+    );
+    println!(
+        "{} branches simplified into simple families",
+        branch_stats.simplified
+    );
+    println!(
+        "{} branches split on a limited digit",
+        branch_stats.split_on_limited_digit
+    );
+    println!(
+        "{} branches split on incompatible digits (same core)",
+        branch_stats.split_on_incompatible_same_core
+    );
+    println!(
+        "{} branches split on incompatible digits (different cores)",
+        branch_stats.split_on_incompatible_different_cores
+    );
+    println!(
+        "{} branches split on a necessary digit",
+        branch_stats.split_on_necessary_digit
+    );
+    println!(
+        "{} branches explored generically",
+        branch_stats.explored_generically
+    );
 
     results
 }
@@ -680,7 +709,7 @@ mod tests {
                         base,
                         max_weight: Some(5),
                         max_iter: Some(10_000),
-                        with_sieve: false,
+                        first_stage_only: true,
                         n_hi: 0,
                         p_max: 0,
                         tree_log: false,
@@ -696,7 +725,7 @@ mod tests {
             base,
             max_weight: None,
             max_iter: None,
-            with_sieve: true,
+            first_stage_only: false,
             n_hi: 500,
             // seems to work better than p = 1M, should this be backported
             // to the actual CLI command?
@@ -705,7 +734,7 @@ mod tests {
         };
 
         // First stage
-        let mut results = first_stage(base, None, None, true, &AtomicBool::new(false));
+        let mut results = first_stage(base, None, None, false, &AtomicBool::new(false));
 
         // Remove any composite branches that are expected to be present.
         // TODO: all composites are detected right now, but re-use this for

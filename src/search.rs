@@ -412,6 +412,7 @@ impl SearchContext {
             if composite_checks_for_simple(self.base, &node) {
                 debug!("  Discarding {}, is always composite", node.family);
                 debug_to_tree!(self.tracer, "Discarding, is always composite");
+                self.stats.branch_stats.detected_composite += 1;
                 return vec![];
             }
             node.composite_tested = true;
@@ -431,6 +432,7 @@ impl SearchContext {
                 debug!("  Discarding {}, contains prime {}", node.family, prime);
                 debug_to_tree!(self.tracer, "Discarding, contains prime {}", prime);
                 self.stats.duration_simple_substring_checks += start.elapsed();
+                self.stats.branch_stats.contains_prime += 1;
                 return vec![];
             }
         }
@@ -442,12 +444,14 @@ impl SearchContext {
         if self.test_for_prime(&value) {
             debug!("  Saving {}, is prime", node.family);
             debug_to_tree!(self.tracer, "Saving, is prime");
+            self.stats.branch_stats.is_new_prime += 1;
             let seq = node.family.sequence();
             self.primes.insert(seq);
             return vec![];
         }
 
         node.family.min_repeats += 1;
+        self.stats.branch_stats.explored_generically += 1;
         vec![NodeType::Simple(node)]
     }
 
