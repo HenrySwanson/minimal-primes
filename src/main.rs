@@ -1,4 +1,6 @@
 use std::ops::ControlFlow;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use crate::data_structures::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
@@ -96,9 +98,24 @@ fn main() {
     log::set_boxed_logger(Box::new(logging::SimpleLogger)).expect("logger should be uninitialized");
     log::set_max_level(args.log_level);
 
+    // Set up Ctrl-C handling
+    let stop_signal = Arc::new(AtomicBool::new(false));
+    ctrlc::set_handler({
+        let stop_signal = stop_signal.clone();
+        move || {
+            println!("Ctrl-C received! Performing cleanup...");
+            let oldval = stop_signal.swap(true, std::sync::atomic::Ordering::Relaxed);
+            if oldval {
+                // not the first time this was pressed, killing the process
+                std::process::exit(128 + 2);
+            }
+        }
+    })
+    .expect("Error setting Ctrl-C handler");
+
     match args.command {
         Command::Search(cmd) => {
-            do_search(&cmd);
+            do_search(&cmd, &stop_signal);
         }
         Command::Sieve(cmd) => {
             do_sieve(&cmd);
@@ -106,13 +123,13 @@ fn main() {
     }
 }
 
-fn do_search(cmd: &SearchArgs) -> SearchResults {
+fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) -> SearchResults {
     let mut results = first_stage(
         cmd.base,
         cmd.max_weight,
         cmd.max_iter,
-        cmd.with_sieve,
         cmd.tree_log,
+        stop_signal,
     );
 
     if !results.other_families.is_empty() {
@@ -154,12 +171,17 @@ fn first_stage(
     base: u8,
     max_weight: Option<usize>,
     max_iter: Option<usize>,
-    stop_when_simple: bool,
     tree_log: bool,
+    stop_signal: &AtomicBool,
 ) -> SearchResults {
     let mut tree = SearchTree::new(base, tree_log);
 
     tree.explore_until(|tree| {
+        if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
+            info!("Interrupted! Stopping now...");
+            return ControlFlow::Break(());
+        }
+
         let weight = match tree.frontier.min_weight() {
             Some(w) => w,
             // this means the frontier is empty!
@@ -180,7 +202,7 @@ fn first_stage(
             }
         }
 
-        if stop_when_simple && tree.all_nodes_simple() {
+        if tree.all_nodes_simple() {
             info!("All remaining families are simple; stopping...");
             return ControlFlow::Break(());
         }
@@ -642,15 +664,18 @@ mod tests {
                 // it's not panicking or anything.
                 // TODO: compare the results of this to the expected ones,
                 // to make sure we're not discovering fake primes or anything
-                do_search(&SearchArgs {
-                    base,
-                    max_weight: Some(5),
-                    max_iter: Some(10_000),
-                    with_sieve: false,
-                    n_hi: 0,
-                    p_max: 0,
-                    tree_log: false,
-                });
+                do_search(
+                    &SearchArgs {
+                        base,
+                        max_weight: Some(5),
+                        max_iter: Some(10_000),
+                        with_sieve: false,
+                        n_hi: 0,
+                        p_max: 0,
+                        tree_log: false,
+                    },
+                    &AtomicBool::new(false),
+                );
                 return;
             }
         };
@@ -669,7 +694,7 @@ mod tests {
         };
 
         // First stage
-        let mut results = first_stage(base, None, None, true, false);
+        let mut results = first_stage(base, None, None, true, &AtomicBool::new(false));
 
         // Remove any composite branches that are expected to be present.
         // TODO: all composites are detected right now, but re-use this for
