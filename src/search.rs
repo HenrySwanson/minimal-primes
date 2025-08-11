@@ -329,15 +329,15 @@ impl SearchContext {
         }
 
         if family.weight() >= 2 {
-            if let Some(children) = self.split_on_incompatible_digits(&family) {
-                self.stats.branch_stats.split_on_incompatible_same_core += 1;
-                return children.into_iter().map(NodeType::Arbitrary).collect();
-            }
-
             if let Some(children) = self.split_on_incompatible_digits_different_cores(&family) {
                 self.stats
                     .branch_stats
                     .split_on_incompatible_different_cores += 1;
+                return children.into_iter().map(NodeType::Arbitrary).collect();
+            }
+
+            if let Some(children) = self.split_on_incompatible_digits(&family) {
+                self.stats.branch_stats.split_on_incompatible_same_core += 1;
                 return children.into_iter().map(NodeType::Arbitrary).collect();
             }
         }
