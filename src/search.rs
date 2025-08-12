@@ -58,10 +58,11 @@ impl SearchTree {
         Self { frontier, ctx }
     }
 
-    pub fn all_nodes_simple(&self) -> bool {
-        self.frontier
-            .iter()
-            .all(|node| matches!(node.family, NodeType::Simple(_)))
+    pub fn all_nodes_simple_and_checked(&self) -> bool {
+        self.frontier.iter().all(|node| match &node.family {
+            NodeType::Arbitrary(family) => false,
+            NodeType::Simple(simple_node) => simple_node.composite_tested,
+        })
     }
 
     pub fn explore_until(
@@ -242,24 +243,12 @@ impl SearchContext {
     }
 
     fn explore_family(&mut self, family: Family) -> Vec<NodeType> {
-        // We can sometimes produce families that begin with 0. We could
-        // simplify these to remove the zero, but that would cause duplication
-        // with other families. So we just kill them here.
-        // TODO: can we kill them elsewhere? maybe some post-processing step in
+        // We have to be careful about not generating leading zeros. There's
+        // a lot of different ways we could do that, but one possible way is
+        // just to rig things so that on the first round, we split left (and
+        // check for primes).
+        // TODO: can we do this elsewhere? maybe some post-processing step in
         // the explore_node? this feels iffy
-        if family
-            .digitseqs
-            .first()
-            .expect("must have 1+ digit sequences")
-            .0
-            .first()
-            == Some(&Digit(0))
-        {
-            debug!("  Discarding {family}, leading zero");
-            debug_to_tree!(self.tracer, "Discarding, leading zero");
-            self.stats.branch_stats.leading_zeros += 1;
-            return vec![];
-        }
 
         // Test this for primality
         // TODO: normally we've tested this already, in reduce_cores,
@@ -323,12 +312,14 @@ impl SearchContext {
         };
 
         // Let's see if we can split it in an interesting way
-        if let Some(children) = self.split_on_limited_digit(&family, 3) {
-            self.stats.branch_stats.split_on_limited_digit += 1;
-            return children.into_iter().map(NodeType::Arbitrary).collect();
+        if family.weight() >= 2 {
+            if let Some(children) = self.split_on_limited_digit(&family, 3) {
+                self.stats.branch_stats.split_on_limited_digit += 1;
+                return children.into_iter().map(NodeType::Arbitrary).collect();
+            }
         }
 
-        if family.weight() >= 2 {
+        if family.weight() >= 4 {
             if let Some(children) = self.split_on_incompatible_digits_different_cores(&family) {
                 self.stats
                     .branch_stats
@@ -342,7 +333,7 @@ impl SearchContext {
             }
         }
 
-        if family.weight() >= 2 {
+        if family.weight() >= 4 {
             if let Some(child) = self.split_on_necessary_digit(&family) {
                 self.stats.branch_stats.split_on_necessary_digit += 1;
                 return vec![NodeType::Arbitrary(child)];
@@ -371,9 +362,13 @@ impl SearchContext {
             h ^= h >> 33;
             h as usize
         }
-        let magic = bit_mixer(family.weight());
+        let magic = match family.weight() {
+            0 => 0,
+            1 => 1,
+            w => bit_mixer(w),
+        };
 
-        let slot = magic % family.cores.len();
+        let slot = (magic >> 1) % family.cores.len();
         debug_assert!(!family.cores[slot].is_empty());
         let mut children = if magic % 2 == 1 {
             debug!("  Splitting {family} left on core {slot}");

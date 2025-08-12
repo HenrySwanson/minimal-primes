@@ -201,7 +201,7 @@ fn first_stage(
             }
         }
 
-        if tree.all_nodes_simple() {
+        if tree.all_nodes_simple_and_checked() {
             info!("All remaining families are simple; stopping...");
             return ControlFlow::Break(());
         }

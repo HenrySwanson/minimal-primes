@@ -210,10 +210,10 @@ impl SearchContext {
         // iterate over unordered pairs of cores
         for (j, core_j) in family.cores.iter().enumerate() {
             for (i, core_i) in family.cores.iter().enumerate() {
-                if i > j {
+                if i >= j {
                     break;
                 }
-                // i <= j
+                // i < j
 
                 for a in core_i.iter() {
                     for b in core_j.iter() {
