@@ -380,14 +380,13 @@ fn second_stage(
     let base = cmd.base;
     let mut primes = primes;
     let mut unsolved_branches = vec![];
-    let mut remaining_branches: Vec<_> = unsolved_families
-        .iter()
-        .map(|simple| {
-            let seq = Sequence::try_from_family(simple, base)
-                .expect("must be small enough to fit into sieve");
-            (simple, seq)
+    let (mut remaining_branches, unsievable_branches): (Vec<_>, Vec<_>) = unsolved_families
+        .into_iter()
+        .map(|simple| match Sequence::try_from_family(&simple, base) {
+            Ok(seq) => Ok((simple, seq)),
+            Err(_) => Err(simple),
         })
-        .collect();
+        .partition_result();
 
     // Okay, now we have a collection of simple familes, and the sequences
     // they correspond to. Let's do some sieving.
@@ -402,6 +401,7 @@ fn second_stage(
         let hi = std::cmp::min(n_lo + n_len, cmd.n_hi);
 
         // Real quick, check if this can be eliminated via a minimal prime
+        // TODO: shouldn't this come _after_ sieving?
         for (simple, seq) in std::mem::take(&mut remaining_branches) {
             if let Some(p) = primes
                 .iter()
@@ -449,6 +449,16 @@ fn second_stage(
 
         n_lo = hi;
         n_len *= 2;
+    }
+
+    // Before we go, check whether any of the unsievable branches can be eliminated with
+    // a minimal prime.
+    // TODO: we really gotta have some quick way to do this, it happens a lot
+    for family in unsievable_branches {
+        println!("Checking if we get a lucky break on {family}");
+        if let Some(still_unsolved) = intermediate_process_family(base, family, &mut primes) {
+            unsolved_branches.push(still_unsolved);
+        }
     }
 
     primes.sort();
@@ -620,7 +630,6 @@ mod tests {
                 "G*69",     // eventually gets killed by G*9
                 "AIIF*",    // eventually gets killed by AIF*
                 "80*81",    // eventually gets killed by 80*1
-                "0K*L", "0G*09", // leading zeros! wtf!?
             ]
         })
     );
@@ -674,7 +683,6 @@ mod tests {
                 "QO*69",  // 4242 digits
                 "O4O*9",  // 94538 digits
                 "OA*F",   // unsolved!
-                "0QO*69", // leading zeros! wtf!?
             ]
         })
     );
