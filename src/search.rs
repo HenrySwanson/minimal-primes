@@ -16,8 +16,8 @@ use self::explore::{Frontier, Weight};
 use crate::data_structures::{
     is_proper_substring, AppendTree, AppendTreeNodeID, CandidateSequences,
 };
-use crate::digits::{Digit, DigitSeq};
-use crate::families::{Core, Family, Sequence, SimpleFamily};
+use crate::digits::DigitSeq;
+use crate::families::{Core, Family, SimpleFamily};
 use crate::search::composite::{
     composite_checks_for_simple, find_guaranteed_factor, find_two_factors,
 };
@@ -60,7 +60,7 @@ impl SearchTree {
 
     pub fn all_nodes_simple_and_checked(&self) -> bool {
         self.frontier.iter().all(|node| match &node.family {
-            NodeType::Arbitrary(family) => false,
+            NodeType::Arbitrary(_) => false,
             NodeType::Simple(simple_node) => simple_node.composite_tested,
         })
     }
@@ -175,12 +175,6 @@ enum NodeType {
 #[derive(Debug, Clone)]
 struct SimpleNode {
     family: SimpleFamily,
-    // Some simple families are too large to fit into
-    // native integer types :/ Hopefully they get killed
-    // by other means in the first stage, since otherwise
-    // they'll fail in the second stage since we can't
-    // make a sequence for them.
-    sequence: Option<Sequence>,
     composite_tested: bool,
 }
 
@@ -299,11 +293,9 @@ impl SearchContext {
         // re-enqueue it as such. (Note: this is after composite check!)
         let mut family = match SimpleFamily::try_from(family) {
             Ok(family) => {
-                let sequence = Sequence::try_from_family(&family, self.base).ok();
                 self.stats.branch_stats.simplified += 1;
                 return vec![NodeType::Simple(SimpleNode {
                     family,
-                    sequence,
                     composite_tested: false,
                 })];
             }

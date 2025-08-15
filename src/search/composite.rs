@@ -2,13 +2,14 @@
 //! letting us discard the whole branch.
 
 use itertools::Itertools;
+use num_bigint::BigInt;
 use num_bigint::BigUint;
 use num_prime::ExactRoots;
 
 use crate::digits::DigitSeq;
+use crate::families::BigSequence;
 use crate::families::Core;
 use crate::families::Family;
-use crate::families::Sequence;
 use crate::search::gcd::nontrivial_gcd;
 use crate::search::SimpleNode;
 
@@ -224,10 +225,7 @@ pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUi
 pub fn composite_checks_for_simple(base: u8, node: &SimpleNode) -> bool {
     // Get the sequence for this. As a reminder, it looks like:
     // (k B^n + c) / d, where d = B-1
-    let sequence = match node.sequence {
-        Some(s) => s,
-        None => return false, // nothing we can check :(
-    };
+    let sequence = BigSequence::from_family(&node.family, base);
 
     check_sum_diff_of_cubes(base, &sequence)
         || check_diff_of_squares(base, &sequence)
@@ -243,36 +241,32 @@ macro_rules! bail_if_none {
     };
 }
 
-fn check_sum_diff_of_cubes(base: u8, sequence: &Sequence) -> bool {
+fn check_sum_diff_of_cubes(base: u8, sequence: &BigSequence) -> bool {
     // We need B to be a cube, and also k and c.
     // What about d? We can mostly ignore it, but we do have to be careful
     // that neither of the factors is smaller than d, otherwise we could
     // unwittingly be factoring into p * 1.
     let _cbrt_base = bail_if_none!(base.cbrt_exact());
-    let cbrt_k: i64 = bail_if_none!(sequence.k.cbrt_exact())
-        .try_into()
-        .expect("cube root should be small enough to fit in i64");
+    let cbrt_k: BigInt = bail_if_none!(sequence.k.cbrt_exact()).into();
     let cbrt_c = bail_if_none!(sequence.c.cbrt_exact());
 
     // It's a possibility! Now check the factor size.
     // a^3 + b^3 = (a + b)(a^2 - ab + b^2)
-    let d = sequence.d.try_into().expect("d should be small");
-    let x = cbrt_k + cbrt_c;
-    let y = cbrt_k * cbrt_k - cbrt_k * cbrt_c + cbrt_c * cbrt_c;
-    x.abs() > d && y.abs() > d
+    let d: BigUint = sequence.d.into();
+    let x = &cbrt_k + &cbrt_c;
+    let y = &cbrt_k * &cbrt_k - &cbrt_k * &cbrt_c + &cbrt_c * &cbrt_c;
+    x.magnitude() > &d && y.magnitude() > &d
 
     // TODO: if that check fails, we should retry with higher n! we might
     // still be composite, and we should check another time
     // TODO: also log (to tree) what the specific reason is!
 }
 
-fn check_diff_of_squares(base: u8, sequence: &Sequence) -> bool {
+fn check_diff_of_squares(base: u8, sequence: &BigSequence) -> bool {
     // we need the base, k and -c to be squares
     let _sqrt_base = bail_if_none!(base.sqrt_exact());
-    let _sqrt_k: i64 = bail_if_none!(sequence.k.sqrt_exact())
-        .try_into()
-        .expect("square root should be small enough to fit in i64");
-    let _sqrt_neg_c = bail_if_none!((-sequence.c).sqrt_exact());
+    let _sqrt_k: BigInt = bail_if_none!(sequence.k.sqrt_exact()).into();
+    let _sqrt_neg_c = bail_if_none!((-&sequence.c).sqrt_exact());
 
     // Check the factor size
     // TODO: for 1* in base 9, this won't work! you need to actually implement
@@ -282,28 +276,24 @@ fn check_diff_of_squares(base: u8, sequence: &Sequence) -> bool {
 }
 
 // TODO: i feel like this could be simplified
-fn check_diff_of_squares_or_divisor(base: u8, sequence: &Sequence) -> bool {
+fn check_diff_of_squares_or_divisor(base: u8, sequence: &BigSequence) -> bool {
     // maybe kB^n+c factors in alternating ways
     // - difference of squares
     // - common factor
     //
     // this can happen when k is a square or when kB is a square. -c has to
     // be a square either way though.
-    bail_if_none!((-sequence.c).sqrt_exact());
+    bail_if_none!((-&sequence.c).sqrt_exact());
 
     let base: u64 = base.into();
-    let kb = sequence.k.checked_mul(base).unwrap();
+    let k: BigInt = sequence.k.clone().into();
+    let kb = &k * base;
     if sequence.k.is_square() {
         // Factors as a difference of squares for even n. Now we just
         // need to see if the odd n terms have a shared factor.
         // It suffices to check n=1 and n=3.
-        let a = kb.checked_add_signed(sequence.c).unwrap() / sequence.d;
-        let b = kb
-            .checked_mul(base * base)
-            .unwrap()
-            .checked_add_signed(sequence.c)
-            .unwrap()
-            / sequence.d;
+        let a = (&kb + &sequence.c) / sequence.d;
+        let b = (&kb * base * base + &sequence.c) / sequence.d;
         if nontrivial_gcd(&a, &b).is_some() {
             println!("{sequence} is composite ({a} and {b})");
             return true;
@@ -313,13 +303,8 @@ fn check_diff_of_squares_or_divisor(base: u8, sequence: &Sequence) -> bool {
     if kb.is_square() {
         // Factors as a difference of squares for odd n. Check
         // the even terms for common factors.
-        let a = sequence.k.checked_add_signed(sequence.c).unwrap() / sequence.d;
-        let b = kb
-            .checked_mul(base)
-            .unwrap()
-            .checked_add_signed(sequence.c)
-            .unwrap()
-            / sequence.d;
+        let a = (k + &sequence.c) / sequence.d;
+        let b = (kb * base + &sequence.c) / sequence.d;
         if nontrivial_gcd(&a, &b).is_some() {
             println!("{sequence} is composite ({a} and {b})");
             return true;

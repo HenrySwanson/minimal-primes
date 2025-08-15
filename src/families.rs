@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use num_bigint::{BigInt, BigUint};
 use num_integer::Integer;
+use num_traits::Zero;
 
 use crate::digits::{Digit, DigitSeq};
 
@@ -29,6 +30,13 @@ pub struct Sequence {
     pub k: u64,
     pub c: i64,
     pub d: u64,
+}
+
+// TODO: merge with sequence somehow?
+pub struct BigSequence {
+    pub k: BigUint,
+    pub c: BigInt,
+    pub d: u8,
 }
 
 impl Family {
@@ -389,6 +397,41 @@ impl Sequence {
     }
 }
 
+impl BigSequence {
+    pub fn new(k: BigUint, c: BigInt, d: u8) -> Self {
+        assert_ne!(k, BigUint::ZERO);
+        assert_ne!(c, BigInt::ZERO);
+        assert_ne!(d, 0);
+        // k and c have to be opposites mod d
+        assert!(((BigInt::from(k.clone()) + &c) % d).is_zero());
+
+        // Do some quick reduction to put it in lowest terms
+        let gcd = BigUint::from(d).gcd(&k).gcd(c.magnitude());
+        let gcd: u8 = gcd.try_into().expect("gcd is <= d");
+
+        Self {
+            k: k / gcd,
+            // casting is okay because 0 < gcd <= |c|
+            c: c / gcd,
+            d: d / gcd,
+        }
+    }
+
+    pub fn from_family(simple: &SimpleFamily, base: u8) -> Self {
+        // Compute the sequence for this family: xy*z
+        let x = simple.before.value(base);
+        let y = simple.center.0;
+        let z = simple.after.value(base);
+
+        let b_z = BigUint::from(base).pow(simple.after.0.len() as u32);
+        let d = base - 1;
+        let k = (x * d + y) * &b_z;
+        let c = BigInt::from(d * z) - BigInt::from(y * b_z);
+
+        BigSequence::new(k, c, d)
+    }
+}
+
 impl std::fmt::Display for Family {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         debug_assert_eq!(self.digitseqs.len(), self.cores.len() + 1);
@@ -415,6 +458,12 @@ impl std::fmt::Display for SimpleFamily {
 }
 
 impl std::fmt::Display for Sequence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}*b^n+{})/{}", self.k, self.c, self.d)
+    }
+}
+
+impl std::fmt::Display for BigSequence {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({}*b^n+{})/{}", self.k, self.c, self.d)
     }
