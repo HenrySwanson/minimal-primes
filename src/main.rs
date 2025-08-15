@@ -551,8 +551,6 @@ mod tests {
                 "6*E9", // 4663 digits
                 "1F*",  // 7093 digits
                 "49*",  // 111334 digits!
-                // k=256*16+9=4105, c=16*0-9=-9
-                // alternating ? and even
                 "F19*", // unsolved!
             ],
         })
@@ -581,8 +579,20 @@ mod tests {
         })
     );
     declare_test_for_base!(test_base_20, 20, Status::Complete);
-    // one of the branches doesn't fit into a u64 :(
-    declare_test_for_base!(test_base_21, 21, Status::Other);
+    declare_test_for_base!(
+        test_base_21,
+        21,
+        Status::IncompleteSimple(IncompleteBranches {
+            eventual_primes: vec![
+                "A9F*K",   // 605 digits
+                "A*6FK",   // 1634 digits
+                "40*9G",   // 47336 digits
+                "CF*0K",   // 479150 digits
+                "G0*FK",   // unsolved!
+                "A*6FFFK"  // killed by A*6FK
+            ],
+        })
+    );
     declare_test_for_base!(
         test_base_22,
         22,
@@ -633,13 +643,7 @@ mod tests {
             ]
         })
     );
-    declare_test_for_base!(
-        test_base_24,
-        24,
-        Status::IncompleteSimple(IncompleteBranches {
-            eventual_primes: vec![]
-        })
-    );
+    declare_test_for_base!(test_base_24, 24, Status::Complete);
     // It works but takes a long time
     declare_test_for_base!(test_base_25, 25, Status::Other);
     declare_test_for_base!(
@@ -677,12 +681,12 @@ mod tests {
         28,
         Status::IncompleteSimple(IncompleteBranches {
             eventual_primes: vec![
-                "4O*09",  // 617 digits
-                "LK*F",   // 927 digits
-                "A*6F",   // 1425 digits
-                "QO*69",  // 4242 digits
-                "O4O*9",  // 94538 digits
-                "OA*F",   // unsolved!
+                "4O*09", // 617 digits
+                "LK*F",  // 927 digits
+                "A*6F",  // 1425 digits
+                "QO*69", // 4242 digits
+                "O4O*9", // 94538 digits
+                "OA*F",  // unsolved!
             ]
         })
     );

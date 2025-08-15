@@ -46,7 +46,7 @@ def factor_simple_family(f, n, base):
         value = int(s, base=base)
         print(s, value, factor(value))
 
-def foo(s, base):
+def foo(s, base, n=10):
     f = parse_simple_family(s)
     print(to_sequence(f, base))
-    factor_simple_family(f, 10, base)
+    factor_simple_family(f, n, base)

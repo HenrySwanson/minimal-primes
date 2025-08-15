@@ -523,7 +523,7 @@ impl SearchContext {
             return true;
         }
         // start at stride 2; `find_guaranteed_factor` effectively handles stride 1
-        for stride in 2..=3 {
+        for stride in 2..=4 {
             if let Some(factors) = find_periodic_factor(self.base, family, stride) {
                 debug!(
                     "  {} is divisible by {}",
