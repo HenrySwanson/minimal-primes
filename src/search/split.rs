@@ -15,7 +15,11 @@ impl SearchContext {
     /// This is extended to multiple cores in a straightforward way.
     ///
     /// We check n from 1 to `max_repeats`.
-    pub fn split_on_limited_digit(&mut self, family: &Family, max_repeats: usize) -> Option<Vec<Family>> {
+    pub fn split_on_limited_digit(
+        &mut self,
+        family: &Family,
+        max_repeats: usize,
+    ) -> Option<Vec<Family>> {
         for (i, core) in family.cores.iter().enumerate() {
             for d in core.iter() {
                 for n in 2..=max_repeats {
@@ -72,48 +76,66 @@ impl SearchContext {
         // This tells me that we are required to have at least one of that digit,
         // or else we'll forever be even.
         // This function detects that situation and splits the family accordingly.
-        // TODO: generalize to multiple cores!
-        // TODO: generalize to multiple digits?
         // TODO: does this belong in composite? not quite i think
-
-        if family.cores.len() != 1 {
-            return None;
-        }
-        let only_core = &family.cores[0];
-
-        if only_core.len() <= 1 {
-            return None;
-        }
 
         let contracted = family.contract().value(self.base);
 
-        let try_digit = |d: Digit| -> Option<()> {
-            let mut g = contracted.clone();
-            // We want to try "no digits" and "all digits except d"
-            for d2 in only_core.iter() {
-                if d2 == d {
+        'cores: for (i, core) in family.cores.iter().enumerate() {
+            // Try substituting everything from all other cores (saves some repeat
+            // work in the try_digit closure.)
+            let mut gcd_other_cores = contracted.clone();
+            for (j, other_core) in family.cores.iter().enumerate() {
+                if i == j {
                     continue;
                 }
 
-                g = nontrivial_gcd(&g, &family.substitute(0, d2).value(self.base))?;
+                for d in other_core.iter() {
+                    gcd_other_cores = match nontrivial_gcd(
+                        &gcd_other_cores,
+                        &family.substitute(j, d).value(self.base),
+                    ) {
+                        Some(g) => g,
+                        None => {
+                            // there is no hope of finding a necessary digit in core i,
+                            // move to the next one
+                            continue 'cores;
+                        }
+                    };
+                }
             }
 
-            Some(())
-        };
+            // Now try each digit in `core` individually and see if any of them work
+            'digits: for d in core.iter() {
+                let mut g = gcd_other_cores.clone();
+                // We want to check substitution by all digits except d
+                for d2 in core.iter() {
+                    if d2 == d {
+                        continue;
+                    }
 
-        for d in family.cores[0].iter() {
-            if let Some(()) = try_digit(d) {
-                // Got a match! Return xLyLz
+                    g = match nontrivial_gcd(&g, &family.substitute(i, d2).value(self.base)) {
+                        Some(g) => g,
+                        None => {
+                            // nope, give up on this digit (but not this core!)
+                            continue 'digits;
+                        }
+                    }
+                }
+
+                // If we got here, then g is a nontrivial common divisor of "substituting anything
+                // except (i, d)", and so we must have at least one substitution of (i, d).
+                // Loosely speaking, we now return `x L y (L-y) z`
                 let mut new = family.clone();
-                let d_less_core = family.cores[0].clone().without(d);
+                let d_less_core = core.clone().without(d);
 
-                new.digitseqs.insert(1, d.into());
-                new.cores.insert(1, d_less_core);
+                new.digitseqs.insert(i + 1, d.into());
+                new.cores.insert(i + 1, d_less_core);
                 debug!("  {family} must have a {d}, transforming into {new}");
                 debug_to_tree!(self.tracer, "Must have a {}, transforming to {}", d, new);
                 return Some(new);
             }
         }
+
         None
     }
 

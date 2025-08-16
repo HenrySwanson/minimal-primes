@@ -325,7 +325,7 @@ impl SearchContext {
             }
         }
 
-        if family.weight() >= 4 {
+        if family.weight() >= 5 {
             if let Some(child) = self.split_on_necessary_digit(&family) {
                 self.stats.branch_stats.split_on_necessary_digit += 1;
                 return vec![NodeType::Arbitrary(child)];
