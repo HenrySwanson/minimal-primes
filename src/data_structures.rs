@@ -11,7 +11,10 @@ pub struct WeightedVec<T> {
 }
 
 pub struct CandidateSequences {
-    inner: Vec<DigitSeq>,
+    // items in here never change their index. removing an
+    // item is just replacing it with None. indices also can't
+    // be re-used.
+    inner: Vec<Option<DigitSeq>>,
 }
 
 #[derive(Debug, Clone)]
@@ -101,16 +104,16 @@ impl CandidateSequences {
     }
 
     pub fn len(&self) -> usize {
-        self.inner.len()
+        self.iter().count()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &DigitSeq> {
-        self.inner.iter()
+        self.inner.iter().flatten()
     }
 
     pub fn insert(&mut self, seq: DigitSeq) {
         // Does this contain an existing candidate? Reject it.
-        for other in self.inner.iter_mut() {
+        for other in self.iter() {
             // we shouldn't be inserting duplicates ever
             assert_ne!(&seq, other);
             if is_proper_substring(other, &seq) {
@@ -118,16 +121,25 @@ impl CandidateSequences {
             }
         }
 
-        // Remove any candidates that contain this (if any)
-        self.inner.retain(|other| !is_proper_substring(&seq, other));
+        // Okay, we're definitely going to insert this. Remove any candidates that
+        // contain this.
+        // We can't merge this loop with the one above! We need to make a complete
+        // decision first before we start modifying things.
+        for slot in self.inner.iter_mut() {
+            if let Some(other) = slot {
+                if is_proper_substring(&seq, other) {
+                    *slot = None;
+                }
+            }
+        }
 
         // Insert
-        self.inner.push(seq);
+        self.inner.push(Some(seq));
     }
 
     // TODO: ugly as sin but i can deal with it later after giving this thing some stable indices
     pub fn clone_and_sort_and_iter(&self) -> impl Iterator<Item = &DigitSeq> {
-        let mut primes: Vec<_> = self.inner.iter().collect();
+        let mut primes: Vec<_> = self.iter().collect();
         primes.sort();
         primes.into_iter()
     }
