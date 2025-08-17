@@ -161,6 +161,49 @@ impl Family {
             })
             .collect()
     }
+
+    pub fn could_contain(&self, needle: &DigitSeq) -> bool {
+        let mut needle_iter = needle.0.iter().copied().peekable();
+
+        for (seq, core) in self.digitseqs.iter().zip(&self.cores) {
+            // Consume the known digits first...
+            for d in &seq.0 {
+                match needle_iter.peek() {
+                    Some(d2) if d == d2 => {
+                        needle_iter.next();
+                    }
+                    Some(_) => {}
+                    None => return true,
+                }
+            }
+
+            // ...then use the core to consume as much of the needle
+            // as possible.
+            loop {
+                match needle_iter.peek() {
+                    Some(d2) if core.digits.contains(d2) => {
+                        needle_iter.next();
+                    }
+                    Some(_) => break,
+                    None => return true,
+                }
+            }
+        }
+
+        // Get the last core too
+        for d in &self.digitseqs.last().unwrap().0 {
+            match needle_iter.peek() {
+                Some(d2) if d == d2 => {
+                    needle_iter.next();
+                }
+                Some(_) => {}
+                None => return true,
+            }
+        }
+
+        // could have exhausted it on the very last round, still gotta check
+        needle_iter.peek().is_none()
+    }
 }
 
 impl Core {

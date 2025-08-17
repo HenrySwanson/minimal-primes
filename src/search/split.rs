@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use log::debug;
 
+use crate::data_structures::CandidateIndices;
 use crate::debug_to_tree;
 use crate::digits::{Digit, DigitSeq};
 use crate::families::Family;
@@ -19,13 +20,15 @@ impl SearchContext {
         &mut self,
         family: &Family,
         max_repeats: usize,
+        possible_contained_primes: &CandidateIndices,
     ) -> Option<Vec<Family>> {
         for (i, core) in family.cores.iter().enumerate() {
             for d in core.iter() {
                 for n in 2..=max_repeats {
                     // Check whether x y^n z contains a prime subword
                     let seq = family.substitute_multiple(i, std::iter::repeat_n(d, n));
-                    if let Some(p) = self.test_for_contained_prime(&seq) {
+                    if let Some(p) = self.test_for_contained_prime(&seq, possible_contained_primes)
+                    {
                         assert_ne!(&seq, p);
                         debug!("  {seq} contains a prime {p}");
 
@@ -141,7 +144,11 @@ impl SearchContext {
 
     /// Given a family `xLz`, with a, b in L, if `xabz` or `xbaz` is forbidden. If so,
     /// we can reduce the family a bit.
-    pub fn split_on_incompatible_digits(&mut self, family: &Family) -> Option<Vec<Family>> {
+    pub fn split_on_incompatible_digits(
+        &mut self,
+        family: &Family,
+        possible_contained_primes: &CandidateIndices,
+    ) -> Option<Vec<Family>> {
         for (i, core) in family.cores.iter().enumerate() {
             for (a, b) in core.iter().tuple_combinations() {
                 if a == b {
@@ -154,8 +161,10 @@ impl SearchContext {
 
                 // TODO: no need to clone this!
                 match (
-                    self.test_for_contained_prime(&seq_ab).cloned(),
-                    self.test_for_contained_prime(&seq_ba).cloned(),
+                    self.test_for_contained_prime(&seq_ab, possible_contained_primes)
+                        .cloned(),
+                    self.test_for_contained_prime(&seq_ba, possible_contained_primes)
+                        .cloned(),
                 ) {
                     (Some(p), Some(q)) => {
                         // We can't have both a and b in this core.
@@ -228,6 +237,7 @@ impl SearchContext {
     pub fn split_on_incompatible_digits_different_cores(
         &mut self,
         family: &Family,
+        possible_contained_primes: &CandidateIndices,
     ) -> Option<Vec<Family>> {
         // iterate over unordered pairs of cores
         for (j, core_j) in family.cores.iter().enumerate() {
@@ -242,7 +252,10 @@ impl SearchContext {
                         // Check whether we can substitute in a and b
                         let seq = family.substitute_two(i, a, j, b);
 
-                        if let Some(p) = self.test_for_contained_prime(&seq).cloned() {
+                        if let Some(p) = self
+                            .test_for_contained_prime(&seq, possible_contained_primes)
+                            .cloned()
+                        {
                             assert_ne!(seq, p);
 
                             debug!("  {seq} contains a prime {p}");

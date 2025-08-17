@@ -18,6 +18,15 @@ pub struct CandidateSequences {
 }
 
 #[derive(Debug, Clone)]
+pub struct CandidateIndices {
+    /// Indices of candidates we're intentionally including
+    idxs: Vec<usize>,
+    /// Since the set of candidates might grow in the meantime, we
+    /// need to track the start of where new candidates are.
+    start_unknown: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct AppendTree<T> {
     nodes: Vec<AppendTreeNode<T>>,
 }
@@ -143,11 +152,46 @@ impl CandidateSequences {
         primes.sort();
         primes.into_iter()
     }
+
+    pub fn new_indices(&self) -> CandidateIndices {
+        CandidateIndices {
+            idxs: vec![],
+            start_unknown: self.inner.len(),
+        }
+    }
+
+    pub fn get_many<'a, 'b>(
+        &'a self,
+        indices: &'b CandidateIndices,
+    ) -> impl Iterator<Item = (usize, &'a DigitSeq)> + 'b
+    where
+        'a: 'b,
+    {
+        indices
+            .idxs
+            .iter()
+            .copied()
+            .chain(indices.start_unknown..self.inner.len())
+            .flat_map(|idx| self.inner[idx].as_ref().map(|val| (idx, val)))
+    }
 }
 
 impl Default for CandidateSequences {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl CandidateIndices {
+    pub fn empty() -> Self {
+        Self {
+            idxs: vec![],
+            start_unknown: 0,
+        }
+    }
+
+    pub fn add(&mut self, idx: usize) {
+        self.idxs.push(idx);
     }
 }
 

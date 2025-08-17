@@ -14,7 +14,7 @@ use num_prime::buffer::{NaiveBuffer, PrimeBufferExt};
 use self::composite::{find_even_odd_factor, find_periodic_factor, shares_factor_with_base};
 use self::explore::{Frontier, Weight};
 use crate::data_structures::{
-    is_proper_substring, AppendTree, AppendTreeNodeID, CandidateSequences,
+    is_proper_substring, AppendTree, AppendTreeNodeID, CandidateIndices, CandidateSequences,
 };
 use crate::digits::DigitSeq;
 use crate::families::{Core, Family, SimpleFamily};
@@ -51,6 +51,7 @@ impl SearchTree {
         let ctx = SearchContext::new(base, tree_log);
         let initial_node = SearchNode {
             family: NodeType::Arbitrary(Family::any(base)),
+            possible_contained_primes: CandidateIndices::empty(),
             id: ctx.tracer.root(),
         };
         let frontier = Frontier::start(initial_node);
@@ -165,6 +166,8 @@ pub struct SearchContext {
 #[derive(Debug, Clone)]
 pub struct SearchNode {
     family: NodeType,
+    // TODO: put this in simplenode too
+    possible_contained_primes: CandidateIndices,
     id: AppendTreeNodeID,
 }
 
@@ -212,14 +215,15 @@ impl SearchContext {
 
         // Say our family is xL*z.
         // We want to explore all possible children with weight one more than this one.
+        let mut pcp = node.possible_contained_primes;
         let children = match node.family {
             NodeType::Arbitrary(family) => {
                 debug!(" Exploring {family}");
-                self.explore_family(family)
+                self.explore_family(family, &mut pcp)
             }
             NodeType::Simple(node) => {
                 debug!(" Exploring simple {}", node.family);
-                self.explore_simple_family(node)
+                self.explore_simple_family(node, &pcp)
             }
         };
         self.stats.num_branches_explored += 1;
@@ -233,19 +237,34 @@ impl SearchContext {
                     .expect("node id must be in tree");
                 SearchNode {
                     family,
+                    possible_contained_primes: pcp.clone(),
                     id: child_id,
                 }
             })
             .collect()
     }
 
-    fn explore_family(&mut self, family: Family) -> Vec<NodeType> {
+    fn explore_family(
+        &mut self,
+        family: Family,
+        possible_contained_primes: &mut CandidateIndices,
+    ) -> Vec<NodeType> {
         // We have to be careful about not generating leading zeros. There's
         // a lot of different ways we could do that, but one possible way is
         // just to rig things so that on the first round, we split left (and
         // check for primes).
         // TODO: can we do this elsewhere? maybe some post-processing step in
         // the explore_node? this feels iffy
+
+        // Now is a good time for us to narrow down the potential primes this
+        // family could contain.
+        let mut new_contained_primes = self.primes.new_indices();
+        for (i, prime) in self.primes.get_many(possible_contained_primes) {
+            if family.could_contain(prime) {
+                new_contained_primes.add(i);
+            }
+        }
+        *possible_contained_primes = new_contained_primes;
 
         // Test this for primality
         // TODO: normally we've tested this already, in reduce_cores,
@@ -254,7 +273,10 @@ impl SearchContext {
         let seq = family.contract();
         // TODO: this borrows self, preventing us from using self.tracer later.
         // can that be improved?
-        if let Some(p) = self.test_for_contained_prime(&seq).cloned() {
+        if let Some(p) = self
+            .test_for_contained_prime(&seq, possible_contained_primes)
+            .cloned()
+        {
             assert_ne!(seq, p);
             debug!("  Discarding {family}, contains prime {p}");
             debug_to_tree!(self.tracer, "Discarding, contains prime {}", p);
@@ -273,7 +295,7 @@ impl SearchContext {
         }
 
         // Then, we try to reduce the cores.
-        let mut family = self.reduce_cores(family);
+        let mut family = self.reduce_cores(family, possible_contained_primes);
         family.simplify();
         if family.cores.is_empty() {
             debug!("  {family} was reduced to trivial string");
@@ -308,21 +330,27 @@ impl SearchContext {
 
         // Let's see if we can split it in an interesting way
         if family.weight() >= 2 {
-            if let Some(children) = self.split_on_limited_digit(&family, 3) {
+            if let Some(children) =
+                self.split_on_limited_digit(&family, 3, possible_contained_primes)
+            {
                 self.stats.branch_stats.split_on_limited_digit += 1;
                 return children.into_iter().map(NodeType::Arbitrary).collect();
             }
         }
 
         if family.weight() >= 4 {
-            if let Some(children) = self.split_on_incompatible_digits_different_cores(&family) {
+            if let Some(children) = self
+                .split_on_incompatible_digits_different_cores(&family, possible_contained_primes)
+            {
                 self.stats
                     .branch_stats
                     .split_on_incompatible_different_cores += 1;
                 return children.into_iter().map(NodeType::Arbitrary).collect();
             }
 
-            if let Some(children) = self.split_on_incompatible_digits(&family) {
+            if let Some(children) =
+                self.split_on_incompatible_digits(&family, possible_contained_primes)
+            {
                 self.stats.branch_stats.split_on_incompatible_same_core += 1;
                 return children.into_iter().map(NodeType::Arbitrary).collect();
             }
@@ -391,7 +419,11 @@ impl SearchContext {
         children.into_iter().map(NodeType::Arbitrary).collect()
     }
 
-    fn explore_simple_family(&mut self, mut node: SimpleNode) -> Vec<NodeType> {
+    fn explore_simple_family(
+        &mut self,
+        mut node: SimpleNode,
+        possible_contained_primes: &CandidateIndices,
+    ) -> Vec<NodeType> {
         // There's a lot less we can do here! We can't split anything,
         // we can't reduce cores, etc, etc.
 
@@ -411,8 +443,14 @@ impl SearchContext {
         // Other that that, all we can do is add another digit and see if it
         // becomes prime or not. Or contains another prime.
 
+        // We can still do the fancy primes tracking, but we don't need to update
+        // anything, because all primes are either:
+        // - not going to be contained in this family, no matter how much we
+        //   extend it (already removed)
+        // - will eventually be contained in this family (we check that already
+        //   as part of checking for contained primes)
         let start = Instant::now();
-        for prime in self.primes.iter() {
+        for (_, prime) in self.primes.get_many(possible_contained_primes) {
             self.stats.num_simple_substring_checks += 1;
             if node
                 .family
@@ -445,7 +483,11 @@ impl SearchContext {
         vec![NodeType::Simple(node)]
     }
 
-    fn reduce_cores(&mut self, mut family: Family) -> Family {
+    fn reduce_cores(
+        &mut self,
+        mut family: Family,
+        possible_contained_primes: &CandidateIndices,
+    ) -> Family {
         let old_family = family.clone();
         for (i, core) in family.cores.iter_mut().enumerate() {
             // Substitute elements from the core into the string to see if any
@@ -456,7 +498,10 @@ impl SearchContext {
             for digit in core.iter() {
                 let seq = old_family.substitute(i, digit);
 
-                if let Some(p) = self.test_for_contained_prime(&seq).cloned() {
+                if let Some(p) = self
+                    .test_for_contained_prime(&seq, possible_contained_primes)
+                    .cloned()
+                {
                     assert_ne!(seq, p);
                     debug!("  Discarding {seq}, contains prime {p}");
                     debug_to_tree!(self.tracer, "Discarding {}, contains prime {}", seq, p);
@@ -482,18 +527,26 @@ impl SearchContext {
         family
     }
 
-    fn test_for_contained_prime(&mut self, seq: &DigitSeq) -> Option<&DigitSeq> {
+    fn test_for_contained_prime(
+        &mut self,
+        seq: &DigitSeq,
+        possible_contained_primes: &CandidateIndices,
+    ) -> Option<&DigitSeq> {
         let start = Instant::now();
         // We don't need to search for *all* possible primes, just the minimal
         // ones. And if we've been doing our job right, we should have a complete
         // list of them (up to a length limit).
-        let result = self.primes.iter().find(|subseq| {
-            self.stats.num_substring_checks += 1;
-            is_proper_substring(subseq, seq)
-        });
+        let result = self
+            .primes
+            .get_many(possible_contained_primes)
+            .find(|(_, subseq)| {
+                self.stats.num_substring_checks += 1;
+                is_proper_substring(subseq, seq)
+            });
 
         self.stats.duration_substring_checks += start.elapsed();
-        result
+        let (_, seq) = result?;
+        Some(seq)
     }
 
     fn test_for_prime(&mut self, value: &BigUint) -> bool {
