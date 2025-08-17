@@ -111,7 +111,9 @@ impl CandidateSequences {
     pub fn insert(&mut self, seq: DigitSeq) {
         // Does this contain an existing candidate? Reject it.
         for other in self.inner.iter_mut() {
-            if is_proper_substring(other, &seq) || other == &seq {
+            // we shouldn't be inserting duplicates ever
+            assert_ne!(&seq, other);
+            if is_proper_substring(other, &seq) {
                 return;
             }
         }
@@ -123,8 +125,11 @@ impl CandidateSequences {
         self.inner.push(seq);
     }
 
-    pub fn sort(&mut self) {
-        self.inner.sort();
+    // TODO: ugly as sin but i can deal with it later after giving this thing some stable indices
+    pub fn clone_and_sort_and_iter(&self) -> impl Iterator<Item = &DigitSeq> {
+        let mut primes: Vec<_> = self.inner.iter().collect();
+        primes.sort();
+        primes.into_iter()
     }
 }
 

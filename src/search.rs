@@ -89,9 +89,7 @@ impl SearchTree {
         ControlFlow::Continue(())
     }
 
-    pub fn into_results(mut self) -> SearchResults {
-        self.ctx.primes.sort();
-
+    pub fn into_results(self) -> SearchResults {
         // print the tree to stdout if we're tracing
         match self.ctx.tracer {
             Tracer::Real(t, _) => t.pretty_print_to_stdout(),

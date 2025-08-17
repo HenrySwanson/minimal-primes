@@ -144,7 +144,7 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) -> SearchResults {
     println!(
         "Final set of primes ({}): {}",
         primes.len(),
-        primes.iter().format(", ")
+        primes.clone_and_sort_and_iter().format(", ")
     );
     println!("{} branches unsolved", unsolved.len());
     for x in &unsolved {
@@ -226,7 +226,7 @@ fn first_stage(
         println!("{f}");
     }
     println!("---- MINIMAL PRIMES ----");
-    println!("{}", results.primes.iter().format(", "));
+    println!("{}", results.primes.clone_and_sort_and_iter().format(", "));
     println!("------------");
     println!(
         "{} primes found, {} branches unresolved",
@@ -461,7 +461,6 @@ fn second_stage(
         }
     }
 
-    primes.sort();
     (primes, unsolved_branches)
 }
 
@@ -805,7 +804,10 @@ mod tests {
 
     fn compare_primes(base: u8, primes: &CandidateSequences, exceptions: Vec<Regex>) {
         let mut truth_iter = iter_ground_truth(base).peekable();
-        let mut iter = primes.iter().map(|seq| seq.to_string()).peekable();
+        let mut iter = primes
+            .clone_and_sort_and_iter()
+            .map(|seq| seq.to_string())
+            .peekable();
 
         let mut fail = false;
         loop {
