@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use itertools::Itertools;
 use log::{debug, trace};
 use num_bigint::BigUint;
-use num_prime::nt_funcs::is_prime;
+use num_prime::buffer::{NaiveBuffer, PrimeBufferExt};
 
 use self::composite::{find_even_odd_factor, find_periodic_factor, shares_factor_with_base};
 use self::explore::{Frontier, Weight};
@@ -153,6 +153,10 @@ pub struct SearchContext {
     /// depending on the order we discovered these, they may not be minimal!
     pub primes: CandidateSequences,
 
+    /// For primality testing. Re-using this avoids unnecessary re-computation
+    /// of primes.
+    /// TODO: re-use in sieving too!
+    pub prime_buffer: NaiveBuffer,
     /// For potentially getting insight into what's going on
     pub stats: Stats,
     /// For tracking our paths through the search space in a more
@@ -194,6 +198,7 @@ impl SearchContext {
             base,
             iter: 0,
             primes: CandidateSequences::new(),
+            prime_buffer: NaiveBuffer::new(),
             stats: Stats::default(),
             tracer: if tree_log {
                 Tracer::new()
@@ -495,7 +500,7 @@ impl SearchContext {
 
     fn test_for_prime(&mut self, value: &BigUint) -> bool {
         let start = Instant::now();
-        let result = is_prime(value, None).probably();
+        let result = self.prime_buffer.is_prime(value, None).probably();
         self.stats.duration_primality_checks += start.elapsed();
         self.stats.num_primality_checks += 1;
         result
