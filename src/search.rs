@@ -181,6 +181,9 @@ enum NodeType {
 struct SimpleNode {
     family: SimpleFamily,
     composite_tested: bool,
+    /// When min_repeats equals this number, we can delete this
+    /// family, because it contains this prime.
+    dies_at: Option<(usize, DigitSeq)>,
 }
 
 enum Never {}
@@ -223,7 +226,7 @@ impl SearchContext {
             }
             NodeType::Simple(node) => {
                 debug!(" Exploring simple {}", node.family);
-                self.explore_simple_family(node, &pcp)
+                self.explore_simple_family(node, &mut pcp)
             }
         };
         self.stats.num_branches_explored += 1;
@@ -322,6 +325,7 @@ impl SearchContext {
                 return vec![NodeType::Simple(SimpleNode {
                     family,
                     composite_tested: false,
+                    dies_at: None,
                 })];
             }
             // can't convert, put it back to normal
@@ -422,7 +426,7 @@ impl SearchContext {
     fn explore_simple_family(
         &mut self,
         mut node: SimpleNode,
-        possible_contained_primes: &CandidateIndices,
+        possible_contained_primes: &mut CandidateIndices,
     ) -> Vec<NodeType> {
         // There's a lot less we can do here! We can't split anything,
         // we can't reduce cores, etc, etc.
@@ -443,28 +447,41 @@ impl SearchContext {
         // Other that that, all we can do is add another digit and see if it
         // becomes prime or not. Or contains another prime.
 
-        // We can still do the fancy primes tracking, but we don't need to update
-        // anything, because all primes are either:
-        // - not going to be contained in this family, no matter how much we
-        //   extend it (already removed)
-        // - will eventually be contained in this family (we check that already
-        //   as part of checking for contained primes)
-        let start = Instant::now();
-        for (_, prime) in self.primes.get_many(possible_contained_primes) {
-            self.stats.num_simple_substring_checks += 1;
-            if node
-                .family
-                .will_contain_at(prime)
-                .is_some_and(|n| n <= node.family.min_repeats)
-            {
+        // On a previous loop, we may have established when this family contains
+        // a prime. Check it.
+        if let Some((dies_at, prime)) = &node.dies_at {
+            if node.family.min_repeats >= *dies_at {
                 debug!("  Discarding {}, contains prime {}", node.family, prime);
                 debug_to_tree!(self.tracer, "Discarding, contains prime {}", prime);
-                self.stats.duration_simple_substring_checks += start.elapsed();
                 self.stats.branch_stats.contains_prime += 1;
                 return vec![];
             }
         }
+
+        // Now check any new primes.
+        let start = Instant::now();
+        for (_, prime) in self.primes.get_many(possible_contained_primes) {
+            self.stats.num_simple_substring_checks += 1;
+            if let Some(n) = node.family.will_contain_at(prime) {
+                if n <= node.family.min_repeats {
+                    debug!("  Discarding {}, contains prime {}", node.family, prime);
+                    debug_to_tree!(self.tracer, "Discarding, contains prime {}", prime);
+                    self.stats.duration_simple_substring_checks += start.elapsed();
+                    self.stats.branch_stats.contains_prime += 1;
+                    return vec![];
+                }
+
+                // otherwise, we should incorporate this into dies_at
+                match node.dies_at {
+                    // its better to have smaller n; skip this if so
+                    Some((old_n, _)) if old_n < n => {}
+                    // otherwise, update
+                    Some(_) | None => node.dies_at = Some((n, prime.clone())),
+                }
+            }
+        }
         self.stats.duration_simple_substring_checks += start.elapsed();
+        *possible_contained_primes = self.primes.new_indices(); // resets our collection
 
         // Test if it is a prime
         let value = node.family.value(self.base);
