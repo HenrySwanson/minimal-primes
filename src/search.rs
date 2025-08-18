@@ -13,11 +13,10 @@ use num_prime::buffer::{NaiveBuffer, PrimeBufferExt};
 
 use self::composite::{find_even_odd_factor, find_periodic_factor, shares_factor_with_base};
 use self::explore::{Frontier, Weight};
-use crate::data_structures::{
-    is_proper_substring, AppendTree, AppendTreeNodeID, CandidateIndices, CandidateSequences,
-};
+use crate::data_structures::{AppendTreeNodeID, CandidateIndices, CandidateSequences};
 use crate::digits::DigitSeq;
 use crate::families::{Core, Family, SimpleFamily};
+use crate::logging::Tracer;
 use crate::search::composite::{
     composite_checks_for_simple, find_guaranteed_factor, find_two_factors,
 };
@@ -184,16 +183,6 @@ struct SimpleNode {
     /// When min_repeats equals this number, we can delete this
     /// family, because it contains this prime.
     dies_at: Option<(usize, DigitSeq)>,
-}
-
-enum Never {}
-
-enum Tracer {
-    // The tree and the current index we're looking at
-    Real(AppendTree<String>, AppendTreeNodeID),
-    // we need to get an id sometimes, but we can't make children or items.
-    // using an empty type forces this :)
-    Dummy(AppendTree<Never>),
 }
 
 impl SearchContext {
@@ -558,7 +547,7 @@ impl SearchContext {
             .get_many(possible_contained_primes)
             .find(|(_, subseq)| {
                 self.stats.num_substring_checks += 1;
-                is_proper_substring(subseq, seq)
+                seq.properly_contains(subseq)
             });
 
         self.stats.duration_substring_checks += start.elapsed();
@@ -630,54 +619,6 @@ impl SearchContext {
         }
 
         false
-    }
-}
-
-impl Tracer {
-    fn new() -> Self {
-        let tree = AppendTree::new();
-        let root = tree.root();
-        Self::Real(tree, root)
-    }
-
-    fn dummy() -> Self {
-        Self::Dummy(AppendTree::new())
-    }
-
-    fn root(&self) -> AppendTreeNodeID {
-        match self {
-            Tracer::Real(t, _) => t.root(),
-            Tracer::Dummy(t) => t.root(),
-        }
-    }
-
-    fn make_child(
-        &mut self,
-        node_id: AppendTreeNodeID,
-        tag: String,
-    ) -> Result<AppendTreeNodeID, String> {
-        match self {
-            Tracer::Real(t, _) => t.make_child(node_id, tag),
-            // we're never going to log anything, so just keep returning the root
-            // to satisfy the type system
-            Tracer::Dummy(t) => Ok(t.root()),
-        }
-    }
-
-    fn set_id(&mut self, node_id: AppendTreeNodeID) {
-        match self {
-            Tracer::Real(_, id) => *id = node_id,
-            Tracer::Dummy(_) => {}
-        }
-    }
-
-    fn log(&mut self, item: String) {
-        match self {
-            Tracer::Real(t, id) => {
-                t.append(*id, item).expect("logging to nonexistent id");
-            }
-            Tracer::Dummy(_) => {}
-        }
     }
 }
 

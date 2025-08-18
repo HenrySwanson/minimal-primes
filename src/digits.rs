@@ -33,6 +33,28 @@ impl DigitSeq {
         }
         value
     }
+
+    pub fn properly_contains(&self, needle: &DigitSeq) -> bool {
+        // Save some time when the needle is too large, and also, rule out identical
+        // strings.
+        if needle.0.len() >= self.0.len() {
+            return false;
+        }
+
+        let mut iter = self.0.iter().copied();
+        for d in needle.0.iter().copied() {
+            // Chomp iter until we find that digit
+            loop {
+                match iter.next() {
+                    Some(d2) if d == d2 => break,
+                    Some(_) => {}
+                    None => return false,
+                }
+            }
+        }
+        // If we got here, then hooray, this is a match!
+        true
+    }
 }
 
 impl Default for DigitSeq {

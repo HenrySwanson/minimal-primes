@@ -125,7 +125,7 @@ impl CandidateSequences {
         for other in self.iter() {
             // we shouldn't be inserting duplicates ever
             assert_ne!(&seq, other);
-            if is_proper_substring(other, &seq) {
+            if seq.properly_contains(other) {
                 return;
             }
         }
@@ -136,7 +136,7 @@ impl CandidateSequences {
         // decision first before we start modifying things.
         for slot in self.inner.iter_mut() {
             if let Some(other) = slot {
-                if is_proper_substring(&seq, other) {
+                if other.properly_contains(&seq) {
                     *slot = None;
                 }
             }
@@ -264,26 +264,4 @@ impl<T> AppendTreeNode<T> {
     pub fn new() -> Self {
         Self { contents: vec![] }
     }
-}
-
-pub fn is_proper_substring(needle: &DigitSeq, haystack: &DigitSeq) -> bool {
-    // Save some time when the needle is too large, and also, rule out identical
-    // strings.
-    if needle.0.len() >= haystack.0.len() {
-        return false;
-    }
-
-    let mut iter = haystack.0.iter().copied();
-    for d in needle.0.iter().copied() {
-        // Chomp iter until we find that digit
-        loop {
-            match iter.next() {
-                Some(d2) if d == d2 => break,
-                Some(_) => {}
-                None => return false,
-            }
-        }
-    }
-    // If we got here, then hooray, this is a match!
-    true
 }
