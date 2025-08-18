@@ -2,16 +2,16 @@ use std::ops::ControlFlow;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use clap::Parser;
+use itertools::Itertools;
+use log::{info, LevelFilter};
+use num_prime::nt_funcs::is_prime;
+
 use crate::data_structures::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
 use crate::families::{Family, Sequence, SimpleFamily};
 use crate::search::{SearchTree, Stats};
 use crate::sieve::SequenceSlice;
-
-use clap::Parser;
-use itertools::Itertools;
-use log::{info, LevelFilter};
-use num_prime::nt_funcs::is_prime;
 
 mod data_structures;
 mod digits;
@@ -472,11 +472,11 @@ fn do_sieve(cmd: &SieveArgs) {
 
 #[cfg(test)]
 mod tests {
+    use std::io;
+
     use regex::Regex;
 
     use super::*;
-
-    use std::io;
 
     struct IncompleteBranches {
         /// There are some branches that we know are composite, but the

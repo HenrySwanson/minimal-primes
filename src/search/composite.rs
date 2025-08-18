@@ -2,14 +2,11 @@
 //! letting us discard the whole branch.
 
 use itertools::Itertools;
-use num_bigint::BigInt;
-use num_bigint::BigUint;
+use num_bigint::{BigInt, BigUint};
 use num_prime::ExactRoots;
 
 use crate::digits::DigitSeq;
-use crate::families::BigSequence;
-use crate::families::Core;
-use crate::families::Family;
+use crate::families::{BigSequence, Core, Family};
 use crate::search::gcd::nontrivial_gcd;
 use crate::search::SimpleNode;
 
@@ -316,9 +313,8 @@ fn check_diff_of_squares_or_divisor(base: u8, sequence: &BigSequence) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::digits::Digit;
-
     use super::*;
+    use crate::digits::Digit;
 
     fn parse_family(input: &str, base: u8) -> Family {
         let base: u32 = base.into();
