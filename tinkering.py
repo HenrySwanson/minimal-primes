@@ -46,6 +46,16 @@ def factor_simple_family(f, n, base):
         value = int(s, base=base)
         print(s, value, factor(value))
 
+
+def factor_bisimple_family(a: str, x: str, b: str, y: str, z: str, *, n: int, base: int):
+    for k in range(n):
+        for i in range(k+1):
+            j = k - i
+            s = a + x * i + b + y * j + z
+            value = int(s, base=base)
+            print(s, value, factor(value))
+
+
 def foo(s, base, n=10):
     f = parse_simple_family(s)
     print(to_sequence(f, base))
