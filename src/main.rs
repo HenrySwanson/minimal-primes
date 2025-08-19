@@ -566,14 +566,12 @@ mod tests {
                 "E9*E",   // 1465 digits
                 "G*1",    // 2035 digits
                 "FA6*",   // 9293 digits
+                "FFFA6*", // killed by the above
                 "E0*111", // 16416 digits
                 "90*G",   // 42996 digits
                 "4F0*6",  // 49850 digits
                 "FG6*",   // 110986 digits
                 "EE16*",  // known to be unsolved
-                // this is a tricky one! it gets eliminated
-                // by FA6*, but that one's not discovered yet
-                "FFFA6*",
             ]
         })
     );
@@ -585,10 +583,10 @@ mod tests {
             eventual_primes: vec![
                 "A9F*K",   // 605 digits
                 "A*6FK",   // 1634 digits
+                "A*6FFFK", // killed by the above
                 "40*9G",   // 47336 digits
                 "CF*0K",   // 479150 digits
                 "G0*FK",   // unsolved!
-                "A*6FFFK"  // killed by A*6FK
             ],
         })
     );
@@ -612,6 +610,9 @@ mod tests {
                 "K*EL",     // 582 digits
                 "FA*CC",    // 924 digits
                 "F*G",      // 1092 digits
+                "F*GI",     // killed by the above
+                "F*KG",     // same
+                "F*KAG",    // same
                 "FFFFFK*C", // 1119 digits
                 "9F*A",     // 1308 digits
                 "696E*",    // 1358 digits
@@ -628,23 +629,91 @@ mod tests {
                 "F*KC",     // 5569 digits
                 "IIE*L",    // 8122 digits
                 "G*9",      // 9526 digits
+                "G*69",     // killed by the above
                 "AIF*",     // 21145 digits
+                "AIIF*",    // killed by the above
                 "K9AE*",    // 23278 digits
                 "96E*",     // 25513 digits
                 "80*1",     // 119216 digits
+                "80*81",    // killed by the above
                 "9E*",      // 800874 digits
-                "F*GI",     // eventually gets killed by F*G
-                "F*KG",     // same
-                "F*KAG",    // same
-                "G*69",     // eventually gets killed by G*9
-                "AIIF*",    // eventually gets killed by AIF*
-                "80*81",    // eventually gets killed by 80*1
             ]
         })
     );
     declare_test_for_base!(test_base_24, 24, Status::Complete);
-    // It works but takes a long time
-    declare_test_for_base!(test_base_25, 25, Status::Other);
+    // Takes 30s, but it works!
+    declare_test_for_base!(
+        test_base_25,
+        25,
+        Status::IncompleteSimple(IncompleteBranches {
+            eventual_primes: vec![
+                "LC*8",     // 509 digits
+                "1F0*1",    // 520 digits
+                "GOF*I",    // 538 digits
+                "LE8*",     // 543 digits
+                "L0*91",    // 634 digits
+                "LO*66KC",  // 652 digits
+                "L08L*",    // 683 digits
+                "8C*FFL",   // 711 digits
+                "G0F*C",    // 726 digits
+                "G0F*CI",   // killed by the above
+                "L*O8",     // 743 digits
+                "LIC*K6",   // 759 digits
+                "M6*9",     // 773 digits
+                "9*CM",     // 801 digits
+                "8LF*L",    // 948 digits
+                "L4E*",     // 1153 digits
+                "80*FAG",   // 1155 digits
+                "LKI*",     // 1187 digits
+                "4F*OOOO",  // 1222 digits
+                "60GF*I",   // 1223 digits
+                "L0*AI",    // 1223 digits
+                "6L*000KI", // 1419 digits
+                "AOF*I",    // 1608 digits
+                "6L*0KI",   // 1769 digits
+                "CMF*6",    // 1912 digits
+                "8CF*L",    // 2181 digits
+                "8C*FFL",   // killed by the above
+                "8L*O",     // 3169 digits
+                "LC*KK6",   // 3311 digits
+                "C*LKC",    // 4302 digits
+                "E1*F1",    // 5510 digits
+                "60*LK6",   // 5554 digits
+                "ME1*",     // 6393 digits
+                "FOK*O",    // 7039 digits
+                "FKOK*O",   // killed by the above
+                "9MF*9",    // 7138 digits
+                "A*FO",     // 7986 digits
+                "A*EFO",    // killed by the above
+                "O*L8",     // 10177 digits
+                "KF*66",    // 10954 digits
+                "1*8",      // 11104 digits
+                "C1*8",     // killed by the above
+                "80*1KO",   // 16610 digits
+                "MF1*",     // 16886 digits
+                "L*I8",     // 18247 digits
+                "G06*FC",   // 18470 digits
+                "LF*KI",    // 27169 digits
+                "4F*OO",    // 42786 digits
+                "LO*KC",    // 66380 digits
+                "E*FOO",    // 98399 digits
+                "MF*0F6",   // 109992 digits
+                "96*M",     // 136967 digits
+                "6MF*9",    // unsolved
+                "CM1*",     // unsolved
+                "EE1*",     // unsolved
+                "E1*E",     // unsolved
+                "EFO*",     // unsolved
+                "F1*F1",    // unsolved
+                "F0*KO",    // unsolved
+                "F0K*O",    // unsolved
+                "LOL*8",    // unsolved
+                "M1*F1",    // unsolved
+                "M10*8",    // unsolved
+                "OL*8",     // unsolved
+            ]
+        })
+    );
     declare_test_for_base!(
         test_base_26,
         26,
@@ -652,29 +721,100 @@ mod tests {
             eventual_primes: vec![
                 "40*GL",  // 512 digits
                 "K0*IP",  // 656 digits
+                "K0*IPP", // killed by the above
                 "G*OO9",  // 1108 digits
                 "G*9",    // 1160 digits
+                "G*O9",   // killed by the above
+                "IG*9",   // same
                 "A*06F",  // 1296 digits
                 "KIA*F",  // 1301 digits
+                "KKIA*F", // killed by the above
                 "F*PCF",  // 1572 digits
                 "M*P",    // 8773 digits
+                "AM*P",   // killed by the above
                 "I*GL",   // unsolved!
                 "A*6F",   // unsolved!
-                "AM*P",   // eventually killed by M*P
-                "K0*IPP", // eventually killed by K0*IP
-                "KKIA*F", // eventually killed by KIA*F
-                "G*O9",   // eventually killed by G*9
-                "IG*9",   // same
             ]
         })
     );
-    // takes a really long time (first stage ends at weight 100!)
-    // but does eventually start sieving.
-    // the ones that takes the longest to resolve look like
-    // K[0]*K0KKK...KKKF6A
-    // [0K]*K0KKK...KKKF6A
-    // [0K]*K[0]*KKK...KKKF6A
-    declare_test_for_base!(test_base_27, 27, Status::Other);
+    // Takes 30s but does solve!
+    declare_test_for_base!(
+        test_base_27,
+        27,
+        Status::IncompleteSimple(IncompleteBranches {
+            eventual_primes: vec![
+                "L8*",      // 512 digits
+                "LM8*",     // killed by the above
+                "K*POK",    // 514 digits
+                "K*0POK",   // killed by the above
+                "M0*QL8",   // 518 digits
+                "9*GG",     // 527 digits
+                "9*GIG",    // killed by the above
+                "9*GGGG",   // same
+                "C90*4",    // 538 digits
+                "MA*FK",    // 697 digits
+                "Q0*FFFA",  // 790 digits
+                "Q0*EEFA",  // killed by the above
+                "Q0*EEEFA", // same
+                "FA*CA",    // 853 digits
+                "Q*FFFA",   // 858 digits
+                "Q*FFFFFA", // killed by the above
+                "A0*LPP",   // 860 digits
+                "F*I8",     // 891 digits
+                "F*IFF8",   // killed by the above
+                "P*4IP",    // 909 digits
+                "L0L*6E",   // 920 digits
+                "C*94",     // 960 digits
+                "F*AIP",    // 1009 digits
+                "PP4L0*E",  // 1036 digits
+                "I*LE",     // 1067 digits
+                "EI*LE",    // killed by the above
+                "GGI*LE",   // same
+                "M0*KLG",   // 1119 digits
+                "P0*OE",    // 1305 digits
+                "L*6E",     // 1349 digits
+                "L*666E",   // killed by the above
+                "QQL*G",    // 1662 digits
+                "OLC*M",    // 1889 digits
+                "M0*L8",    // 2317 digits
+                "QL*E",     // 2561 digits
+                "CQCL*E",   // killed by the above
+                "Q0*FA",    // 2858 digits
+                "4A*PPP",   // 3225 digits
+                "FA*IA",    // 4022 digits
+                "LPIP*",    // 4442 digits
+                "100O*8",   // 4551 digits
+                "FKI*K",    // 4825 digits
+                "L*IG",     // 5567 digits
+                "O16*8",    // 6237 digits
+                "P0P*IP",   // 6359 digits
+                "Q*FA",     // 7688 digits
+                "IL*G",     // 7881 digits
+                "4AP*",     // 8885 digits
+                "CF*IA",    // 10080 digits
+                "A0*F9P",   // 13201 digits
+                "Q0*964",   // 17277 digits
+                "KL*G",     // 17471 digits
+                "KKL*G",    // killed by the above
+                "16*8",     // 19397 digits
+                "L*GLG",    // 35567 digits
+                "ME*9G",    // 49643 digits
+                "CA0F*A",   // 88887 digits
+                "L*G",      // 101106 digits
+                "L*0G",     // killed by the above
+                "IL*0G",    // same
+                "ICL*G",    // same
+                "A0*PM",    // 109006 digits
+                "80*9A",    // unsolved
+                "999G*",    // unsolved
+                "CL*E",     // unsolved
+                "EI*F8",    // unsolved
+                "F*9FM",    // unsolved
+                "9G*",      // this one's composite! alternating squares and div 7
+                            // why don't we catch it?
+            ]
+        })
+    );
     declare_test_for_base!(
         test_base_28,
         28,
@@ -689,11 +829,8 @@ mod tests {
             ]
         })
     );
-    // after about a half hour and 860k iterations, it's starting
-    // to go down from 130k branches, but it's not done yet.
-    // after an hour and 1.3M iterations, it's stalled out around
-    // 6k branches at weight 29, and going back up :(
-    declare_test_for_base!(test_base_29, 29, Status::Explodes);
+    // This is solvable, but it takes 4 minutes :(
+    declare_test_for_base!(test_base_29, 29, Status::Other);
     declare_test_for_base!(
         test_base_30,
         30,
@@ -787,7 +924,7 @@ mod tests {
         // We should also check that these eventual primes show up in our unsolved
         // list. Otherwise that'd mean we forgot them somehow.
         let unsolved: Vec<_> = unsolved.iter().map(|f| f.pattern()).collect();
-        assert_eq!(
+        pretty_assertions::assert_eq!(
             sort_and_dedup(unsolved),
             sort_and_dedup(expected_incomplete.eventual_primes)
         );

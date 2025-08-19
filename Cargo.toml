@@ -23,4 +23,5 @@ num-prime = { version = "0.4.4", features = ["big-int"] }
 num-traits = "0.2.19"
 
 [dev-dependencies]
+pretty_assertions = "1.4.1"
 regex = "1.11.1"
