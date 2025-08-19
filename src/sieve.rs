@@ -36,12 +36,9 @@ impl SequenceSlice {
         self.n_lo + self.n_bitvec.len()
     }
 
+    #[cfg(test)]
     pub fn check_n(&self, n: usize) -> bool {
         self.n_bitvec[n - self.n_lo]
-    }
-
-    pub fn eliminate_n(&mut self, n: usize) {
-        self.n_bitvec.set(n - self.n_lo, false);
     }
 
     pub fn eliminate_multiple(&mut self, p: u64, base: u64, start: usize, spacing: usize) {

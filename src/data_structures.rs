@@ -58,10 +58,6 @@ impl<T> WeightedVec<T> {
         self.elements.iter().flatten()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.elements.iter().all(|layer| layer.is_empty())
-    }
-
     pub fn len(&self) -> usize {
         self.elements.iter().map(|layer| layer.len()).sum()
     }

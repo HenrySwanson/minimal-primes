@@ -45,10 +45,6 @@ impl<T: Weight> Frontier<T> {
         self.by_weight.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.by_weight.is_empty()
-    }
-
     pub fn min_weight(&self) -> Option<usize> {
         self.by_weight.min_weight()
     }

@@ -158,19 +158,15 @@ pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUi
     }
 
     // Complicated, but actually does help quite a bit.
-    fn family_iter_helper<'f>(
-        base: u8,
-        x: &'f DigitSeq,
-        a: &'f Core,
-        y: &'f DigitSeq,
-        b: &'f Core,
-        z: &'f DigitSeq,
-        a_repeat: usize,
-        b_repeat: usize,
-    ) -> impl Iterator<Item = BigUint> + 'f {
+    let family_iter_helper = |repeat_a, repeat_b| {
+        let x = &family.digitseqs[0];
+        let a = &family.cores[0];
+        let y = &family.digitseqs[1];
+        let b = &family.cores[1];
+        let z = &family.digitseqs[2];
         a.iter()
-            .combinations_with_replacement(a_repeat)
-            .cartesian_product(b.iter().combinations_with_replacement(b_repeat))
+            .combinations_with_replacement(repeat_a)
+            .cartesian_product(b.iter().combinations_with_replacement(repeat_b))
             .map(move |(a_choices, b_choices)| {
                 let mut seq = x.clone();
                 seq += DigitSeq(a_choices.clone());
@@ -180,19 +176,6 @@ pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUi
 
                 seq.value(base)
             })
-    }
-
-    let bar = |repeat_a, repeat_b| {
-        family_iter_helper(
-            base,
-            &family.digitseqs[0],
-            &family.cores[0],
-            &family.digitseqs[1],
-            &family.cores[1],
-            &family.digitseqs[2],
-            repeat_a,
-            repeat_b,
-        )
     };
 
     // Take the family xA*yB*z
@@ -201,7 +184,7 @@ pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUi
     let even_repeats: [(usize, usize); 6] = [(0, 0), (2, 0), (0, 2), (1, 1), (1, 3), (3, 1)];
     let mut even_gcd = BigUint::ZERO;
     for (repeat_a, repeat_b) in even_repeats {
-        for value in bar(repeat_a, repeat_b) {
+        for value in family_iter_helper(repeat_a, repeat_b) {
             even_gcd = nontrivial_gcd(&even_gcd, &value)?;
         }
     }
@@ -209,7 +192,7 @@ pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUi
     let odd_repeats: [(usize, usize); 6] = [(1, 0), (3, 0), (1, 2), (0, 1), (2, 1), (0, 3)];
     let mut odd_gcd = BigUint::ZERO;
     for (repeat_a, repeat_b) in odd_repeats {
-        for value in bar(repeat_a, repeat_b) {
+        for value in family_iter_helper(repeat_a, repeat_b) {
             odd_gcd = nontrivial_gcd(&odd_gcd, &value)?;
         }
     }
@@ -258,8 +241,8 @@ fn get_residues_mod_30(base: u8, family: &Family) -> [bool; 30] {
             .try_into()
             .expect("30 fits in a usize");
         let mut new_residues = [false; 30];
-        for i in 0..30 {
-            if residues[i] {
+        for (i, is_residue) in residues.iter().enumerate() {
+            if *is_residue {
                 let j = (i * base_pow + x_mod_30) % 30;
                 new_residues[j] = true;
             }
