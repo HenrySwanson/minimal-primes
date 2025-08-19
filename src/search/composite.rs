@@ -3,6 +3,7 @@
 
 use itertools::Itertools;
 use num_bigint::{BigInt, BigUint};
+use num_integer::Integer;
 use num_prime::ExactRoots;
 
 use crate::digits::DigitSeq;
@@ -219,6 +220,88 @@ pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUi
     Some((even_gcd, odd_gcd))
 }
 
+pub fn check_residues_mod_30(base: u8, family: &Family) -> bool {
+    // This is a weird one. It's Lemma 34 in Curtis Bright's paper.
+    // Basically, for a given N, we can compute all the residues of a given family mod N.
+    // If these are all > 1, then we know the family has a non-trivial factor.
+    // Denote [L] as the set of residues mod N.
+    // Like Bright, we use N = 30.
+
+    // Small caveat: if L contains 2, 3, or 5, then this test will fail. The small
+    // prime will not be detected, and we will claim this family is composite.
+    // But we can just check the length of the family (if the base is not tiny)
+    // to bail out of this.
+    if base < 5 || family.weight() <= 1 {
+        return false;
+    }
+
+    let residues = get_residues_mod_30(base, family);
+    let has_bad_residue = residues
+        .iter()
+        .enumerate()
+        .any(|(i, is_residue)| *is_residue && i.gcd(&30) == 1);
+
+    !has_bad_residue
+}
+
+fn get_residues_mod_30(base: u8, family: &Family) -> [bool; 30] {
+    let mut residues = [false; 30];
+
+    fn process_seq(base: u8, seq: &DigitSeq, residues: &mut [bool; 30]) {
+        // [Lx] = [L] * base^|x| + (x mod N)
+        let mut base_pow: usize = 1;
+        for _ in &seq.0 {
+            base_pow = (base_pow * base as usize) % 30;
+        }
+
+        let x_mod_30: usize = (seq.value(base) % 30_usize)
+            .try_into()
+            .expect("30 fits in a usize");
+        let mut new_residues = [false; 30];
+        for i in 0..30 {
+            if residues[i] {
+                let j = (i * base_pow + x_mod_30) % 30;
+                new_residues[j] = true;
+            }
+        }
+
+        *residues = new_residues;
+    }
+
+    fn process_core(base: u8, core: &Core, residues: &mut [bool; 30]) {
+        // [LX*] = [L] U [L x_i] U [L x_i x_j] U ...
+        // Eventually this union chain will stabilize, so let's just
+        // compute it until it does.
+        loop {
+            let mut has_changed = false;
+
+            for d in core.iter() {
+                for i in 0..30 {
+                    if residues[i] {
+                        let j = (i * base as usize + d.0 as usize) % 30;
+                        if !residues[j] {
+                            residues[j] = true;
+                            has_changed = true;
+                        }
+                    }
+                }
+            }
+
+            if !has_changed {
+                return;
+            }
+        }
+    }
+
+    residues[0] = true; // starting state
+    for (digitseq, core) in family.digitseqs.iter().zip(&family.cores) {
+        process_seq(base, digitseq, &mut residues);
+        process_core(base, core, &mut residues);
+    }
+    process_seq(base, family.digitseqs.last().unwrap(), &mut residues);
+    residues
+}
+
 pub fn composite_checks_for_simple(base: u8, node: &SimpleNode) -> bool {
     // Get the sequence for this. As a reminder, it looks like:
     // (k B^n + c) / d, where d = B-1
@@ -410,5 +493,33 @@ mod tests {
             Some((BigUint::from(2_u32), BigUint::from(5_u32))),
             find_even_odd_factor(base, &family)
         );
+    }
+
+    fn get_residues_as_string(base: u8, family: &Family) -> String {
+        get_residues_mod_30(base, family)
+            .iter()
+            .enumerate()
+            .filter_map(|(i, is_residue)| is_residue.then_some(format!("{i}")))
+            .join(",")
+    }
+
+    #[test]
+    fn example_35() {
+        // Base 29: L1*61*LK*K
+        let base = 29;
+        let family = parse_family("L[1]*6[1]*L[K]*K", base);
+        let residues_as_string = get_residues_as_string(base, &family);
+        assert_eq!(residues_as_string, "4,5,6,14,15,16,25");
+        assert!(check_residues_mod_30(base, &family));
+    }
+
+    #[test]
+    fn example_custom() {
+        // Found this one when I was experimenting on base 29
+        let base = 29;
+        let family = parse_family("[P]*MMMMM[R]*", base);
+        let residues_as_string = get_residues_as_string(base, &family);
+        assert_eq!(residues_as_string, "0,5,22,27");
+        assert!(check_residues_mod_30(base, &family));
     }
 }

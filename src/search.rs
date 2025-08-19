@@ -18,7 +18,7 @@ use crate::digits::DigitSeq;
 use crate::families::{Core, Family, SimpleFamily};
 use crate::logging::Tracer;
 use crate::search::composite::{
-    composite_checks_for_simple, find_guaranteed_factor, find_two_factors,
+    check_residues_mod_30, composite_checks_for_simple, find_guaranteed_factor, find_two_factors,
 };
 use crate::SearchResults;
 
@@ -615,6 +615,12 @@ impl SearchContext {
                 even_factor,
                 odd_factor
             );
+            return true;
+        }
+
+        if check_residues_mod_30(self.base, family) {
+            debug!("  {family} always shares a factor with 30");
+            debug_to_tree!(self.tracer, "Always shares a factor with 30");
             return true;
         }
 
