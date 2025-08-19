@@ -20,6 +20,8 @@ mod logging;
 mod search;
 mod sieve;
 
+const LOG_EVERY_N: usize = 10_000;
+
 #[derive(Parser)]
 struct Args {
     /// What to do
@@ -175,6 +177,8 @@ fn first_stage(
 ) -> SearchResults {
     let mut tree = SearchTree::new(base, tree_log);
 
+    let mut prev_weight = 0;
+    let mut counter = 0;
     tree.explore_until(|tree| {
         if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
             info!("Interrupted! Stopping now...");
@@ -201,17 +205,33 @@ fn first_stage(
             }
         }
 
-        if tree.all_nodes_simple_and_checked() {
+        if tree.num_nodes_to_solve() == 0 {
             info!("All remaining families are simple; stopping...");
             return ControlFlow::Break(());
         }
 
-        info!(
-            "Iteration {} - Weight {} - {} branches",
-            tree.ctx.iter,
-            weight,
-            tree.frontier.len()
-        );
+        // Don't log every single time, that's annoying to read
+        let mut should_print = false;
+        if weight != prev_weight {
+            prev_weight = weight;
+            counter = 0;
+            should_print = true;
+        }
+
+        counter += 1;
+        if counter == LOG_EVERY_N {
+            counter = 0;
+            should_print = true;
+        }
+
+        if should_print {
+            let num_complex = tree.num_nodes_to_solve();
+            let num_simple = tree.frontier.len() - num_complex;
+            info!(
+                "Weight {} - Iteration {} - {} complex branches - {} simple branches",
+                weight, tree.ctx.iter, num_complex, num_simple
+            );
+        }
 
         ControlFlow::Continue(())
     });
@@ -234,6 +254,7 @@ fn first_stage(
         results.simple_families.len() + results.other_families.len()
     );
     println!("---- STATS ----");
+    println!("Final weight was {prev_weight}");
     println!("{} branches explored", results.stats.num_branches_explored);
     println!(
         "{} primality tests ({}ms)",

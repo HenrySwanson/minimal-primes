@@ -58,11 +58,14 @@ impl SearchTree {
         Self { frontier, ctx }
     }
 
-    pub fn all_nodes_simple_and_checked(&self) -> bool {
-        self.frontier.iter().all(|node| match &node.family {
-            NodeType::Arbitrary(_) => false,
-            NodeType::Simple(simple_node) => simple_node.composite_tested,
-        })
+    pub fn num_nodes_to_solve(&self) -> usize {
+        self.frontier
+            .iter()
+            .filter(|node| match &node.family {
+                NodeType::Arbitrary(_) => true,
+                NodeType::Simple(simple_node) => !simple_node.composite_tested,
+            })
+            .count()
     }
 
     pub fn explore_until(
