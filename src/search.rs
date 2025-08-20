@@ -68,6 +68,13 @@ impl SearchTree {
             .count()
     }
 
+    pub fn any_nodes_to_solve(&self) -> bool {
+        self.frontier.iter().any(|node| match &node.family {
+            NodeType::Arbitrary(_) => true,
+            NodeType::Simple(simple_node) => !simple_node.composite_tested,
+        })
+    }
+
     pub fn explore_until(
         &mut self,
         mut stop_condition: impl FnMut(&SearchTree) -> ControlFlow<()>,

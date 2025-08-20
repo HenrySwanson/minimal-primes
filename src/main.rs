@@ -205,7 +205,7 @@ fn first_stage(
             }
         }
 
-        if tree.num_nodes_to_solve() == 0 {
+        if !tree.any_nodes_to_solve() {
             info!("All remaining families are simple; stopping...");
             return ControlFlow::Break(());
         }
