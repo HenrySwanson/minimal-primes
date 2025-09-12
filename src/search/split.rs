@@ -283,6 +283,58 @@ impl SearchContext {
 
         None
     }
+
+    // Given a family xLz, with a and b in L, if xabaz is forbidden, splits the family into:
+    // - no as: x(L-a)z
+    // - one a: x(L-a)a(L-a)z
+    // - 2+ as, but no bs between them: x(L-a)a(L-b)a(L-a)z
+    //   - this is unambiguous: the as must be the first and last ones
+    pub fn split_on_forbidden_sandwich(
+        &mut self,
+        family: &Family,
+        possible_contained_primes: &CandidateIndices,
+    ) -> Option<Vec<Family>> {
+        // iterate over cores
+        for (i, core) in family.cores.iter().enumerate() {
+            for (a, b) in core.iter().cartesian_product(core.iter()) {
+                if a == b {
+                    continue;
+                }
+
+                // Check whether aba is forbidden
+                let seq = family.substitute_multiple(i, [a, b, a]);
+                if let Some(p) = self
+                    .test_for_contained_prime(&seq, possible_contained_primes)
+                    .cloned()
+                {
+                    assert_ne!(seq, p);
+
+                    debug!("  {seq} contains a prime {p}");
+                    debug_to_tree!(self.tracer, "sandwich {a}{b}{a} is forbidden in slot {i}");
+
+                    // Split the family
+                    // xLz -> x(L-a)z
+                    let mut no_as = family.clone();
+                    no_as.cores[i].remove(a);
+                    let aless_core = &no_as.cores[i];
+                    // x(L-a)z -> x(L-a)a(L-a)z
+                    let mut one_a = no_as.clone();
+                    one_a.digitseqs.insert(i + 1, DigitSeq(vec![a]));
+                    one_a.cores.insert(i + 1, aless_core.clone());
+                    // x(L-a)a(L-a)z -> x(L-a)a(L-b)a(L-a)z
+                    let mut more_as = one_a.clone();
+                    more_as.digitseqs.insert(i + 1, DigitSeq(vec![a]));
+                    more_as
+                        .cores
+                        .insert(i + 1, family.cores[i].clone().without(b));
+
+                    return Some(vec![no_as, one_a, more_as]);
+                }
+            }
+        }
+
+        None
+    }
 }
 
 /// Given a family X[abY]Z for which XabZ is forbidden,

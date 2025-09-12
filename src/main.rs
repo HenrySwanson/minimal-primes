@@ -305,6 +305,10 @@ fn first_stage(
         branch_stats.split_on_incompatible_different_cores
     );
     println!(
+        "{} branches split on a forbidden sandwich",
+        branch_stats.split_on_forbidden_sandwich
+    );
+    println!(
         "{} branches split on a necessary digit",
         branch_stats.split_on_necessary_digit
     );

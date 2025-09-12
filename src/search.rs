@@ -148,6 +148,7 @@ pub struct BranchStats {
     pub split_on_limited_digit: usize,
     pub split_on_incompatible_same_core: usize,
     pub split_on_incompatible_different_cores: usize,
+    pub split_on_forbidden_sandwich: usize,
     pub split_on_necessary_digit: usize,
     pub explored_generically: usize,
 }
@@ -359,7 +360,22 @@ impl SearchContext {
             }
         }
 
+        // this was introduced to kill long derivation chains of the form x[ab]*y that
+        // we have trouble with otherwise. only invoke it when we are really stuck on
+        // something.
+        if family.weight() >= 10 {
+            if let Some(children) =
+                self.split_on_forbidden_sandwich(&family, possible_contained_primes)
+            {
+                self.stats.branch_stats.split_on_forbidden_sandwich += 1;
+                return children.into_iter().map(NodeType::Arbitrary).collect();
+            }
+        }
+
         if family.weight() >= 5 {
+            // This one doesn't actually simplify any cores, in fact, it'll make the
+            // branch more complicated!. However, it might kickstart some branch elimination
+            // by making us intersect another prime. So this check should always be last.
             if let Some(child) = self.split_on_necessary_digit(&family) {
                 self.stats.branch_stats.split_on_necessary_digit += 1;
                 return vec![NodeType::Arbitrary(child)];
