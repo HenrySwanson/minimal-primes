@@ -489,7 +489,7 @@ impl SearchContext {
                 // otherwise, we should incorporate this into dies_at
                 match node.dies_at {
                     // its better to have smaller n; skip this if so
-                    Some((old_n, _)) if old_n < n => {}
+                    Some((old_n, _)) if old_n <= n => {}
                     // otherwise, update
                     Some(_) | None => node.dies_at = Some((n, prime.clone())),
                 }
@@ -559,6 +559,8 @@ impl SearchContext {
         family
     }
 
+    /// Checks whether any of the candidate primes are (properly) contained in the
+    /// given sequence. If so, return a reference to that prime.
     fn test_for_contained_prime(
         &mut self,
         seq: &DigitSeq,

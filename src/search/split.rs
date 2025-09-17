@@ -3,7 +3,7 @@ use log::debug;
 
 use crate::data_structures::CandidateIndices;
 use crate::debug_to_tree;
-use crate::digits::{Digit, DigitSeq};
+use crate::digits::Digit;
 use crate::families::Family;
 use crate::search::gcd::nontrivial_gcd;
 use crate::search::SearchContext;
@@ -13,9 +13,9 @@ impl SearchContext {
     /// Given a family `xLz`, checks if there's any y in L such that `x y^n z` is forbidden.
     /// If so, we split the family into `x (L-y) (y (L-y))^i z`.
     ///
-    /// This is extended to multiple cores in a straightforward way.
+    /// Also works on multi-core families.
     ///
-    /// We check n from 1 to `max_repeats`.
+    /// We check n from 1 to `max_repeats` inclusive.
     pub fn split_on_limited_digit(
         &mut self,
         family: &Family,
@@ -34,6 +34,7 @@ impl SearchContext {
 
                         // Split into n families, x (L-y) (y (L-y))^i z for i in 0..n
                         let yless_core = core.clone().without(d);
+                        // xLz -> x(L-y)z
                         let mut first_child = family.clone();
                         first_child.cores[i] = yless_core.clone();
 
@@ -41,6 +42,7 @@ impl SearchContext {
 
                         while children.len() < n {
                             let mut new = children.last().unwrap().clone();
+                            // x(L-y)z -> x(L-y)y(L-y)z
                             new.digitseqs.insert(i + 1, d.into());
                             new.cores.insert(i + 1, yless_core.clone());
                             children.push(new);
@@ -71,7 +73,10 @@ impl SearchContext {
     }
 
     /// Given a family `xLz`, if there's some y in L for which `x (L-y) z` is always composite,
-    /// then we can split the family as `x L y (L-y) z`
+    /// then we can split the family as `x L y (L-y) z`.
+    ///
+    /// This doesn't reduce the complexity of the cores, so its use should be limited. It
+    /// does seem to help in small doses though.
     pub fn split_on_necessary_digit(&mut self, family: &Family) -> Option<Family> {
         // There's a case in base 11 (and probably others) where we have
         // just one core, where all the digits except one are even, and so
@@ -127,10 +132,10 @@ impl SearchContext {
 
                 // If we got here, then g is a nontrivial common divisor of "substituting anything
                 // except (i, d)", and so we must have at least one substitution of (i, d).
-                // Loosely speaking, we now return `x L y (L-y) z`
                 let mut new = family.clone();
                 let d_less_core = core.clone().without(d);
 
+                // xLz -> xLy(L-y)z
                 new.digitseqs.insert(i + 1, d.into());
                 new.cores.insert(i + 1, d_less_core);
                 debug!("  {family} must have a {d}, transforming into {new}");
@@ -144,6 +149,21 @@ impl SearchContext {
 
     /// Given a family `xLz`, with a, b in L, if `xabz` or `xbaz` is forbidden. If so,
     /// we can reduce the family a bit.
+    /// Given a family `xLz`, if there's some a, b in L such that `xabz` or `xbaz`
+    /// (or both) is forbidden, we can split the family.
+    ///
+    /// If `xabz` is forbidden, we could reduce it to `x(L-a)(L-b)z`, but this leads
+    /// to huge families. I think it's because it means `xcz` can be parsed multiple
+    /// ways.
+    ///
+    /// Instead, we split into:
+    /// - families with no a: `x(L-a)z`
+    /// - families with an a: `x(L-a)a(L-b)z`
+    ///
+    /// If both are forbidden, we split it into:
+    /// - families with neither: `x(L-a-b)z`
+    /// - families with an a:    `x(L-a-b)a(L-b)z`
+    /// - families with a b:     `x(L-a-b)b(L-a)z`
     pub fn split_on_incompatible_digits(
         &mut self,
         family: &Family,
@@ -167,10 +187,7 @@ impl SearchContext {
                         .cloned(),
                 ) {
                     (Some(p), Some(q)) => {
-                        // We can't have both a and b in this core.
-                        // We could split into X[aY]Z and X[bY]Z, but that
-                        // has potential duplicates. So let's split into three:
-                        // X[Y]Z, X[Y]a[aY]Z, X[Y]b[bY]Z
+                        // a and b can't co-occur in either order
                         assert_ne!(seq_ab, p);
                         assert_ne!(seq_ba, q);
                         debug!("  {seq_ab} contains a prime {p} and {seq_ba} contains a prime {q}");
@@ -179,18 +196,25 @@ impl SearchContext {
                             "digits {a} and {b} are incompatible in core {i}"
                         );
 
-                        // Make three children
+                        // Make the family with neither a nor b
                         let mut with_neither = family.clone();
-                        let mut with_a = family.clone();
-                        let mut with_b = family.clone();
+                        // xLz -> x(L-a-b)z
                         with_neither.cores[i].remove(a);
                         with_neither.cores[i].remove(b);
                         let neither_core = &with_neither.cores[i];
+
+                        // Make the families with only a or b
+                        let mut with_a = family.clone();
+                        let mut with_b = family.clone();
+
+                        // xLz -> x(L-a-b)aLz -> x(L-a-b)a(L-b)z
                         with_a.cores.insert(i, neither_core.clone());
-                        with_a.digitseqs.insert(i + 1, DigitSeq(vec![a]));
+                        with_a.digitseqs.insert(i + 1, a.into());
                         with_a.cores[i + 1].remove(b);
+
+                        // converse
                         with_b.cores.insert(i, neither_core.clone());
-                        with_b.digitseqs.insert(i + 1, DigitSeq(vec![b]));
+                        with_b.digitseqs.insert(i + 1, b.into());
                         with_b.cores[i + 1].remove(a);
 
                         return Some(vec![with_neither, with_a, with_b]);
@@ -232,8 +256,8 @@ impl SearchContext {
     /// then we could split the family into `x(L-a)yMz` and `xLy(M-b)z`.
     /// Because this would cause duplication issues though (consider strings with
     /// neither a nor b), we need to split it differently:
-    /// - with no a: x(L-a)yMz
-    /// - with an a: x(L-a)aLy(M-b)z
+    /// - with no a: `x(L-a)yMz`
+    /// - with an a: `x(L-a)aLy(M-b)z`
     pub fn split_on_incompatible_digits_different_cores(
         &mut self,
         family: &Family,
@@ -267,11 +291,16 @@ impl SearchContext {
                             // We can split the family into two:
                             // - with no a: x(L-a)yMz
                             // - with an a: x(L-a)aLy(M-b)z
+
+                            // xLyMz -> x(L-a)yMz
                             let mut without_a = family.clone();
                             without_a.cores[i].remove(a);
+
+                            // x(L-a)yMz -> x(L-a)y(M-b)z
                             let mut with_a = without_a.clone();
                             with_a.cores[j].remove(b);
-                            with_a.digitseqs.insert(i + 1, DigitSeq(vec![a]));
+                            // x(L-a)y(M-b)z -> x(L-a)aLy(M-b)z
+                            with_a.digitseqs.insert(i + 1, a.into());
                             with_a.cores.insert(i + 1, family.cores[i].clone());
 
                             return Some(vec![without_a, with_a]);
@@ -319,11 +348,11 @@ impl SearchContext {
                     let aless_core = &no_as.cores[i];
                     // x(L-a)z -> x(L-a)a(L-a)z
                     let mut one_a = no_as.clone();
-                    one_a.digitseqs.insert(i + 1, DigitSeq(vec![a]));
+                    one_a.digitseqs.insert(i + 1, a.into());
                     one_a.cores.insert(i + 1, aless_core.clone());
                     // x(L-a)a(L-a)z -> x(L-a)a(L-b)a(L-a)z
                     let mut more_as = one_a.clone();
-                    more_as.digitseqs.insert(i + 1, DigitSeq(vec![a]));
+                    more_as.digitseqs.insert(i + 1, a.into());
                     more_as
                         .cores
                         .insert(i + 1, family.cores[i].clone().without(b));
@@ -337,19 +366,21 @@ impl SearchContext {
     }
 }
 
-/// Given a family X[abY]Z for which XabZ is forbidden,
+/// Given a family `xLz` for which `xabz` is forbidden,
 /// splits it into:
-/// - families with no a: X[bY]Z
-/// - families with an a: X[bY]a[aY]Z
+/// - families with no a: `x(L-a)z`
+/// - families with an a: `x(L-a)a(L-b)z`
 ///
 /// We could reduce to X[bY][aY]Z, but this is leads to huge families.
 /// I think it's because XyyyZ can be parsed into that pattern multiple
 /// ways.
 fn do_split_for_semi_incompatible(family: &Family, i: usize, a: Digit, b: Digit) -> Vec<Family> {
+    // xLz -> x(L-a)z
     let mut without_a = family.clone();
     without_a.cores[i].remove(a);
+    // x(L-a)a(L-b)z
     let mut with_a = without_a.clone();
-    with_a.digitseqs.insert(i + 1, DigitSeq(vec![a]));
+    with_a.digitseqs.insert(i + 1, a.into());
     with_a
         .cores
         .insert(i + 1, family.cores[i].clone().without(b));
