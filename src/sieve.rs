@@ -7,7 +7,7 @@ use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
 use num_prime::buffer::NaiveBuffer;
 use num_prime::nt_funcs::is_prime;
 
-use crate::families::Sequence;
+use crate::sequence::Sequence;
 
 #[derive(Debug)]
 pub struct SequenceSlice {

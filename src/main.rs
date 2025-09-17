@@ -9,8 +9,9 @@ use num_prime::nt_funcs::is_prime;
 
 use crate::data_structures::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
-use crate::families::{Family, Sequence, SimpleFamily};
+use crate::families::{Family, SimpleFamily};
 use crate::search::{SearchTree, Stats};
+use crate::sequence::Sequence;
 use crate::sieve::SequenceSlice;
 
 mod data_structures;
@@ -18,6 +19,7 @@ mod digits;
 mod families;
 mod logging;
 mod search;
+mod sequence;
 mod sieve;
 
 const LOG_EVERY_N: usize = 10_000;

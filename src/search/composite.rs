@@ -7,9 +7,10 @@ use num_integer::Integer;
 use num_prime::ExactRoots;
 
 use crate::digits::DigitSeq;
-use crate::families::{BigSequence, Core, Family};
+use crate::families::{Core, Family};
 use crate::search::gcd::nontrivial_gcd;
 use crate::search::SimpleNode;
+use crate::sequence::BigSequence;
 
 /// Checks whether this family shares a factor with the base.
 /// Basically just checks the last digit.
