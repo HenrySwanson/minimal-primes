@@ -264,6 +264,11 @@ fn first_stage(
         results.stats.duration_primality_checks.as_millis()
     );
     println!(
+        "{} calls Family::could_contain ({}ms)",
+        results.stats.num_could_contains,
+        results.stats.duration_could_contains.as_millis()
+    );
+    println!(
         "{} substring tests ({}ms)",
         results.stats.num_substring_checks,
         results.stats.duration_substring_checks.as_millis()

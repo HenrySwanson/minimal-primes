@@ -133,6 +133,8 @@ pub struct Stats {
     pub duration_substring_checks: Duration,
     pub num_simple_substring_checks: usize,
     pub duration_simple_substring_checks: Duration,
+    pub num_could_contains: usize,
+    pub duration_could_contains: Duration,
     pub num_branches_explored: usize,
     pub branch_stats: BranchStats,
 }
@@ -263,9 +265,12 @@ impl SearchContext {
         // family could contain.
         let mut new_contained_primes = self.primes.new_indices();
         for (i, prime) in self.primes.get_many(possible_contained_primes) {
+            let start = Instant::now();
             if family.could_contain(prime) {
                 new_contained_primes.add(i);
             }
+            self.stats.num_could_contains += 1;
+            self.stats.duration_could_contains += start.elapsed();
         }
         *possible_contained_primes = new_contained_primes;
 
@@ -474,14 +479,12 @@ impl SearchContext {
         }
 
         // Now check any new primes.
-        let start = Instant::now();
         for (_, prime) in self.primes.get_many(possible_contained_primes) {
-            self.stats.num_simple_substring_checks += 1;
+            let start = Instant::now();
             if let Some(n) = node.family.will_contain_at(prime) {
                 if n <= node.family.min_repeats {
                     debug!("  Discarding {}, contains prime {}", node.family, prime);
                     debug_to_tree!(self.tracer, "Discarding, contains prime {}", prime);
-                    self.stats.duration_simple_substring_checks += start.elapsed();
                     self.stats.branch_stats.contains_prime += 1;
                     return vec![];
                 }
@@ -494,8 +497,9 @@ impl SearchContext {
                     Some(_) | None => node.dies_at = Some((n, prime.clone())),
                 }
             }
+            self.stats.num_simple_substring_checks += 1;
+            self.stats.duration_simple_substring_checks += start.elapsed();
         }
-        self.stats.duration_simple_substring_checks += start.elapsed();
         *possible_contained_primes = self.primes.new_indices(); // resets our collection
 
         // Test if it is a prime
