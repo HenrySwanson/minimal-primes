@@ -65,6 +65,9 @@ struct SearchArgs {
     /// whether to log the whole search tree
     #[arg(long)]
     tree_log: bool,
+    /// whether to skip printing the actual primes and branches
+    #[arg(long)]
+    stats_only: bool,
 }
 
 #[derive(clap::Args)]
@@ -127,6 +130,7 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) -> SearchResults {
         cmd.max_weight,
         cmd.max_iter,
         cmd.tree_log,
+        cmd.stats_only,
         stop_signal,
     );
 
@@ -175,6 +179,7 @@ fn first_stage(
     max_weight: Option<usize>,
     max_iter: Option<usize>,
     tree_log: bool,
+    stats_only: bool,
     stop_signal: &AtomicBool,
 ) -> SearchResults {
     let mut tree = SearchTree::new(base, tree_log);
@@ -240,21 +245,23 @@ fn first_stage(
 
     let results = tree.into_results();
 
-    println!("---- BRANCHES REMAINING ----");
-    for f in results.simple_families.iter() {
-        println!("{f}");
+    if !stats_only {
+        println!("---- BRANCHES REMAINING ----");
+        for f in results.simple_families.iter() {
+            println!("{f}");
+        }
+        for f in results.other_families.iter() {
+            println!("{f}");
+        }
+        println!("---- MINIMAL PRIMES ----");
+        println!("{}", results.primes.clone_and_sort_and_iter().format(", "));
+        println!("------------");
+        println!(
+            "{} primes found, {} branches unresolved",
+            results.primes.len(),
+            results.simple_families.len() + results.other_families.len()
+        );
     }
-    for f in results.other_families.iter() {
-        println!("{f}");
-    }
-    println!("---- MINIMAL PRIMES ----");
-    println!("{}", results.primes.clone_and_sort_and_iter().format(", "));
-    println!("------------");
-    println!(
-        "{} primes found, {} branches unresolved",
-        results.primes.len(),
-        results.simple_families.len() + results.other_families.len()
-    );
     println!("---- STATS ----");
     println!("Final weight was {prev_weight}");
     println!("{} branches explored", results.stats.num_branches_explored);
@@ -893,6 +900,7 @@ mod tests {
                         n_hi: 0,
                         p_max: 0,
                         tree_log: false,
+                        stats_only: false,
                     },
                     &AtomicBool::new(false),
                 );
@@ -911,10 +919,11 @@ mod tests {
             // to the actual CLI command?
             p_max: 1_000,
             tree_log: false,
+            stats_only: false,
         };
 
         // First stage
-        let mut results = first_stage(base, None, None, false, &AtomicBool::new(false));
+        let mut results = first_stage(base, None, None, false, false, &AtomicBool::new(false));
 
         // Remove any composite branches that are expected to be present.
         // TODO: all composites are detected right now, but re-use this for
