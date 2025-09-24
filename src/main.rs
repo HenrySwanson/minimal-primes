@@ -299,6 +299,10 @@ fn first_stage(
         branch_stats.is_new_prime
     );
     println!(
+        "{} branches eliminated by reducing to trivial string",
+        branch_stats.is_trivial_string
+    );
+    println!(
         "{} branches eliminated for compositeness",
         branch_stats.detected_composite
     );
