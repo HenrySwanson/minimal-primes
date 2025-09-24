@@ -1,5 +1,5 @@
 mod composite;
-mod explore;
+mod frontier;
 mod gcd;
 mod split;
 
@@ -12,7 +12,7 @@ use num_bigint::BigUint;
 use num_prime::buffer::{NaiveBuffer, PrimeBufferExt};
 
 use self::composite::{find_even_odd_factor, find_periodic_factor, shares_factor_with_base};
-use self::explore::{Frontier, Weight};
+use self::frontier::{Frontier, Weight};
 use crate::data_structures::{AppendTreeNodeID, CandidateIndices, CandidateSequences};
 use crate::digits::DigitSeq;
 use crate::families::{Core, Family, SimpleFamily};
