@@ -10,11 +10,13 @@ use crate::search::SearchContext;
 
 // TODO: this probably shouldn't be searchcontext, but this works well now
 impl SearchContext {
-    /// Given a family `xLz`, checks if there's any y in L such that `x y^n z` is forbidden.
-    /// If so, we split the family into `x (L-y) (y (L-y))^i z`.
+    /// Given a family `xLz`, checks if there's any y in L such that `x y^n z`
+    /// is forbidden. If so, we split the family into `x (L-y) (y (L-y))^i z`.
     ///
-    /// Also works on multi-core families.
+    /// Generalizes to multi-core families.
     ///
+    /// This is Lemma 21 from Bright.
+    /// 
     /// We check n from 1 to `max_repeats` inclusive.
     pub fn split_on_limited_digit(
         &mut self,
@@ -77,6 +79,8 @@ impl SearchContext {
     ///
     /// This doesn't reduce the complexity of the cores, so its use should be limited. It
     /// does seem to help in small doses though.
+    /// 
+    /// This is Lemma 29 in Bright.
     pub fn split_on_necessary_digit(&mut self, family: &Family) -> Option<Family> {
         // There's a case in base 11 (and probably others) where we have
         // just one core, where all the digits except one are even, and so
@@ -84,7 +88,8 @@ impl SearchContext {
         // This tells me that we are required to have at least one of that digit,
         // or else we'll forever be even.
         // This function detects that situation and splits the family accordingly.
-        // TODO: does this belong in composite? not quite i think
+
+        // TODO: should this call all the composite checks?
 
         let contracted = family.contract().value(self.base);
 
@@ -147,23 +152,23 @@ impl SearchContext {
         None
     }
 
-    /// Given a family `xLz`, with a, b in L, if `xabz` or `xbaz` is forbidden. If so,
-    /// we can reduce the family a bit.
     /// Given a family `xLz`, if there's some a, b in L such that `xabz` or `xbaz`
     /// (or both) is forbidden, we can split the family.
     ///
     /// If `xabz` is forbidden, we could reduce it to `x(L-a)(L-b)z`, but this leads
-    /// to huge families. I think it's because it means `xcz` can be parsed multiple
-    /// ways.
+    /// to huge families. I think this happens because `xcz`, where c is some other
+    /// digit in L, can be generated in multiple ways.
     ///
     /// Instead, we split into:
     /// - families with no a: `x(L-a)z`
     /// - families with an a: `x(L-a)a(L-b)z`
     ///
-    /// If both are forbidden, we split it into:
+    /// If both `xabz` and `xbaz` are forbidden, we split it into:
     /// - families with neither: `x(L-a-b)z`
     /// - families with an a:    `x(L-a-b)a(L-b)z`
     /// - families with a b:     `x(L-a-b)b(L-a)z`
+    /// 
+    /// This is similar to Lemmas 23 and 25 in Bright.
     pub fn split_on_incompatible_digits(
         &mut self,
         family: &Family,
@@ -254,10 +259,13 @@ impl SearchContext {
 
     /// Given a family `xLyMz`, with a in L, and b in M, if `xaybz` is forbidden,
     /// then we could split the family into `x(L-a)yMz` and `xLy(M-b)z`.
-    /// Because this would cause duplication issues though (consider strings with
-    /// neither a nor b), we need to split it differently:
+    /// 
+    /// However, this would cause us to consider strings in the family
+    /// `x(L-a)y(M-b)z` twice, so instead, we split it differently:
     /// - with no a: `x(L-a)yMz`
     /// - with an a: `x(L-a)aLy(M-b)z`
+    /// 
+    /// This is similar to Lemma 27 in Bright.
     pub fn split_on_incompatible_digits_different_cores(
         &mut self,
         family: &Family,
@@ -313,11 +321,13 @@ impl SearchContext {
         None
     }
 
-    // Given a family xLz, with a and b in L, if xabaz is forbidden, splits the family into:
-    // - no as: x(L-a)z
-    // - one a: x(L-a)a(L-a)z
-    // - 2+ as, but no bs between them: x(L-a)a(L-b)a(L-a)z
-    //   - this is unambiguous: the as must be the first and last ones
+    /// Given a family xLz, with a and b in L, if xabaz is forbidden, splits the family into:
+    /// - no as: x(L-a)z
+    /// - one a: x(L-a)a(L-a)z
+    /// - 2+ as, but no bs between them: x(L-a)a(L-b)a(L-a)z
+    ///   - this is unambiguous: the as must be the first and last ones
+    /// 
+    /// This is similar to Lemma 31 in Bright.
     pub fn split_on_forbidden_sandwich(
         &mut self,
         family: &Family,
@@ -370,10 +380,6 @@ impl SearchContext {
 /// splits it into:
 /// - families with no a: `x(L-a)z`
 /// - families with an a: `x(L-a)a(L-b)z`
-///
-/// We could reduce to X[bY][aY]Z, but this is leads to huge families.
-/// I think it's because XyyyZ can be parsed into that pattern multiple
-/// ways.
 fn do_split_for_semi_incompatible(family: &Family, i: usize, a: Digit, b: Digit) -> Vec<Family> {
     // xLz -> x(L-a)z
     let mut without_a = family.clone();

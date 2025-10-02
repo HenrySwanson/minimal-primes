@@ -58,6 +58,7 @@ impl Sequence {
         Ok(Sequence::new(k, c, d))
     }
 
+    /// Returns the nth term of the given sequence
     pub fn compute_term(&self, n: u32, base: u64) -> BigUint {
         let bn = BigUint::from(base).pow(n);
         let kbnc = if self.c > 0 {
@@ -70,6 +71,8 @@ impl Sequence {
         q
     }
 
+    /// Checks whether `p` is equal to the nth term in this sequence. Often
+    /// more efficient than computing the nth term directly.
     pub fn check_term_equal(&self, base: u64, p: u64, n: usize) -> bool {
         let mut x = u128::from(p);
         x *= u128::from(self.d);

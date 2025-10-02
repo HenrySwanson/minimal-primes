@@ -18,7 +18,7 @@ use crate::digits::DigitSeq;
 use crate::families::{Core, Family, SimpleFamily};
 use crate::logging::Tracer;
 use crate::search::composite::{
-    check_residues_mod_30, composite_checks_for_simple, find_guaranteed_factor, find_two_factors,
+    check_residues_mod_30, composite_checks_for_simple, find_common_factor, find_two_factors,
 };
 use crate::SearchResults;
 
@@ -50,7 +50,7 @@ impl SearchTree {
         let ctx = SearchContext::new(base, tree_log);
         let initial_node = SearchNode {
             family: NodeType::Arbitrary(Family::any(base)),
-            possible_contained_primes: CandidateIndices::empty(),
+            possible_contained_primes: CandidateIndices::zero(),
             id: ctx.tracer.root(),
         };
         let frontier = Frontier::start(initial_node);
@@ -263,7 +263,7 @@ impl SearchContext {
 
         // Now is a good time for us to narrow down the potential primes this
         // family could contain.
-        let mut new_contained_primes = self.primes.new_indices();
+        let mut new_contained_primes = self.primes.empty_indices();
         for (i, prime) in self.primes.get_many(possible_contained_primes) {
             let start = Instant::now();
             if family.could_contain(prime) {
@@ -420,11 +420,11 @@ impl SearchContext {
         let mut children = if magic % 2 == 1 {
             debug!("  Splitting {family} left on core {slot}");
             debug_to_tree!(self.tracer, "Splitting left on core {}", slot);
-            family.split_left(slot)
+            family.expand(slot)
         } else {
             debug!("  Splitting {family} right on core {slot}");
             debug_to_tree!(self.tracer, "Splitting right on core {}", slot);
-            family.split_right(slot)
+            family.expand_right(slot)
         };
 
         // We also need to consider the case where the chosen core expands to
@@ -500,7 +500,7 @@ impl SearchContext {
             self.stats.num_simple_substring_checks += 1;
             self.stats.duration_simple_substring_checks += start.elapsed();
         }
-        *possible_contained_primes = self.primes.new_indices(); // resets our collection
+        *possible_contained_primes = self.primes.empty_indices(); // resets our collection
 
         // Test if it is a prime
         let value = node.family.value(self.base);
@@ -509,7 +509,7 @@ impl SearchContext {
             debug!("  Saving {}, is prime", node.family);
             debug_to_tree!(self.tracer, "Saving, is prime");
             self.stats.branch_stats.is_new_prime += 1;
-            let seq = node.family.sequence();
+            let seq = node.family.contract();
             self.primes.insert(seq);
             return vec![];
         }
@@ -611,7 +611,7 @@ impl SearchContext {
         // p does not divide BASE (e.g. 7)
         // -------------------------------
         // This is how we detect families like 4[6]9 being divisible by 7.
-        if let Some(divisor) = find_guaranteed_factor(self.base, family) {
+        if let Some(divisor) = find_common_factor(self.base, family) {
             debug!("  {family} is divisible by {divisor}");
             debug_to_tree!(self.tracer, "Divisible by {}", divisor);
             return true;

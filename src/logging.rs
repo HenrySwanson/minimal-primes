@@ -20,6 +20,7 @@ impl log::Log for SimpleLogger {
 
 pub enum Never {}
 
+/// Used to log the tree-like structure of how the search space is explored.
 pub enum Tracer {
     // The tree and the current index we're looking at
     Real(AppendTree<String>, AppendTreeNodeID),

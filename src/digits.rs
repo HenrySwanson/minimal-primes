@@ -3,17 +3,23 @@ use std::fmt::Write;
 use itertools::Itertools;
 use num_bigint::BigUint;
 
+/// A digit. The base is not specified and is provided as another parameter
+/// in the necessary methods.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Digit(pub u8);
 
+/// A sequence of digits. The base is not specified and is provided as
+/// another parameter in the necessary methods.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DigitSeq(pub Vec<Digit>);
 
 impl DigitSeq {
+    /// Creates an empty sequence of digits.
     pub fn new() -> Self {
         Self(vec![])
     }
 
+    /// Returns the value of this sequence, interpreted in the given base.
     pub fn value(&self, base: u8) -> BigUint {
         let mut value = BigUint::ZERO;
         for d in &self.0 {
@@ -23,6 +29,8 @@ impl DigitSeq {
         value
     }
 
+    /// Returns the value of the concatenation of these sequences, interpreted
+    /// in the given base.
     pub fn concat_value<'a>(seqs: impl IntoIterator<Item = &'a DigitSeq>, base: u8) -> BigUint {
         let mut value = BigUint::ZERO;
         for seq in seqs.into_iter() {
@@ -34,6 +42,8 @@ impl DigitSeq {
         value
     }
 
+    /// Returns true if `needle` appears as a proper subsequence of this
+    /// sequence.
     pub fn properly_contains(&self, needle: &DigitSeq) -> bool {
         // Save some time when the needle is too large, and also, rule out identical
         // strings.

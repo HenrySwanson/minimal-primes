@@ -1,8 +1,16 @@
+
+
 use itertools::Itertools;
 use num_bigint::BigUint;
 
 use crate::digits::{Digit, DigitSeq};
 
+/// A *family* is a subset of digit sequences, specified by concatenating fixed
+/// digit sequences and cores, for example, `1[78]*23[9]*4`. Some sequences in
+/// this family are:
+/// - `1234`
+/// - `188882394`
+/// - `1787239994`
 #[derive(Debug, Clone, PartialEq)]
 pub struct Family {
     // invariant: digitseqs.len() = cores.len() + 1
@@ -10,11 +18,19 @@ pub struct Family {
     pub cores: Vec<Core>,
 }
 
+/// A *core* is an unordered set of digits, representing any sequence, of any
+/// length made from those digits. We notate cores, and families, with a
+/// regex-like syntax, so the core `[134]*` represents any strings made out
+/// of only 1s, 3s, and 4s (including the empty string).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Core {
     digits: Vec<Digit>,
 }
 
+/// A *simple* family is a family with exactly one core, which contains only
+/// one digit.
+/// 
+/// For example, `4[6]*7` is a simple family.
 #[derive(Debug, Clone)]
 pub struct SimpleFamily {
     pub before: DigitSeq,
@@ -24,6 +40,8 @@ pub struct SimpleFamily {
 }
 
 impl Family {
+    /// Creates the family `[0..B]*`, where B is the given base. This family
+    /// contains all digit sequences.
     pub fn any(base: u8) -> Self {
         Self {
             digitseqs: vec![DigitSeq::new(), DigitSeq::new()],
@@ -31,10 +49,15 @@ impl Family {
         }
     }
 
+    /// Returns the weight of the sequence, i.e., the sum of the lengths of the
+    /// fixed digit sequences. Equivalently, the length of the smallest string in
+    /// this family.
     pub fn weight(&self) -> usize {
         self.digitseqs.iter().map(|seq| seq.0.len()).sum()
     }
 
+    /// Reduces the family to an equivalent but simpler form. For example,
+    /// it removes empty cores (which can only expand to the empty string).
     pub fn simplify(&mut self) {
         debug_assert_eq!(self.digitseqs.len(), self.cores.len() + 1);
 
@@ -67,6 +90,8 @@ impl Family {
         }
     }
 
+    /// Returns the sequence gotten by removing all the cores (equivalently,
+    /// replacing them with empty strings).
     pub fn contract(&self) -> DigitSeq {
         DigitSeq(
             self.digitseqs
@@ -77,10 +102,18 @@ impl Family {
         )
     }
 
+    /// Returns the sequence gotten by substituting the given digit for the
+    /// specified core, and deleting all the others.
+    /// 
+    /// Does not check that the digit is in that core.
     pub fn substitute(&self, slot: usize, digit: Digit) -> DigitSeq {
         self.substitute_multiple(slot, [digit])
     }
 
+    /// Returns the sequence gotten by substituting the given digits for the
+    /// specified core, and deleting all the others.
+    /// 
+    /// Does not check that the digits are in that core.
     pub fn substitute_multiple(
         &self,
         slot: usize,
@@ -99,6 +132,8 @@ impl Family {
         output
     }
 
+    /// Works like [Self::substitute], but with two slots and two digits. If
+    /// the slots are the same, `digit_i` precedes `digit_j`.
     pub fn substitute_two(
         &self,
         slot_i: usize,
@@ -119,7 +154,12 @@ impl Family {
         output
     }
 
-    pub fn split_left(&self, slot: usize) -> Vec<Self> {
+    /// Expands a family on the ith core "to the left", meaning, if the family
+    /// is xLz, with L = {y1, y2, ...}, this returns the families xz, xy1Lz,
+    /// xy2Lz, ....
+    ///
+    /// This is Lemma 19 in Bright, and in his code, it's called "exploring".
+    pub fn expand(&self, slot: usize) -> Vec<Self> {
         self.cores[slot]
             .iter()
             // skip 0 if it'd be the first digit
@@ -133,7 +173,12 @@ impl Family {
             .collect()
     }
 
-    pub fn split_right(&self, slot: usize) -> Vec<Self> {
+    /// Expands a family on the ith core "to the right", meaning, if the family
+    /// is xLz, with L = {y1, y2, ...}, this returns the families xz, xLy1z,
+    /// xLy2Lz, ....
+    ///
+    /// This is Lemma 19 in Bright, and in his code, it's called "exploring".
+    pub fn expand_right(&self, slot: usize) -> Vec<Self> {
         self.cores[slot]
             .iter()
             .map(|digit| {
@@ -146,6 +191,7 @@ impl Family {
             .collect()
     }
 
+    /// Returns true if this family contains `needle`.
     pub fn could_contain(&self, needle: &DigitSeq) -> bool {
         let mut needle_iter = needle.0.iter().copied().peekable();
 
@@ -228,7 +274,9 @@ impl Core {
 }
 
 impl SimpleFamily {
-    pub fn sequence(&self) -> DigitSeq {
+    /// Returns the smallest member of this family, i.e., `before + center *
+    /// min_repeats + after`.
+    pub fn contract(&self) -> DigitSeq {
         let mut seq = self.before.clone();
         for _ in 0..self.min_repeats {
             seq += self.center;
@@ -237,6 +285,7 @@ impl SimpleFamily {
         seq
     }
 
+    /// Returns the value of [Self::contract], interpreted in the given base.
     pub fn value(&self, base: u8) -> BigUint {
         let mut value = BigUint::ZERO;
         for d in &self.before.0 {

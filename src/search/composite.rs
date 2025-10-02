@@ -12,8 +12,7 @@ use crate::search::gcd::nontrivial_gcd;
 use crate::search::SimpleNode;
 use crate::sequence::BigSequence;
 
-/// Checks whether this family shares a factor with the base.
-/// Basically just checks the last digit.
+/// Checks whether this family shares a factor with the base, returning that factor.
 pub fn shares_factor_with_base(base: u8, family: &Family) -> Option<u8> {
     // Get the last digit of the family
     let last_seq = family.digitseqs.last().expect("digitseqs nonempty");
@@ -22,9 +21,11 @@ pub fn shares_factor_with_base(base: u8, family: &Family) -> Option<u8> {
     nontrivial_gcd(&d.0, &base)
 }
 
-/// Given a family of the shape xLyMz..., checks whether it has a single factor
-/// dividing every member of the family.
-pub fn find_guaranteed_factor(base: u8, family: &Family) -> Option<BigUint> {
+/// Checks whether there's a factor dividing all members of the family.
+///
+/// This uses Lemmas 3, 4 and 9 from Bright, and corresponds to
+/// `PRINTDIVISOR` in mepn.
+pub fn find_common_factor(base: u8, family: &Family) -> Option<BigUint> {
     let mut gcd = family.contract().value(base);
 
     for (i, core) in family.cores.iter().enumerate() {
@@ -42,9 +43,12 @@ pub fn find_guaranteed_factor(base: u8, family: &Family) -> Option<BigUint> {
 /// For a period n, a periodic factor sequence is a list of numbers f_1, ..., f_n
 /// such that f_i divides xL^(i+kn)z for all k.
 ///
-/// For example, a period-1 factor is a single number that divides xz, xLz, xLLz, ...,
-/// and a period-2 factor is two numbers N and M such that N divides xz, xLLz, xL^4z, ...,
-/// and M divides xLz, xLLLz, xL^5z, ....
+/// For example, a period-1 factor is a single number that divides
+/// xz, xLz, xLLz, ..., and a period-2 factor is two numbers N and M such that
+/// N divides xz, xLLz, xL^4z, ..., and M divides xLz, xLLLz, xL^5z, ....
+///
+/// Corresponds to `PRINTDIVISORTHREE`, `PRINTDIVISORFOUR`, and `PRINTDIVISORFIVE`
+/// in mepn.
 pub fn find_periodic_factor(base: u8, family: &Family, stride: usize) -> Option<Vec<BigUint>> {
     let one = BigUint::from(1_u32);
 
@@ -85,12 +89,15 @@ pub fn find_periodic_factor(base: u8, family: &Family, stride: usize) -> Option<
 
 /// This is the most complex check we have, I think.
 ///
-/// Given a family x_1 L_1 ... x_n L_n, and some index m, partitions the elements
+/// Given a family and some index m, partitions the elements
 /// in that family into two parts:
-/// - those with an even number of digits contributed from L_m
+/// - those with an even number of digits contributed from the mth core
 /// - those with an odd number of digits
 ///
-/// If those families each have common factors, returns them.
+/// If those families each have common factors, for any m, returns them.
+///
+/// Mentioned in Bright under Example 10, and corresponds to `PRINTDIVISORTWO`
+/// in mepn.
 pub fn find_two_factors(base: u8, family: &Family) -> Option<(BigUint, BigUint)> {
     for i in 0..family.cores.len() {
         if let Some(factors) = find_two_factors_helper(base, family, i) {
@@ -100,6 +107,7 @@ pub fn find_two_factors(base: u8, family: &Family) -> Option<(BigUint, BigUint)>
     None
 }
 
+/// Checks the conditions for [find_two_factors] for the index `i``.
 fn find_two_factors_helper(base: u8, family: &Family, i: usize) -> Option<(BigUint, BigUint)> {
     let core_i = &family.cores[i];
 
@@ -150,9 +158,9 @@ fn find_two_factors_helper(base: u8, family: &Family, i: usize) -> Option<(BigUi
     Some((even_gcd, odd_gcd))
 }
 
+/// Similar to [find_two_factors], but partitions the family into strings of
+/// even and odd length.
 pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUint)> {
-    // Similar to find_perpetual_factor, but checks strings of even length and odd length separately.
-
     // TODO: can this be generalized to more than two cores?
     if family.cores.len() != 2 {
         return None;
@@ -204,17 +212,25 @@ pub fn find_even_odd_factor(base: u8, family: &Family) -> Option<(BigUint, BigUi
     Some((even_gcd, odd_gcd))
 }
 
+/// Checks whether this family is ever coprime to 30. If it's not, then while the
+/// specific residue mod 30 might change, it's always got some non-trivial factor
+/// in common with 30, and is thus not prime.
+///
+/// We do this by checking residues.
+///
+/// This is Lemma 34 in Bright, and corresponds to `PRINTDIVISOREXT` in mepn.
 pub fn check_residues_mod_30(base: u8, family: &Family) -> bool {
-    // This is a weird one. It's Lemma 34 in Curtis Bright's paper.
     // Basically, for a given N, we can compute all the residues of a given family mod N.
     // If these are all > 1, then we know the family has a non-trivial factor.
     // Denote [L] as the set of residues mod N.
     // Like Bright, we use N = 30.
 
-    // Small caveat: if L contains 2, 3, or 5, then this test will fail. The small
-    // prime will not be detected, and we will claim this family is composite.
-    // But we can just check the length of the family (if the base is not tiny)
-    // to bail out of this.
+    // Small caveat: this test can return a false positive if the family contains
+    // 2, 3, or 5. Since those are not coprime to 30, we'll claim this family is
+    // composite.
+    // The easiest way to detect is to reject if the family could contain a
+    // single-digit number. This works for bases > 5, and bases <= 5 don't need
+    // this at all.
     if base < 5 || family.weight() <= 1 {
         return false;
     }
@@ -228,6 +244,8 @@ pub fn check_residues_mod_30(base: u8, family: &Family) -> bool {
     !has_bad_residue
 }
 
+/// Returns an array where the kth element is set if the given family has some
+/// member that is k mod 30.
 fn get_residues_mod_30(base: u8, family: &Family) -> [bool; 30] {
     let mut residues = [false; 30];
 
@@ -286,6 +304,9 @@ fn get_residues_mod_30(base: u8, family: &Family) -> [bool; 30] {
     residues
 }
 
+/// Returns true if the given family is guaranteed to be composite.
+///
+/// TODO: just take the family, not the node!
 pub fn composite_checks_for_simple(base: u8, node: &SimpleNode) -> bool {
     // Get the sequence for this. As a reminder, it looks like:
     // (k B^n + c) / d, where d = B-1
@@ -305,6 +326,10 @@ macro_rules! bail_if_none {
     };
 }
 
+/// Checks whether the given sequence can be rearranged as a sum of cubes,
+/// which would make it composite (probably).
+///
+/// This is Lemma 17 in Bright, and corresponds to `PRINTDIVISORCUBE` in mepn.
 fn check_sum_diff_of_cubes(base: u8, sequence: &BigSequence) -> bool {
     // We need B to be a cube, and also k and c.
     // What about d? We can mostly ignore it, but we do have to be careful
@@ -326,6 +351,10 @@ fn check_sum_diff_of_cubes(base: u8, sequence: &BigSequence) -> bool {
     // TODO: also log (to tree) what the specific reason is!
 }
 
+/// Checks whether the given sequence can be rearranged as a difference of squares,
+/// which would make it composite.
+///
+/// This is Lemma 13 in Bright, and corresponds to `PRINTDIVISORSQUARE` in mepn.
 fn check_diff_of_squares(base: u8, sequence: &BigSequence) -> bool {
     // we need the base, k and -c to be squares
     let _sqrt_base = bail_if_none!(base.sqrt_exact());
@@ -339,8 +368,14 @@ fn check_diff_of_squares(base: u8, sequence: &BigSequence) -> bool {
     true
 }
 
-// TODO: i feel like this could be simplified
+/// Checks whether the given sequence alternates between a difference of squares,
+/// and something with a common factor.
+///
+/// This is Corollary 15 in Bright, and corresponds to `PRINTDIVISORSQUARE` in
+/// mepn.
 fn check_diff_of_squares_or_divisor(base: u8, sequence: &BigSequence) -> bool {
+    // TODO: i feel like this could be simplified
+
     // maybe kB^n+c factors in alternating ways
     // - difference of squares
     // - common factor
@@ -416,7 +451,7 @@ mod tests {
         let family = parse_family("4[6]*9", base);
         assert_eq!(
             Some(BigUint::from(7_u32)),
-            find_guaranteed_factor(base, &family)
+            find_common_factor(base, &family)
         );
     }
 
@@ -453,7 +488,7 @@ mod tests {
         let family = parse_family("9[0]*8[0]*1", base);
         assert_eq!(
             Some(BigUint::from(9_u32)),
-            find_guaranteed_factor(base, &family)
+            find_common_factor(base, &family)
         );
     }
 

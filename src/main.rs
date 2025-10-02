@@ -400,7 +400,7 @@ fn intermediate_process_family(
 
         if is_prime(&value, None).probably() {
             println!("  Saving {family}, is prime");
-            let seq = family.sequence();
+            let seq = family.contract();
             primes.insert(seq);
             return None;
         }
