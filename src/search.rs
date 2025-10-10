@@ -13,10 +13,10 @@ use num_prime::buffer::{NaiveBuffer, PrimeBufferExt};
 
 use self::composite::{find_even_odd_factor, find_periodic_factor, shares_factor_with_base};
 use self::frontier::{Frontier, Weight};
-use crate::data_structures::{AppendTreeNodeID, CandidateIndices, CandidateSequences};
+use crate::candidates::{CandidateIndices, CandidateSequences};
 use crate::digits::DigitSeq;
 use crate::families::{Core, Family, SimpleFamily};
-use crate::logging::Tracer;
+use crate::logging::{AppendTreeNodeID, Tracer};
 use crate::search::composite::{
     check_residues_mod_30, composite_checks_for_simple, find_common_factor, find_two_factors,
 };

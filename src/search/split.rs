@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use log::debug;
 
-use crate::data_structures::CandidateIndices;
+use crate::candidates::CandidateIndices;
 use crate::debug_to_tree;
 use crate::digits::Digit;
 use crate::families::Family;
@@ -16,7 +16,7 @@ impl SearchContext {
     /// Generalizes to multi-core families.
     ///
     /// This is Lemma 21 from Bright.
-    /// 
+    ///
     /// We check n from 1 to `max_repeats` inclusive.
     pub fn split_on_limited_digit(
         &mut self,
@@ -79,7 +79,7 @@ impl SearchContext {
     ///
     /// This doesn't reduce the complexity of the cores, so its use should be limited. It
     /// does seem to help in small doses though.
-    /// 
+    ///
     /// This is Lemma 29 in Bright.
     pub fn split_on_necessary_digit(&mut self, family: &Family) -> Option<Family> {
         // There's a case in base 11 (and probably others) where we have
@@ -167,7 +167,7 @@ impl SearchContext {
     /// - families with neither: `x(L-a-b)z`
     /// - families with an a:    `x(L-a-b)a(L-b)z`
     /// - families with a b:     `x(L-a-b)b(L-a)z`
-    /// 
+    ///
     /// This is similar to Lemmas 23 and 25 in Bright.
     pub fn split_on_incompatible_digits(
         &mut self,
@@ -259,12 +259,12 @@ impl SearchContext {
 
     /// Given a family `xLyMz`, with a in L, and b in M, if `xaybz` is forbidden,
     /// then we could split the family into `x(L-a)yMz` and `xLy(M-b)z`.
-    /// 
+    ///
     /// However, this would cause us to consider strings in the family
     /// `x(L-a)y(M-b)z` twice, so instead, we split it differently:
     /// - with no a: `x(L-a)yMz`
     /// - with an a: `x(L-a)aLy(M-b)z`
-    /// 
+    ///
     /// This is similar to Lemma 27 in Bright.
     pub fn split_on_incompatible_digits_different_cores(
         &mut self,
@@ -326,7 +326,7 @@ impl SearchContext {
     /// - one a: x(L-a)a(L-a)z
     /// - 2+ as, but no bs between them: x(L-a)a(L-b)a(L-a)z
     ///   - this is unambiguous: the as must be the first and last ones
-    /// 
+    ///
     /// This is similar to Lemma 31 in Bright.
     pub fn split_on_forbidden_sandwich(
         &mut self,

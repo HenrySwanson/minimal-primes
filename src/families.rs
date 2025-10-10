@@ -1,5 +1,3 @@
-
-
 use itertools::Itertools;
 use num_bigint::BigUint;
 
@@ -29,7 +27,7 @@ pub struct Core {
 
 /// A *simple* family is a family with exactly one core, which contains only
 /// one digit.
-/// 
+///
 /// For example, `4[6]*7` is a simple family.
 #[derive(Debug, Clone)]
 pub struct SimpleFamily {
@@ -104,7 +102,7 @@ impl Family {
 
     /// Returns the sequence gotten by substituting the given digit for the
     /// specified core, and deleting all the others.
-    /// 
+    ///
     /// Does not check that the digit is in that core.
     pub fn substitute(&self, slot: usize, digit: Digit) -> DigitSeq {
         self.substitute_multiple(slot, [digit])
@@ -112,7 +110,7 @@ impl Family {
 
     /// Returns the sequence gotten by substituting the given digits for the
     /// specified core, and deleting all the others.
-    /// 
+    ///
     /// Does not check that the digits are in that core.
     pub fn substitute_multiple(
         &self,

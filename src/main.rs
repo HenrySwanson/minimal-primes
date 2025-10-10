@@ -7,14 +7,14 @@ use itertools::Itertools;
 use log::{info, LevelFilter};
 use num_prime::nt_funcs::is_prime;
 
-use crate::data_structures::CandidateSequences;
+use crate::candidates::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
 use crate::families::{Family, SimpleFamily};
 use crate::search::{SearchTree, Stats};
 use crate::sequence::Sequence;
 use crate::sieve::SequenceSlice;
 
-mod data_structures;
+mod candidates;
 mod digits;
 mod families;
 mod logging;

@@ -1,6 +1,5 @@
+use std::collections::VecDeque;
 use std::ops::ControlFlow;
-
-use crate::data_structures::WeightedVec;
 
 /// Holds the families we haven't explored yet, arranged by increasing
 /// weight. Helps guarantee we've discovered all minimal primes of length N
@@ -9,9 +8,13 @@ use crate::data_structures::WeightedVec;
 /// Holds [super::SearchNode]s for our purposes, but in theory can hold
 /// anything implementing [Weight].
 pub struct Frontier<T> {
-    /// maps weight to nodes; used to ensure we're exploring the
-    /// search space in (non-strictly) increasing order.
-    by_weight: WeightedVec<T>,
+    /// maps weight to nodes; an element with weight i is in the ith deque.
+    /// used to ensure we're exploring the search space in (non-strictly)
+    /// increasing order
+    elements: Vec<VecDeque<T>>,
+    /// maps weight to nodes, the 'ratchet' that enforces that we can't backtrack
+    /// to an element of lower weight.
+    min_allowed_weight: usize,
 }
 
 /// Helper trait to make [Frontier] work.
@@ -23,7 +26,8 @@ impl<T: Weight> Frontier<T> {
     /// Creates a new frontier with exactly one element.
     pub fn start(node: T) -> Self {
         let mut ret = Self {
-            by_weight: WeightedVec::new(),
+            elements: vec![],
+            min_allowed_weight: 0,
         };
         ret.put(node);
         ret
@@ -37,7 +41,7 @@ impl<T: Weight> Frontier<T> {
         // TODO: return some richer type from the closure?
 
         // Pop out an element of least weight
-        let layer = match self.by_weight.find_first_non_empty_layer_mut() {
+        let layer = match self.find_first_non_empty_layer_mut() {
             Some(layer) => layer,
             None => return ControlFlow::Break(()),
         };
@@ -52,23 +56,51 @@ impl<T: Weight> Frontier<T> {
 
     /// Iterates through every item in the frontier.
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.by_weight.iter()
+        self.elements.iter().flatten()
     }
 
     /// Returns the number of elements in the frontier.
     pub fn len(&self) -> usize {
-        self.by_weight.len()
+        self.elements.iter().map(|layer| layer.len()).sum()
     }
 
     /// Returns the minimum weight across all items in the frontier,
     /// or None if the frontier is empty.
     pub fn min_weight(&self) -> Option<usize> {
-        self.by_weight.min_weight()
+        self.elements.iter().position(|layer| !layer.is_empty())
     }
-    
+
     /// Inserts a new item into the frontier.
-    fn put(&mut self, node: T) {
-        let weight = node.weight();
-        self.by_weight.put(node, weight);
+    fn put(&mut self, item: T) {
+        let weight = item.weight();
+        debug_assert!(weight >= self.min_allowed_weight);
+
+        loop {
+            // Keep appending empty deques until we reach the right weight
+            match self.elements.get_mut(weight) {
+                Some(layer) => {
+                    layer.push_back(item);
+                    break;
+                }
+                None => self.elements.push(VecDeque::new()),
+            }
+        }
+    }
+
+    fn find_first_non_empty_layer_mut(&mut self) -> Option<&mut VecDeque<T>> {
+        for (i, layer) in self.elements.iter_mut().enumerate() {
+            if i < self.min_allowed_weight {
+                assert!(
+                    layer.is_empty(),
+                    "all layers below min_allowed_weight must be empty"
+                );
+            }
+
+            if !layer.is_empty() {
+                return Some(layer);
+            }
+        }
+
+        None
     }
 }
