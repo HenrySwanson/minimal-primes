@@ -81,10 +81,18 @@ impl CandidateSequences {
     }
 
     /// Returns a [CandidateIndices] containing none of the current elements.
-    pub fn empty_indices(&self) -> CandidateIndices {
+    pub fn indices_none(&self) -> CandidateIndices {
         CandidateIndices {
             idxs: vec![],
             start_unknown: self.inner.len(),
+        }
+    }
+
+    /// Returns a [CandidateIndices] containing all of the current elements.
+    pub fn indices_all(&self) -> CandidateIndices {
+        CandidateIndices {
+            idxs: vec![],
+            start_unknown: 0,
         }
     }
 
@@ -112,17 +120,7 @@ impl Default for CandidateSequences {
     }
 }
 
-// TODO: this should work negatively, i.e., remove instead of add!
 impl CandidateIndices {
-    /// Returns a set of indices that's completely empty; nothing has
-    /// been ruled out.
-    pub fn zero() -> Self {
-        Self {
-            idxs: vec![],
-            start_unknown: 0,
-        }
-    }
-
     /// Inserts an index into this struct.
     pub fn add(&mut self, idx: usize) {
         self.idxs.push(idx);

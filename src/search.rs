@@ -47,7 +47,7 @@ impl SearchTree {
     pub fn new(ctx: &SearchContext) -> Self {
         let initial_node = SearchNode {
             family: NodeType::Arbitrary(Family::any(ctx.base)),
-            possible_contained_primes: CandidateIndices::zero(),
+            possible_contained_primes: ctx.primes.indices_all(),
             id: ctx.tracer.root(),
         };
         let frontier = Frontier::start(initial_node);
@@ -189,7 +189,7 @@ impl Family {
 
         // Now is a good time for us to narrow down the potential primes this
         // family could contain.
-        let mut new_contained_primes = ctx.primes.empty_indices();
+        let mut new_contained_primes = ctx.primes.indices_none();
         for (i, prime) in ctx.primes.get_many(possible_contained_primes) {
             let start = Instant::now();
             if self.could_contain(prime) {
@@ -427,7 +427,7 @@ impl SimpleNode {
             ctx.stats.num_simple_substring_checks += 1;
             ctx.stats.duration_simple_substring_checks += start.elapsed();
         }
-        *possible_contained_primes = ctx.primes.empty_indices(); // resets our collection
+        *possible_contained_primes = ctx.primes.indices_none(); // resets our collection
 
         // Test if it is a prime
         let value = self.family.value(ctx.base);
