@@ -20,7 +20,7 @@ use crate::logging::{AppendTreeNodeID, Tracer};
 use crate::search::composite::{
     check_residues_mod_30, composite_checks_for_simple, find_common_factor, find_two_factors,
 };
-use crate::SearchResults;
+use crate::RemainingNodes;
 
 #[macro_export]
 macro_rules! log_to_tree {
@@ -95,20 +95,11 @@ impl SearchTree {
         ControlFlow::Continue(())
     }
 
-    // TODO: return should not include primes and stats and such; that stays in the context!
-    pub fn into_results(self, ctx: SearchContext) -> SearchResults {
-        // print the tree to stdout if we're tracing
-        match ctx.tracer {
-            Tracer::Real(t, _) => t.pretty_print_to_stdout(),
-            Tracer::Dummy(_) => {}
-        }
-
+    pub fn into_results(self) -> RemainingNodes {
         // Pull the unsolved branches and return them
-        let mut ret = SearchResults {
-            primes: ctx.primes,
+        let mut ret = RemainingNodes {
             simple_families: vec![],
             other_families: vec![],
-            stats: ctx.stats,
         };
         for node in self.nodes.iter().cloned() {
             match node.family {
@@ -169,7 +160,7 @@ pub struct SearchContext {
     pub stats: Stats,
     /// For tracking our paths through the search space in a more
     /// understandable format.
-    tracer: Tracer,
+    pub tracer: Tracer,
 }
 
 #[derive(Debug, Clone)]

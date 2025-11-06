@@ -10,7 +10,8 @@ use num_prime::nt_funcs::is_prime;
 use crate::candidates::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
 use crate::families::{Family, SimpleFamily};
-use crate::search::{SearchContext, SearchTree, Stats};
+use crate::logging::Tracer;
+use crate::search::{SearchContext, SearchTree};
 use crate::sequence::Sequence;
 use crate::sieve::SequenceSlice;
 
@@ -124,12 +125,12 @@ fn main() {
     }
 }
 
-fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) -> SearchResults {
-    let mut results = first_stage(
-        cmd.base,
+fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) -> RemainingNodes {
+    let mut ctx = SearchContext::new(cmd.base, cmd.tree_log);
+    let results = first_stage(
+        &mut ctx,
         cmd.max_weight,
         cmd.max_iter,
-        cmd.tree_log,
         cmd.stats_only,
         stop_signal,
     );
@@ -144,10 +145,9 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) -> SearchResults {
         return results;
     }
 
-    let unsolved_families =
-        intermediate_stage(cmd.base, results.simple_families, &mut results.primes);
+    let unsolved_families = intermediate_stage(cmd.base, results.simple_families, &mut ctx.primes);
 
-    let (primes, unsolved) = second_stage(cmd, unsolved_families, results.primes);
+    let (primes, unsolved) = second_stage(cmd, unsolved_families, ctx.primes);
 
     println!(
         "Final set of primes ({}): {}",
@@ -159,35 +159,29 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) -> SearchResults {
         println!("{x}");
     }
 
-    SearchResults {
-        primes,
+    RemainingNodes {
         simple_families: unsolved,
         other_families: vec![],
-        stats: results.stats,
     }
 }
 
-pub struct SearchResults {
-    pub primes: CandidateSequences,
+pub struct RemainingNodes {
     pub simple_families: Vec<SimpleFamily>,
     pub other_families: Vec<Family>,
-    pub stats: Stats,
 }
 
 fn first_stage(
-    base: u8,
+    ctx: &mut SearchContext,
     max_weight: Option<usize>,
     max_iter: Option<usize>,
-    tree_log: bool,
     stats_only: bool,
     stop_signal: &AtomicBool,
-) -> SearchResults {
-    let mut ctx = SearchContext::new(base, tree_log);
+) -> RemainingNodes {
     let mut tree = SearchTree::new(&ctx);
 
     let mut prev_weight = 0;
     let mut counter = 0;
-    tree.explore_until(&mut ctx, |tree: &SearchTree, ctx: &SearchContext| {
+    tree.explore_until(ctx, |tree: &SearchTree, ctx: &SearchContext| {
         if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
             info!("Interrupted! Stopping now...");
             return ControlFlow::Break(());
@@ -244,7 +238,12 @@ fn first_stage(
         ControlFlow::Continue(())
     });
 
-    let results = tree.into_results(ctx);
+    let results = tree.into_results();
+    // print the tree to stdout if we're tracing
+    match &ctx.tracer {
+        Tracer::Real(t, _) => t.pretty_print_to_stdout(),
+        Tracer::Dummy(_) => {}
+    }
 
     if !stats_only {
         println!("---- BRANCHES REMAINING ----");
@@ -255,38 +254,38 @@ fn first_stage(
             println!("{f}");
         }
         println!("---- MINIMAL PRIMES ----");
-        println!("{}", results.primes.clone_and_sort_and_iter().format(", "));
+        println!("{}", ctx.primes.clone_and_sort_and_iter().format(", "));
         println!("------------");
         println!(
             "{} primes found, {} branches unresolved",
-            results.primes.len(),
+            ctx.primes.len(),
             results.simple_families.len() + results.other_families.len()
         );
     }
     println!("---- STATS ----");
     println!("Final weight was {prev_weight}");
-    println!("{} branches explored", results.stats.num_branches_explored);
+    println!("{} branches explored", ctx.stats.num_branches_explored);
     println!(
         "{} primality tests ({}ms)",
-        results.stats.num_primality_checks,
-        results.stats.duration_primality_checks.as_millis()
+        ctx.stats.num_primality_checks,
+        ctx.stats.duration_primality_checks.as_millis()
     );
     println!(
         "{} calls Family::could_contain ({}ms)",
-        results.stats.num_could_contains,
-        results.stats.duration_could_contains.as_millis()
+        ctx.stats.num_could_contains,
+        ctx.stats.duration_could_contains.as_millis()
     );
     println!(
         "{} substring tests ({}ms)",
-        results.stats.num_substring_checks,
-        results.stats.duration_substring_checks.as_millis()
+        ctx.stats.num_substring_checks,
+        ctx.stats.duration_substring_checks.as_millis()
     );
     println!(
         "{} simple substring tests ({}ms)",
-        results.stats.num_simple_substring_checks,
-        results.stats.duration_simple_substring_checks.as_millis()
+        ctx.stats.num_simple_substring_checks,
+        ctx.stats.duration_simple_substring_checks.as_millis()
     );
-    let branch_stats = &results.stats.branch_stats;
+    let branch_stats = &ctx.stats.branch_stats;
     println!(
         "{} branches eliminated with leading zeros",
         branch_stats.leading_zeros
@@ -928,7 +927,8 @@ mod tests {
         };
 
         // First stage
-        let mut results = first_stage(base, None, None, false, false, &AtomicBool::new(false));
+        let mut ctx = SearchContext::new(base, false);
+        let results = first_stage(&mut ctx, None, None, false, &AtomicBool::new(false));
 
         // Remove any composite branches that are expected to be present.
         // TODO: all composites are detected right now, but re-use this for
@@ -951,9 +951,9 @@ mod tests {
 
         // Do intermediate and second stages
         let unsolved_families =
-            intermediate_stage(cmd.base, results.simple_families, &mut results.primes);
+            intermediate_stage(cmd.base, results.simple_families, &mut ctx.primes);
 
-        let (primes, unsolved) = second_stage(&cmd, unsolved_families, results.primes);
+        let (primes, unsolved) = second_stage(&cmd, unsolved_families, ctx.primes);
 
         // Compare the primes we got to the primes we expect, except for the ones we
         // know we're missing.
