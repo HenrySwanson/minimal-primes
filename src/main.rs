@@ -8,14 +8,16 @@ use log::{info, LevelFilter};
 use num_prime::nt_funcs::is_prime;
 
 use crate::candidates::CandidateSequences;
+use crate::context::SearchContext;
 use crate::digits::{Digit, DigitSeq};
 use crate::families::{Family, SimpleFamily};
 use crate::logging::Tracer;
-use crate::search::{SearchContext, SearchTree};
+use crate::search::SearchTree;
 use crate::sequence::Sequence;
 use crate::sieve::SequenceSlice;
 
 mod candidates;
+mod context;
 mod digits;
 mod families;
 mod logging;
@@ -177,7 +179,7 @@ fn first_stage(
     stats_only: bool,
     stop_signal: &AtomicBool,
 ) -> RemainingNodes {
-    let mut tree = SearchTree::new(&ctx);
+    let mut tree = SearchTree::new(ctx);
 
     let mut prev_weight = 0;
     let mut counter = 0;

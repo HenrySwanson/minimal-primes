@@ -2,11 +2,11 @@ use itertools::Itertools;
 use log::debug;
 
 use crate::candidates::CandidateIndices;
+use crate::context::SearchContext;
 use crate::debug_to_tree;
 use crate::digits::Digit;
 use crate::families::Family;
 use crate::search::gcd::nontrivial_gcd;
-use crate::search::SearchContext;
 
 // TODO: this probably shouldn't be searchcontext, but this works well now
 impl SearchContext {
