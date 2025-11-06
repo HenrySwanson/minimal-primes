@@ -7,7 +7,6 @@ use itertools::Itertools;
 use log::{info, LevelFilter};
 use num_prime::nt_funcs::is_prime;
 
-use crate::candidates::CandidateSequences;
 use crate::context::SearchContext;
 use crate::digits::{Digit, DigitSeq};
 use crate::families::{Family, SimpleFamily};
@@ -147,14 +146,14 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) -> RemainingNodes {
         return results;
     }
 
-    let unsolved_families = intermediate_stage(cmd.base, results.simple_families, &mut ctx.primes);
+    let unsolved_families = intermediate_stage(results.simple_families, &mut ctx);
 
-    let (primes, unsolved) = second_stage(cmd, unsolved_families, ctx.primes);
+    let unsolved = second_stage(cmd, unsolved_families, &mut ctx);
 
     println!(
         "Final set of primes ({}): {}",
-        primes.len(),
-        primes.clone_and_sort_and_iter().format(", ")
+        ctx.primes.len(),
+        ctx.primes.clone_and_sort_and_iter().format(", ")
     );
     println!("{} branches unsolved", unsolved.len());
     for x in &unsolved {
@@ -341,9 +340,8 @@ fn first_stage(
 }
 
 fn intermediate_stage(
-    base: u8,
     unsolved_families: Vec<SimpleFamily>,
-    primes: &mut CandidateSequences,
+    ctx: &mut SearchContext,
 ) -> Vec<SimpleFamily> {
     // It's possible that a simple family can only be expanded a finite amount
     // before it conflicts with a known minimal prime. If so, we should not
@@ -352,7 +350,7 @@ fn intermediate_stage(
 
     unsolved_families
         .into_iter()
-        .filter_map(|family| intermediate_process_family(base, family, primes))
+        .filter_map(|family| intermediate_process_family(family, ctx))
         .collect()
 }
 
@@ -360,13 +358,12 @@ fn intermediate_stage(
 /// prime, just discards it. If it can't do either of those things, returns
 /// the family, incremented to as far as we searched.
 fn intermediate_process_family(
-    base: u8,
     family: SimpleFamily,
-    primes: &mut CandidateSequences,
+    ctx: &mut SearchContext,
 ) -> Option<SimpleFamily> {
     // Figure out how many iterations we need to check (if any)
     let mut repeats_until_prime = None;
-    for p in primes.iter() {
+    for p in ctx.primes.iter() {
         match family.will_contain_at(p) {
             None => {
                 // no luck, move to the next prime
@@ -398,12 +395,12 @@ fn intermediate_process_family(
     let mut family = family;
     while family.min_repeats < repeats_until_prime {
         // Test if it's prime
-        let value = family.value(base);
+        let value = family.value(ctx.base);
 
         if is_prime(&value, None).probably() {
             println!("  Saving {family}, is prime");
             let seq = family.contract();
-            primes.insert(seq);
+            ctx.primes.insert(seq);
             return None;
         }
 
@@ -419,11 +416,10 @@ fn intermediate_process_family(
 fn second_stage(
     cmd: &SearchArgs,
     unsolved_families: Vec<SimpleFamily>,
-    primes: CandidateSequences,
-) -> (CandidateSequences, Vec<SimpleFamily>) {
+    ctx: &mut SearchContext,
+) -> Vec<SimpleFamily> {
     println!("---- SIEVING PHASE ----");
-    let base = cmd.base;
-    let mut primes = primes;
+    let base = ctx.base;
     let mut unsolved_branches = vec![];
     let (mut remaining_branches, unsievable_branches): (Vec<_>, Vec<_>) = unsolved_families
         .into_iter()
@@ -448,7 +444,8 @@ fn second_stage(
         // Real quick, check if this can be eliminated via a minimal prime
         // TODO: shouldn't this come _after_ sieving?
         for (simple, seq) in std::mem::take(&mut remaining_branches) {
-            if let Some(p) = primes
+            if let Some(p) = ctx
+                .primes
                 .iter()
                 .find(|p| simple.will_contain_at(p).is_some_and(|n| n < n_lo))
             {
@@ -483,7 +480,7 @@ fn second_stage(
                     let digitseq =
                         DigitSeq(p.to_radix_be(base.into()).into_iter().map(Digit).collect());
                     println!("Found prime at exponent {i}: {digitseq}");
-                    primes.insert(digitseq);
+                    ctx.primes.insert(digitseq);
                 }
                 None => {
                     println!("Unable to find prime in the given range: {simple}");
@@ -501,12 +498,12 @@ fn second_stage(
     // TODO: we really gotta have some quick way to do this, it happens a lot
     for family in unsievable_branches {
         println!("Checking if we get a lucky break on {family}");
-        if let Some(still_unsolved) = intermediate_process_family(base, family, &mut primes) {
+        if let Some(still_unsolved) = intermediate_process_family(family, ctx) {
             unsolved_branches.push(still_unsolved);
         }
     }
 
-    (primes, unsolved_branches)
+    unsolved_branches
 }
 
 fn do_sieve(cmd: &SieveArgs) {
@@ -522,6 +519,7 @@ mod tests {
     use regex::Regex;
 
     use super::*;
+    use crate::candidates::CandidateSequences;
 
     struct IncompleteBranches {
         /// There are some branches that we know are composite, but the
@@ -952,16 +950,15 @@ mod tests {
         // }
 
         // Do intermediate and second stages
-        let unsolved_families =
-            intermediate_stage(cmd.base, results.simple_families, &mut ctx.primes);
+        let unsolved_families = intermediate_stage(results.simple_families, &mut ctx);
 
-        let (primes, unsolved) = second_stage(&cmd, unsolved_families, ctx.primes);
+        let unsolved = second_stage(&cmd, unsolved_families, &mut ctx);
 
         // Compare the primes we got to the primes we expect, except for the ones we
         // know we're missing.
         compare_primes(
             base,
-            &primes,
+            &ctx.primes,
             expected_incomplete
                 .eventual_primes
                 .iter()
