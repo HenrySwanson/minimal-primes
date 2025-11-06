@@ -39,27 +39,23 @@ macro_rules! debug_to_tree {
 }
 
 pub struct SearchTree {
-    /// Nodes that we haven't explored yet
-    pub frontier: Frontier<SearchNode>,
-    /// Everything else
-    pub ctx: SearchContext,
+    pub nodes: Frontier<SearchNode>,
 }
 
 impl SearchTree {
-    pub fn new(base: u8, tree_log: bool) -> Self {
-        let ctx = SearchContext::new(base, tree_log);
+    pub fn new(ctx: &SearchContext) -> Self {
         let initial_node = SearchNode {
-            family: NodeType::Arbitrary(Family::any(base)),
+            family: NodeType::Arbitrary(Family::any(ctx.base)),
             possible_contained_primes: CandidateIndices::zero(),
             id: ctx.tracer.root(),
         };
         let frontier = Frontier::start(initial_node);
 
-        Self { frontier, ctx }
+        Self { nodes: frontier }
     }
 
     pub fn num_nodes_to_solve(&self) -> usize {
-        self.frontier
+        self.nodes
             .iter()
             .filter(|node| match &node.family {
                 NodeType::Arbitrary(_) => true,
@@ -69,7 +65,7 @@ impl SearchTree {
     }
 
     pub fn any_nodes_to_solve(&self) -> bool {
-        self.frontier.iter().any(|node| match &node.family {
+        self.nodes.iter().any(|node| match &node.family {
             NodeType::Arbitrary(_) => true,
             NodeType::Simple(simple_node) => !simple_node.composite_tested,
         })
@@ -77,43 +73,44 @@ impl SearchTree {
 
     pub fn explore_until(
         &mut self,
-        mut stop_condition: impl FnMut(&SearchTree) -> ControlFlow<()>,
+        ctx: &mut SearchContext,
+        mut stop_condition: impl FnMut(&SearchTree, &SearchContext) -> ControlFlow<()>,
     ) {
         loop {
-            if stop_condition(self).is_break() {
+            if stop_condition(self, ctx).is_break() {
                 break;
             }
 
             // Explore and break if nothing happened
-            if self.explore_once().is_break() {
+            if self.explore_once(ctx).is_break() {
                 break;
             }
         }
     }
 
-    fn explore_once(&mut self) -> ControlFlow<()> {
-        self.frontier
-            .explore_next(|node| self.ctx.explore_node(node))?;
+    fn explore_once(&mut self, ctx: &mut SearchContext) -> ControlFlow<()> {
+        self.nodes.explore_next(|node| node.explore(ctx))?;
 
-        self.ctx.iter += 1;
+        ctx.iter += 1;
         ControlFlow::Continue(())
     }
 
-    pub fn into_results(self) -> SearchResults {
+    // TODO: return should not include primes and stats and such; that stays in the context!
+    pub fn into_results(self, ctx: SearchContext) -> SearchResults {
         // print the tree to stdout if we're tracing
-        match self.ctx.tracer {
+        match ctx.tracer {
             Tracer::Real(t, _) => t.pretty_print_to_stdout(),
             Tracer::Dummy(_) => {}
         }
 
         // Pull the unsolved branches and return them
         let mut ret = SearchResults {
-            primes: self.ctx.primes,
+            primes: ctx.primes,
             simple_families: vec![],
             other_families: vec![],
-            stats: self.ctx.stats,
+            stats: ctx.stats,
         };
-        for node in self.frontier.iter().cloned() {
+        for node in self.nodes.iter().cloned() {
             match node.family {
                 NodeType::Arbitrary(family) => ret.other_families.push(family),
                 // TODO: return the whole node, so the other stages can benefit here!
@@ -213,30 +210,32 @@ impl SearchContext {
             },
         }
     }
+}
 
-    fn explore_node(&mut self, node: SearchNode) -> Vec<SearchNode> {
-        let node_id = node.id;
-        self.tracer.set_id(node_id);
+impl SearchNode {
+    fn explore(self, ctx: &mut SearchContext) -> Vec<SearchNode> {
+        let node_id = self.id;
+        ctx.tracer.set_id(node_id);
 
         // Say our family is xL*z.
         // We want to explore all possible children with weight one more than this one.
-        let mut pcp = node.possible_contained_primes;
-        let children = match node.family {
+        let mut pcp = self.possible_contained_primes;
+        let children = match self.family {
             NodeType::Arbitrary(family) => {
                 debug!(" Exploring {family}");
-                self.explore_family(family, &mut pcp)
+                family.explore(&mut pcp, ctx)
             }
             NodeType::Simple(node) => {
                 debug!(" Exploring simple {}", node.family);
-                self.explore_simple_family(node, &mut pcp)
+                node.explore(&mut pcp, ctx)
             }
         };
-        self.stats.num_branches_explored += 1;
+        ctx.stats.num_branches_explored += 1;
 
         children
             .into_iter()
             .map(|family| {
-                let child_id = self
+                let child_id = ctx
                     .tracer
                     .make_child(node_id, family.to_string())
                     .expect("node id must be in tree");
@@ -248,11 +247,13 @@ impl SearchContext {
             })
             .collect()
     }
+}
 
-    fn explore_family(
-        &mut self,
-        family: Family,
+impl Family {
+    fn explore(
+        self,
         possible_contained_primes: &mut CandidateIndices,
+        ctx: &mut SearchContext,
     ) -> Vec<NodeType> {
         // We have to be careful about not generating leading zeros. There's
         // a lot of different ways we could do that, but one possible way is
@@ -263,14 +264,14 @@ impl SearchContext {
 
         // Now is a good time for us to narrow down the potential primes this
         // family could contain.
-        let mut new_contained_primes = self.primes.empty_indices();
-        for (i, prime) in self.primes.get_many(possible_contained_primes) {
+        let mut new_contained_primes = ctx.primes.empty_indices();
+        for (i, prime) in ctx.primes.get_many(possible_contained_primes) {
             let start = Instant::now();
-            if family.could_contain(prime) {
+            if self.could_contain(prime) {
                 new_contained_primes.add(i);
             }
-            self.stats.num_could_contains += 1;
-            self.stats.duration_could_contains += start.elapsed();
+            ctx.stats.num_could_contains += 1;
+            ctx.stats.duration_could_contains += start.elapsed();
         }
         *possible_contained_primes = new_contained_primes;
 
@@ -278,55 +279,56 @@ impl SearchContext {
         // TODO: normally we've tested this already, in reduce_cores,
         // but split_on_repeat can produce strings we've never tested :/
         // What's a better way to avoid this redundancy?
-        let seq = family.contract();
+        let seq = self.contract();
         // TODO: this borrows self, preventing us from using self.tracer later.
         // can that be improved?
-        if let Some(p) = self
+        if let Some(p) = ctx
             .test_for_contained_prime(&seq, possible_contained_primes)
             .cloned()
         {
             assert_ne!(seq, p);
-            debug!("  Discarding {family}, contains prime {p}");
-            debug_to_tree!(self.tracer, "Discarding, contains prime {}", p);
-            self.stats.branch_stats.contains_prime += 1;
+            debug!("  Discarding {self}, contains prime {p}");
+            debug_to_tree!(ctx.tracer, "Discarding, contains prime {}", p);
+            ctx.stats.branch_stats.contains_prime += 1;
             return vec![];
         }
 
         trace!("  Testing for primality {seq}");
-        let value = seq.value(self.base);
-        if self.test_for_prime(&value) {
-            debug!("  Saving {family}, contracts to prime");
-            debug_to_tree!(self.tracer, "Saving, contracts to prime");
-            self.primes.insert(seq);
-            self.stats.branch_stats.is_new_prime += 1;
+        let value = seq.value(ctx.base);
+        if ctx.test_for_prime(&value) {
+            debug!("  Saving {self}, contracts to prime");
+            debug_to_tree!(ctx.tracer, "Saving, contracts to prime");
+            ctx.primes.insert(seq);
+            ctx.stats.branch_stats.is_new_prime += 1;
             return vec![];
         }
 
         // Then, we try to reduce the cores.
-        let mut family = self.reduce_cores(family, possible_contained_primes);
-        family.simplify();
-        if family.cores.is_empty() {
-            debug!("  {family} was reduced to trivial string");
-            debug_to_tree!(self.tracer, "Reduced to trivial string");
-            self.stats.branch_stats.is_trivial_string += 1;
+        // TODO: mutate don't consume
+        let mut this = self.reduce_cores(possible_contained_primes, ctx);
+        this.simplify();
+        if this.cores.is_empty() {
+            debug!("  {this} was reduced to trivial string");
+            debug_to_tree!(ctx.tracer, "Reduced to trivial string");
+            ctx.stats.branch_stats.is_trivial_string += 1;
             return vec![];
         }
 
         // Now, run some tests to see whether this family is guaranteed to
         // be composite.
-        if self.test_for_perpetual_composite(&family) {
-            debug!("  Discarding {family}, is always composite");
-            debug_to_tree!(self.tracer, "Discarding, is always composite");
-            self.stats.branch_stats.detected_composite += 1;
+        if this.test_for_perpetual_composite(ctx) {
+            debug!("  Discarding {this}, is always composite");
+            debug_to_tree!(ctx.tracer, "Discarding, is always composite");
+            ctx.stats.branch_stats.detected_composite += 1;
             return vec![];
         }
 
         // TODO: is this right?
         // Check if this family is simple or not. If it is, we should
         // re-enqueue it as such. (Note: this is after composite check!)
-        let mut family = match SimpleFamily::try_from(family) {
+        let mut this = match SimpleFamily::try_from(this) {
             Ok(family) => {
-                self.stats.branch_stats.simplified += 1;
+                ctx.stats.branch_stats.simplified += 1;
                 return vec![NodeType::Simple(SimpleNode {
                     family,
                     composite_tested: false,
@@ -338,29 +340,27 @@ impl SearchContext {
         };
 
         // Let's see if we can split it in an interesting way
-        if family.weight() >= 2 {
-            if let Some(children) =
-                self.split_on_limited_digit(&family, 3, possible_contained_primes)
+        // TODO: context-ify the splitting functions too!
+        if this.weight() >= 2 {
+            if let Some(children) = ctx.split_on_limited_digit(&this, 3, possible_contained_primes)
             {
-                self.stats.branch_stats.split_on_limited_digit += 1;
+                ctx.stats.branch_stats.split_on_limited_digit += 1;
                 return children.into_iter().map(NodeType::Arbitrary).collect();
             }
         }
 
-        if family.weight() >= 4 {
-            if let Some(children) = self
-                .split_on_incompatible_digits_different_cores(&family, possible_contained_primes)
+        if this.weight() >= 4 {
+            if let Some(children) =
+                ctx.split_on_incompatible_digits_different_cores(&this, possible_contained_primes)
             {
-                self.stats
-                    .branch_stats
-                    .split_on_incompatible_different_cores += 1;
+                ctx.stats.branch_stats.split_on_incompatible_different_cores += 1;
                 return children.into_iter().map(NodeType::Arbitrary).collect();
             }
 
             if let Some(children) =
-                self.split_on_incompatible_digits(&family, possible_contained_primes)
+                ctx.split_on_incompatible_digits(&this, possible_contained_primes)
             {
-                self.stats.branch_stats.split_on_incompatible_same_core += 1;
+                ctx.stats.branch_stats.split_on_incompatible_same_core += 1;
                 return children.into_iter().map(NodeType::Arbitrary).collect();
             }
         }
@@ -368,21 +368,21 @@ impl SearchContext {
         // this was introduced to kill long derivation chains of the form x[ab]*y that
         // we have trouble with otherwise. only invoke it when we are really stuck on
         // something.
-        if family.weight() >= 10 {
+        if this.weight() >= 10 {
             if let Some(children) =
-                self.split_on_forbidden_sandwich(&family, possible_contained_primes)
+                ctx.split_on_forbidden_sandwich(&this, possible_contained_primes)
             {
-                self.stats.branch_stats.split_on_forbidden_sandwich += 1;
+                ctx.stats.branch_stats.split_on_forbidden_sandwich += 1;
                 return children.into_iter().map(NodeType::Arbitrary).collect();
             }
         }
 
-        if family.weight() >= 5 {
+        if this.weight() >= 5 {
             // This one doesn't actually simplify any cores, in fact, it'll make the
             // branch more complicated!. However, it might kickstart some branch elimination
             // by making us intersect another prime. So this check should always be last.
-            if let Some(child) = self.split_on_necessary_digit(&family) {
-                self.stats.branch_stats.split_on_necessary_digit += 1;
+            if let Some(child) = ctx.split_on_necessary_digit(&this) {
+                ctx.stats.branch_stats.split_on_necessary_digit += 1;
                 return vec![NodeType::Arbitrary(child)];
             }
         }
@@ -409,22 +409,22 @@ impl SearchContext {
             h ^= h >> 33;
             h as usize
         }
-        let magic = match family.weight() {
+        let magic = match this.weight() {
             0 => 0,
             1 => 1,
             w => bit_mixer(w),
         };
 
-        let slot = (magic >> 1) % family.cores.len();
-        debug_assert!(!family.cores[slot].is_empty());
+        let slot = (magic >> 1) % this.cores.len();
+        debug_assert!(!this.cores[slot].is_empty());
         let mut children = if magic % 2 == 1 {
-            debug!("  Splitting {family} left on core {slot}");
-            debug_to_tree!(self.tracer, "Splitting left on core {}", slot);
-            family.expand(slot)
+            debug!("  Splitting {this} left on core {slot}");
+            debug_to_tree!(ctx.tracer, "Splitting left on core {}", slot);
+            this.expand(slot)
         } else {
-            debug!("  Splitting {family} right on core {slot}");
-            debug_to_tree!(self.tracer, "Splitting right on core {}", slot);
-            family.expand_right(slot)
+            debug!("  Splitting {this} right on core {slot}");
+            debug_to_tree!(ctx.tracer, "Splitting right on core {}", slot);
+            this.expand_right(slot)
         };
 
         // We also need to consider the case where the chosen core expands to
@@ -433,20 +433,22 @@ impl SearchContext {
         // For example: if we reduce a[xyz]c, we test the primality of axc, ayc
         // and azc. So after we split, and get ax[xyz]c, there's no need to
         // test ax[]c again.
-        if family.cores.len() > 1 {
-            family.cores[slot].clear();
-            family.simplify();
-            children.push(family);
+        if this.cores.len() > 1 {
+            this.cores[slot].clear();
+            this.simplify();
+            children.push(this);
         }
 
-        self.stats.branch_stats.explored_generically += 1;
+        ctx.stats.branch_stats.explored_generically += 1;
         children.into_iter().map(NodeType::Arbitrary).collect()
     }
+}
 
-    fn explore_simple_family(
-        &mut self,
-        mut node: SimpleNode,
+impl SimpleNode {
+    fn explore(
+        mut self,
         possible_contained_primes: &mut CandidateIndices,
+        ctx: &mut SearchContext,
     ) -> Vec<NodeType> {
         // There's a lot less we can do here! We can't split anything,
         // we can't reduce cores, etc, etc.
@@ -454,14 +456,14 @@ impl SearchContext {
         // We should do a composite test though; there's some specialized
         // composite tests that we can only do on simple families. We should
         // only do them once though.
-        if !node.composite_tested {
-            if composite_checks_for_simple(self.base, &node) {
-                debug!("  Discarding {}, is always composite", node.family);
-                debug_to_tree!(self.tracer, "Discarding, is always composite");
-                self.stats.branch_stats.detected_composite += 1;
+        if !self.composite_tested {
+            if composite_checks_for_simple(ctx.base, &self) {
+                debug!("  Discarding {}, is always composite", self.family);
+                debug_to_tree!(ctx.tracer, "Discarding, is always composite");
+                ctx.stats.branch_stats.detected_composite += 1;
                 return vec![];
             }
-            node.composite_tested = true;
+            self.composite_tested = true;
         }
 
         // Other that that, all we can do is add another digit and see if it
@@ -469,63 +471,65 @@ impl SearchContext {
 
         // On a previous loop, we may have established when this family contains
         // a prime. Check it.
-        if let Some((dies_at, prime)) = &node.dies_at {
-            if node.family.min_repeats >= *dies_at {
-                debug!("  Discarding {}, contains prime {}", node.family, prime);
-                debug_to_tree!(self.tracer, "Discarding, contains prime {}", prime);
-                self.stats.branch_stats.contains_prime += 1;
+        if let Some((dies_at, prime)) = &self.dies_at {
+            if self.family.min_repeats >= *dies_at {
+                debug!("  Discarding {}, contains prime {}", self.family, prime);
+                debug_to_tree!(ctx.tracer, "Discarding, contains prime {}", prime);
+                ctx.stats.branch_stats.contains_prime += 1;
                 return vec![];
             }
         }
 
         // Now check any new primes.
-        for (_, prime) in self.primes.get_many(possible_contained_primes) {
+        for (_, prime) in ctx.primes.get_many(possible_contained_primes) {
             let start = Instant::now();
-            if let Some(n) = node.family.will_contain_at(prime) {
-                if n <= node.family.min_repeats {
-                    debug!("  Discarding {}, contains prime {}", node.family, prime);
-                    debug_to_tree!(self.tracer, "Discarding, contains prime {}", prime);
-                    self.stats.branch_stats.contains_prime += 1;
+            if let Some(n) = self.family.will_contain_at(prime) {
+                if n <= self.family.min_repeats {
+                    debug!("  Discarding {}, contains prime {}", self.family, prime);
+                    debug_to_tree!(ctx.tracer, "Discarding, contains prime {}", prime);
+                    ctx.stats.branch_stats.contains_prime += 1;
                     return vec![];
                 }
 
                 // otherwise, we should incorporate this into dies_at
-                match node.dies_at {
+                match self.dies_at {
                     // its better to have smaller n; skip this if so
                     Some((old_n, _)) if old_n <= n => {}
                     // otherwise, update
-                    Some(_) | None => node.dies_at = Some((n, prime.clone())),
+                    Some(_) | None => self.dies_at = Some((n, prime.clone())),
                 }
             }
-            self.stats.num_simple_substring_checks += 1;
-            self.stats.duration_simple_substring_checks += start.elapsed();
+            ctx.stats.num_simple_substring_checks += 1;
+            ctx.stats.duration_simple_substring_checks += start.elapsed();
         }
-        *possible_contained_primes = self.primes.empty_indices(); // resets our collection
+        *possible_contained_primes = ctx.primes.empty_indices(); // resets our collection
 
         // Test if it is a prime
-        let value = node.family.value(self.base);
+        let value = self.family.value(ctx.base);
 
-        if self.test_for_prime(&value) {
-            debug!("  Saving {}, is prime", node.family);
-            debug_to_tree!(self.tracer, "Saving, is prime");
-            self.stats.branch_stats.is_new_prime += 1;
-            let seq = node.family.contract();
-            self.primes.insert(seq);
+        if ctx.test_for_prime(&value) {
+            debug!("  Saving {}, is prime", self.family);
+            debug_to_tree!(ctx.tracer, "Saving, is prime");
+            ctx.stats.branch_stats.is_new_prime += 1;
+            let seq = self.family.contract();
+            ctx.primes.insert(seq);
             return vec![];
         }
 
-        node.family.min_repeats += 1;
-        self.stats.branch_stats.explored_generically += 1;
-        vec![NodeType::Simple(node)]
+        self.family.min_repeats += 1;
+        ctx.stats.branch_stats.explored_generically += 1;
+        vec![NodeType::Simple(self)]
     }
+}
 
+impl Family {
     fn reduce_cores(
-        &mut self,
-        mut family: Family,
+        mut self,
         possible_contained_primes: &CandidateIndices,
+        ctx: &mut SearchContext,
     ) -> Family {
-        let old_family = family.clone();
-        for (i, core) in family.cores.iter_mut().enumerate() {
+        let old_family = self.clone();
+        for (i, core) in self.cores.iter_mut().enumerate() {
             // Substitute elements from the core into the string to see if any
             // of them contain or are a prime.
             // NOTE: this is where we generate minimal primes of (weight + 1), so
@@ -534,22 +538,22 @@ impl SearchContext {
             for digit in core.iter() {
                 let seq = old_family.substitute(i, digit);
 
-                if let Some(p) = self
+                if let Some(p) = ctx
                     .test_for_contained_prime(&seq, possible_contained_primes)
                     .cloned()
                 {
                     assert_ne!(seq, p);
                     debug!("  Discarding {seq}, contains prime {p}");
-                    debug_to_tree!(self.tracer, "Discarding {}, contains prime {}", seq, p);
+                    debug_to_tree!(ctx.tracer, "Discarding {}, contains prime {}", seq, p);
                     continue;
                 }
 
                 trace!("  Testing for primality {seq}");
-                let value = seq.value(self.base);
-                if self.test_for_prime(&value) {
+                let value = seq.value(ctx.base);
+                if ctx.test_for_prime(&value) {
                     debug!("  Saving {seq}, is prime");
-                    debug_to_tree!(self.tracer, "Saving {}, is prime", seq);
-                    self.primes.insert(seq);
+                    debug_to_tree!(ctx.tracer, "Saving {}, is prime", seq);
+                    ctx.primes.insert(seq);
                 } else {
                     allowed_digits.push(digit);
                 }
@@ -558,11 +562,13 @@ impl SearchContext {
             *core = Core::new(allowed_digits);
         }
         // Now we've reduced the core, and have a new family.
-        debug!("  Reducing {old_family} to {family}");
-        debug_to_tree!(self.tracer, "Reducing to {}", family);
-        family
+        debug!("  Reducing {old_family} to {self}");
+        debug_to_tree!(ctx.tracer, "Reducing to {}", self);
+        self
     }
+}
 
+impl SearchContext {
     /// Checks whether any of the candidate primes are (properly) contained in the
     /// given sequence. If so, return a reference to that prime.
     fn test_for_contained_prime(
@@ -594,8 +600,10 @@ impl SearchContext {
         self.stats.num_primality_checks += 1;
         result
     }
+}
 
-    fn test_for_perpetual_composite(&mut self, family: &Family) -> bool {
+impl Family {
+    fn test_for_perpetual_composite(&self, ctx: &mut SearchContext) -> bool {
         // This function is used to eliminate families that will always result
         // in composite numbers, letting us cut off infinite branches of the
         // search space.
@@ -603,35 +611,31 @@ impl SearchContext {
         // in the comments for familiarity, unless specified otherwise.
 
         // p divides BASE (e.g., 2, 5)
-        if let Some(factor) = shares_factor_with_base(self.base, family) {
-            debug!("  {family} has divisor {factor}");
-            debug_to_tree!(self.tracer, "Has divisor {}", factor);
+        if let Some(factor) = shares_factor_with_base(ctx.base, self) {
+            debug!("  {self} has divisor {factor}");
+            debug_to_tree!(ctx.tracer, "Has divisor {}", factor);
             return true;
         }
         // p does not divide BASE (e.g. 7)
         // -------------------------------
         // This is how we detect families like 4[6]9 being divisible by 7.
-        if let Some(divisor) = find_common_factor(self.base, family) {
-            debug!("  {family} is divisible by {divisor}");
-            debug_to_tree!(self.tracer, "Divisible by {}", divisor);
+        if let Some(divisor) = find_common_factor(ctx.base, self) {
+            debug!("  {self} is divisible by {divisor}");
+            debug_to_tree!(ctx.tracer, "Divisible by {}", divisor);
             return true;
         }
         // start at stride 2; `find_guaranteed_factor` effectively handles stride 1
         for stride in 2..=4 {
-            if let Some(factors) = find_periodic_factor(self.base, family, stride) {
-                debug!(
-                    "  {} is divisible by {}",
-                    family,
-                    factors.iter().format(", ")
-                );
-                debug_to_tree!(self.tracer, "Divisible by {}", factors.iter().format(","));
+            if let Some(factors) = find_periodic_factor(ctx.base, self, stride) {
+                debug!("  {} is divisible by {}", self, factors.iter().format(", "));
+                debug_to_tree!(ctx.tracer, "Divisible by {}", factors.iter().format(","));
                 return true;
             }
         }
-        if let Some((even_factor, odd_factor)) = find_two_factors(self.base, family) {
-            debug!("  {family} is divisible by either {even_factor} or {odd_factor} (#1)");
+        if let Some((even_factor, odd_factor)) = find_two_factors(ctx.base, self) {
+            debug!("  {self} is divisible by either {even_factor} or {odd_factor} (#1)");
             debug_to_tree!(
-                self.tracer,
+                ctx.tracer,
                 "Divisible by either {} or {} (#1)",
                 even_factor,
                 odd_factor
@@ -639,10 +643,10 @@ impl SearchContext {
             return true;
         }
 
-        if let Some((even_factor, odd_factor)) = find_even_odd_factor(self.base, family) {
-            debug!("  {family} is divisible by either {even_factor} or {odd_factor} (#2)");
+        if let Some((even_factor, odd_factor)) = find_even_odd_factor(ctx.base, self) {
+            debug!("  {self} is divisible by either {even_factor} or {odd_factor} (#2)");
             debug_to_tree!(
-                self.tracer,
+                ctx.tracer,
                 "Divisible by either {} or {} (#2)",
                 even_factor,
                 odd_factor
@@ -650,9 +654,9 @@ impl SearchContext {
             return true;
         }
 
-        if check_residues_mod_30(self.base, family) {
-            debug!("  {family} always shares a factor with 30");
-            debug_to_tree!(self.tracer, "Always shares a factor with 30");
+        if check_residues_mod_30(ctx.base, self) {
+            debug!("  {self} always shares a factor with 30");
+            debug_to_tree!(ctx.tracer, "Always shares a factor with 30");
             return true;
         }
 

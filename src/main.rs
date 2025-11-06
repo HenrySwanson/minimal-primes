@@ -10,7 +10,7 @@ use num_prime::nt_funcs::is_prime;
 use crate::candidates::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
 use crate::families::{Family, SimpleFamily};
-use crate::search::{SearchTree, Stats};
+use crate::search::{SearchContext, SearchTree, Stats};
 use crate::sequence::Sequence;
 use crate::sieve::SequenceSlice;
 
@@ -182,17 +182,18 @@ fn first_stage(
     stats_only: bool,
     stop_signal: &AtomicBool,
 ) -> SearchResults {
-    let mut tree = SearchTree::new(base, tree_log);
+    let mut ctx = SearchContext::new(base, tree_log);
+    let mut tree = SearchTree::new(&ctx);
 
     let mut prev_weight = 0;
     let mut counter = 0;
-    tree.explore_until(|tree| {
+    tree.explore_until(&mut ctx, |tree: &SearchTree, ctx: &SearchContext| {
         if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
             info!("Interrupted! Stopping now...");
             return ControlFlow::Break(());
         }
 
-        let weight = match tree.frontier.min_weight() {
+        let weight = match tree.nodes.min_weight() {
             Some(w) => w,
             // this means the frontier is empty!
             None => return ControlFlow::Break(()),
@@ -206,7 +207,7 @@ fn first_stage(
         }
 
         if let Some(max) = max_iter {
-            if tree.ctx.iter >= max {
+            if ctx.iter >= max {
                 info!("Reached iteration cutoff; stopping...");
                 return ControlFlow::Break(());
             }
@@ -233,17 +234,17 @@ fn first_stage(
 
         if should_print {
             let num_complex = tree.num_nodes_to_solve();
-            let num_simple = tree.frontier.len() - num_complex;
+            let num_simple = tree.nodes.len() - num_complex;
             info!(
                 "Weight {} - Iteration {} - {} complex branches - {} simple branches",
-                weight, tree.ctx.iter, num_complex, num_simple
+                weight, ctx.iter, num_complex, num_simple
             );
         }
 
         ControlFlow::Continue(())
     });
 
-    let results = tree.into_results();
+    let results = tree.into_results(ctx);
 
     if !stats_only {
         println!("---- BRANCHES REMAINING ----");
