@@ -7,7 +7,7 @@ use itertools::Itertools;
 use log::{info, LevelFilter};
 use num_prime::nt_funcs::is_prime;
 
-use crate::context::SearchContext;
+use crate::context::{SearchContext, print_stats};
 use crate::digits::{Digit, DigitSeq};
 use crate::families::{Family, SimpleFamily};
 use crate::logging::Tracer;
@@ -299,76 +299,7 @@ fn first_stage(
     }
     println!("---- STATS ----");
     println!("Final weight was {prev_weight}");
-    println!("{} branches explored", ctx.stats.num_branches_explored);
-    println!(
-        "{} primality tests ({}ms)",
-        ctx.stats.num_primality_checks,
-        ctx.stats.duration_primality_checks.as_millis()
-    );
-    println!(
-        "{} calls Family::could_contain ({}ms)",
-        ctx.stats.num_could_contains,
-        ctx.stats.duration_could_contains.as_millis()
-    );
-    println!(
-        "{} substring tests ({}ms)",
-        ctx.stats.num_substring_checks,
-        ctx.stats.duration_substring_checks.as_millis()
-    );
-    println!(
-        "{} simple substring tests ({}ms)",
-        ctx.stats.num_simple_substring_checks,
-        ctx.stats.duration_simple_substring_checks.as_millis()
-    );
-    let branch_stats = &ctx.stats.branch_stats;
-    println!(
-        "{} branches eliminated with leading zeros",
-        branch_stats.leading_zeros
-    );
-    println!(
-        "{} branches eliminated for containing a prime",
-        branch_stats.contains_prime
-    );
-    println!(
-        "{} branches eliminated by discovering a new prime",
-        branch_stats.is_new_prime
-    );
-    println!(
-        "{} branches eliminated by reducing to trivial string",
-        branch_stats.is_trivial_string
-    );
-    println!(
-        "{} branches eliminated for compositeness",
-        branch_stats.detected_composite
-    );
-    println!(
-        "{} branches simplified into simple families",
-        branch_stats.simplified
-    );
-    println!(
-        "{} branches split on a limited digit",
-        branch_stats.split_on_limited_digit
-    );
-    println!(
-        "{} branches split on incompatible digits (same core)",
-        branch_stats.split_on_incompatible_same_core
-    );
-    println!(
-        "{} branches split on incompatible digits (different cores)",
-        branch_stats.split_on_incompatible_different_cores
-    );
-    println!(
-        "{} branches split on a forbidden sandwich",
-        branch_stats.split_on_forbidden_sandwich
-    );
-    println!(
-        "{} branches split on a necessary digit",
-        branch_stats.split_on_necessary_digit
-    );
-    println!(
-        "{} branches explored generically",
-        branch_stats.explored_generically
-    );
+    print_stats(&ctx.stats);
 
     results
 }
