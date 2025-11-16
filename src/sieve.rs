@@ -77,7 +77,7 @@ pub fn find_first_prime(
     let slice = SequenceSlice::new(seq, n_lo, n_hi);
 
     let mut slices = [slice];
-    sieve(base, &mut slices, p_max);
+    sieve(base, &mut slices, p_max, &mut NaiveBuffer::new());
     last_resort(base, &slices[0])
 }
 
@@ -86,6 +86,7 @@ pub fn sieve(
     slices: &mut [SequenceSlice],
     // TODO: how many? can i decide from "outside"?
     p_max: u64,
+    prime_buffer: &mut NaiveBuffer,
 ) {
     if slices.is_empty() {
         return;
@@ -102,7 +103,6 @@ pub fn sieve(
     let num_giant_steps = n_range.div_ceil(num_baby_steps);
 
     // Now go and eliminate a bunch of terms
-    let mut prime_buffer = NaiveBuffer::new();
     for p in prime_buffer.primes(p_max) {
         baby_step_giant_step(base.into(), *p, num_baby_steps, num_giant_steps, slices);
     }

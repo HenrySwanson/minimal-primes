@@ -466,7 +466,7 @@ fn second_stage(
 
         // Now sieve all these slices at once
         println!("Sieving {} families", slices_to_sieve.len());
-        sieve::sieve(base, &mut slices_to_sieve, cmd.p_max);
+        sieve::sieve(base, &mut slices_to_sieve, cmd.p_max, &mut ctx.prime_buffer);
 
         for (simple, slice) in std::iter::zip(sequences_to_sieve, slices_to_sieve) {
             println!(
