@@ -377,7 +377,6 @@ fn second_stage(
 ) -> Vec<SimpleFamily> {
     println!("---- SIEVING PHASE ----");
     let base = ctx.base;
-    let mut unsolved_branches = vec![];
     let (mut remaining_branches, unsievable_branches): (Vec<_>, Vec<_>) = unsolved_families
         .into_iter()
         .map(|simple| match Sequence::try_from_family(&simple, base) {
@@ -388,15 +387,22 @@ fn second_stage(
 
     // Okay, now we have a collection of simple familes, and the sequences
     // they correspond to. Let's do some sieving.
-    let mut n_lo = 0;
-    let mut n_len = 16;
+
+    // Start slow with a small range
+    let mut n_range = 0..16;
 
     while !remaining_branches.is_empty() {
         let mut sequences_to_sieve = vec![];
         let mut slices_to_sieve = vec![];
 
-        let lo = n_lo;
-        let hi = std::cmp::min(n_lo + n_len, cmd.n_hi);
+        // clamp the range
+        n_range.end = std::cmp::min(n_range.end, cmd.n_hi);
+
+        // Reached the end of our sieve?
+        if n_range.start >= cmd.n_hi {
+            println!("Reached limit on n, stopping sieving...");
+            break;
+        }
 
         // Real quick, check if this can be eliminated via a minimal prime
         // TODO: shouldn't this come _after_ sieving?
@@ -404,25 +410,23 @@ fn second_stage(
             if let Some(p) = ctx
                 .primes
                 .iter()
-                .find(|p| simple.will_contain_at(p).is_some_and(|n| n < n_lo))
+                .find(|p| simple.will_contain_at(p).is_some_and(|n| n < n_range.start))
             {
                 println!("{simple} can be eliminated, since it contains {p}");
                 continue;
             }
 
-            // Do we give up on this sequence?
-            if n_lo >= cmd.n_hi {
-                println!("Reached limit on n for {simple}");
-                unsolved_branches.push(simple.clone());
-                continue;
-            }
-
             sequences_to_sieve.push(simple);
-            slices_to_sieve.push(SequenceSlice::new(seq, lo, hi))
+            slices_to_sieve.push(SequenceSlice::new(seq, n_range.clone()))
         }
 
         // Now sieve all these slices at once
-        println!("Sieving {} families", slices_to_sieve.len());
+        println!(
+            "Sieving {} families from {} to {}",
+            slices_to_sieve.len(),
+            n_range.start,
+            n_range.end,
+        );
         sieve::sieve(base, &mut slices_to_sieve, cmd.p_max, &mut ctx.prime_buffer);
 
         for (simple, slice) in std::iter::zip(sequences_to_sieve, slices_to_sieve) {
@@ -446,21 +450,30 @@ fn second_stage(
             }
         }
 
-        n_lo = hi;
-        n_len *= 2;
+        // Double the range for next time
+        n_range = n_range.end..(n_range.end * 2);
     }
 
-    // Before we go, check whether any of the unsievable branches can be eliminated with
-    // a minimal prime.
+    // Before we go, check any of our remaining branches and see if they can be
+    // eliminated by an existing minimal prime.
+    let mut output = vec![];
+    for (family, _) in remaining_branches {
+        if let Some(still_unsolved) = intermediate_process_family(family, ctx) {
+            output.push(still_unsolved);
+        }
+    }
+
+    // Definitely also check the unsievable branches, since there's nothing else
+    // we can do with them.
     // TODO: we really gotta have some quick way to do this, it happens a lot
     for family in unsievable_branches {
         println!("Checking if we get a lucky break on {family}");
         if let Some(still_unsolved) = intermediate_process_family(family, ctx) {
-            unsolved_branches.push(still_unsolved);
+            output.push(still_unsolved);
         }
     }
 
-    unsolved_branches
+    output
 }
 
 fn do_sieve(cmd: &SieveArgs) {
@@ -874,31 +887,11 @@ mod tests {
             // to the actual CLI command?
             p_max: 1_000,
             tree_log: false,
-            stats_only: false,
         };
 
         // First stage
         let mut ctx = SearchContext::new(base, false);
         let results = first_stage(&mut ctx, None, None, &AtomicBool::new(false));
-
-        // Remove any composite branches that are expected to be present.
-        // TODO: all composites are detected right now, but re-use this for
-        // unsolved families maybe?
-        // for composite in expected_incomplete.composites {
-        //     match results
-        //         .simple_families
-        //         .iter()
-        //         .position(|family| family.pattern() == composite)
-        //     {
-        //         Some(i) => {
-        //             results.simple_families.remove(i);
-        //         }
-        //         None => panic!(
-        //             "Expected to find composite family {}, but it was not present",
-        //             composite
-        //         ),
-        //     }
-        // }
 
         // Do intermediate and second stages
         let unsolved_families = intermediate_stage(results.simple_families, &mut ctx);

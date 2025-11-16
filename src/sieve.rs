@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Range;
 
 use bitvec::prelude::BitVec;
 use log::{debug, info};
@@ -17,14 +18,11 @@ pub struct SequenceSlice {
 }
 
 impl SequenceSlice {
-    pub fn new(seq: Sequence, n_lo: usize, n_hi: usize) -> Self {
-        assert!(n_lo <= n_hi);
-        let n_range = n_hi - n_lo;
-
+    pub fn new(seq: Sequence, range: Range<usize>) -> Self {
         Self {
             seq,
-            n_lo,
-            n_bitvec: BitVec::repeat(true, n_range),
+            n_lo: range.start,
+            n_bitvec: BitVec::repeat(true, range.len()),
         }
     }
 
@@ -74,7 +72,7 @@ pub fn find_first_prime(
     p_max: u64,
 ) -> Option<(usize, BigUint)> {
     let seq = Sequence::new(k, c, d);
-    let slice = SequenceSlice::new(seq, n_lo, n_hi);
+    let slice = SequenceSlice::new(seq, n_lo..n_hi);
 
     let mut slices = [slice];
     sieve(base, &mut slices, p_max, &mut NaiveBuffer::new());
@@ -347,7 +345,7 @@ mod tests {
         let max_p = 100;
 
         let seq = Sequence::new(5, 1, 1);
-        let slice = SequenceSlice::new(seq, 0, n_range);
+        let slice = SequenceSlice::new(seq, 0..n_range);
         let mut slices = [slice];
         let mut prime_buffer = NaiveBuffer::new();
         for p in prime_buffer.primes(max_p) {
