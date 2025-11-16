@@ -7,7 +7,7 @@ use itertools::Itertools;
 use log::{info, LevelFilter};
 use num_prime::nt_funcs::is_prime;
 
-use crate::context::{SearchContext, print_stats};
+use crate::context::{print_stats, SearchContext};
 use crate::digits::{Digit, DigitSeq};
 use crate::families::{Family, SimpleFamily};
 use crate::logging::Tracer;
@@ -71,19 +71,14 @@ struct SearchArgs {
 struct SieveArgs {
     /// Base, e.g., decimal, binary, etc.
     base: u8,
-
     /// k
     k: u64,
-
     /// c
     c: i64,
-
     /// lower bound for n
     n_lo: usize,
-
     /// upper bound for n
     n_hi: usize,
-
     /// max p to sieve with
     #[arg(default_value_t = 10_000_000)]
     p_max: u64,
@@ -102,9 +97,6 @@ struct SolveArgs {
     /// whether to log the whole search tree
     #[arg(long)]
     tree_log: bool,
-    /// whether to skip printing the actual primes and branches
-    #[arg(long)]
-    stats_only: bool,
 }
 
 fn main() {
@@ -144,13 +136,35 @@ fn main() {
 
 fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) {
     let mut ctx = SearchContext::new(cmd.base, cmd.tree_log);
-    let results = first_stage(
-        &mut ctx,
-        cmd.max_weight,
-        cmd.max_iter,
-        cmd.stats_only,
-        stop_signal,
-    );
+    let results = first_stage(&mut ctx, cmd.max_weight, cmd.max_iter, stop_signal);
+
+    // print the tree to stdout if we're tracing
+    match &ctx.tracer {
+        Tracer::Real(t, _) => t.pretty_print_to_stdout(),
+        Tracer::Dummy(_) => {}
+    }
+
+    if !cmd.stats_only {
+        println!("---- BRANCHES REMAINING ----");
+        for f in results.simple_families.iter() {
+            println!("{f}");
+        }
+        for f in results.other_families.iter() {
+            println!("{f}");
+        }
+        println!("---- MINIMAL PRIMES ----");
+        println!("{}", ctx.primes.clone_and_sort_and_iter().format(", "));
+        println!("------------");
+        println!(
+            "{} primes found, {} simple branches and {} non-simple branches remaining",
+            ctx.primes.len(),
+            results.simple_families.len(),
+            results.other_families.len()
+        );
+    }
+
+    println!("---- STATS ----");
+    print_stats(&ctx.stats);
 
     println!(
         "Final set of primes ({}): {}",
@@ -173,7 +187,14 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) {
 
 fn do_solve(cmd: &SolveArgs, stop_signal: &AtomicBool) -> RemainingNodes {
     let mut ctx = SearchContext::new(cmd.base, cmd.tree_log);
-    let results = first_stage(&mut ctx, None, None, cmd.stats_only, stop_signal);
+    let results = first_stage(&mut ctx, None, None, stop_signal);
+
+    println!(
+        "{} primes found, {} simple branches and {} non-simple branches remaining",
+        ctx.primes.len(),
+        results.simple_families.len(),
+        results.other_families.len()
+    );
 
     if !results.other_families.is_empty() {
         println!("Not all remaining branches are simple! Must bail out now.");
@@ -209,7 +230,6 @@ fn first_stage(
     ctx: &mut SearchContext,
     max_weight: Option<usize>,
     max_iter: Option<usize>,
-    stats_only: bool,
     stop_signal: &AtomicBool,
 ) -> RemainingNodes {
     let mut tree = SearchTree::new(ctx);
@@ -273,35 +293,7 @@ fn first_stage(
         ControlFlow::Continue(())
     });
 
-    let results = tree.into_results();
-    // print the tree to stdout if we're tracing
-    match &ctx.tracer {
-        Tracer::Real(t, _) => t.pretty_print_to_stdout(),
-        Tracer::Dummy(_) => {}
-    }
-
-    if !stats_only {
-        println!("---- BRANCHES REMAINING ----");
-        for f in results.simple_families.iter() {
-            println!("{f}");
-        }
-        for f in results.other_families.iter() {
-            println!("{f}");
-        }
-        println!("---- MINIMAL PRIMES ----");
-        println!("{}", ctx.primes.clone_and_sort_and_iter().format(", "));
-        println!("------------");
-        println!(
-            "{} primes found, {} branches unresolved",
-            ctx.primes.len(),
-            results.simple_families.len() + results.other_families.len()
-        );
-    }
-    println!("---- STATS ----");
-    println!("Final weight was {prev_weight}");
-    print_stats(&ctx.stats);
-
-    results
+    tree.into_results()
 }
 
 fn intermediate_stage(
@@ -887,7 +879,7 @@ mod tests {
 
         // First stage
         let mut ctx = SearchContext::new(base, false);
-        let results = first_stage(&mut ctx, None, None, false, &AtomicBool::new(false));
+        let results = first_stage(&mut ctx, None, None, &AtomicBool::new(false));
 
         // Remove any composite branches that are expected to be present.
         // TODO: all composites are detected right now, but re-use this for
