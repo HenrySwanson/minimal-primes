@@ -39,10 +39,14 @@ struct Args {
 
 #[derive(clap::Subcommand)]
 enum Command {
-    /// Searches for minimal primes in the given base.
+    /// Explores the search tree for minimal primes in the given base.
+    ///
+    /// Will stop once all familes are simple.
     Search(SearchArgs),
     /// Sieves through a sequence of the form k b^n + c.
     Sieve(SieveArgs),
+    /// Finds all minimal primes in the given base.
+    Solve(SolveArgs),
 }
 
 #[derive(clap::Args)]
@@ -55,15 +59,6 @@ struct SearchArgs {
     /// Stop exploring after a specific number of iterations.
     #[arg(long)]
     max_iter: Option<usize>,
-    /// Do not continue onwards to sieving.
-    #[arg(long)]
-    first_stage_only: bool,
-    /// upper bound for n
-    #[arg(long, default_value_t = 5_000)]
-    n_hi: usize,
-    /// max p to sieve with
-    #[arg(long, default_value_t = 1_000_000)]
-    p_max: u64,
     /// whether to log the whole search tree
     #[arg(long)]
     tree_log: bool,
@@ -92,6 +87,24 @@ struct SieveArgs {
     /// max p to sieve with
     #[arg(default_value_t = 10_000_000)]
     p_max: u64,
+}
+
+#[derive(clap::Args)]
+struct SolveArgs {
+    /// Base, e.g., decimal, binary, etc.
+    base: u8,
+    /// upper bound for n
+    #[arg(long, default_value_t = 5_000)]
+    n_hi: usize,
+    /// max p to sieve with
+    #[arg(long, default_value_t = 1_000_000)]
+    p_max: u64,
+    /// whether to log the whole search tree
+    #[arg(long)]
+    tree_log: bool,
+    /// whether to skip printing the actual primes and branches
+    #[arg(long)]
+    stats_only: bool,
 }
 
 fn main() {
@@ -123,10 +136,13 @@ fn main() {
         Command::Sieve(cmd) => {
             do_sieve(&cmd);
         }
+        Command::Solve(cmd) => {
+            do_solve(&cmd, &stop_signal);
+        }
     }
 }
 
-fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) -> RemainingNodes {
+fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) {
     let mut ctx = SearchContext::new(cmd.base, cmd.tree_log);
     let results = first_stage(
         &mut ctx,
@@ -136,10 +152,28 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) -> RemainingNodes {
         stop_signal,
     );
 
-    if cmd.first_stage_only {
-        println!("Done with first stage, stopping early!");
-        return results;
+    println!(
+        "Final set of primes ({}): {}",
+        ctx.primes.len(),
+        ctx.primes.clone_and_sort_and_iter().format(", ")
+    );
+
+    println!("{} branches unsolved", results.simple_families.len());
+    for x in &results.simple_families {
+        println!("{x}");
     }
+
+    if !results.other_families.is_empty() {
+        println!("Not all remaining branches are simple! Must bail out now.");
+        for x in &results.other_families {
+            println!("{x}");
+        }
+    }
+}
+
+fn do_solve(cmd: &SolveArgs, stop_signal: &AtomicBool) -> RemainingNodes {
+    let mut ctx = SearchContext::new(cmd.base, cmd.tree_log);
+    let results = first_stage(&mut ctx, None, None, cmd.stats_only, stop_signal);
 
     if !results.other_families.is_empty() {
         println!("Not all remaining branches are simple! Must bail out now.");
@@ -414,7 +448,7 @@ fn intermediate_process_family(
 }
 
 fn second_stage(
-    cmd: &SearchArgs,
+    cmd: &SolveArgs,
     unsolved_families: Vec<SimpleFamily>,
     ctx: &mut SearchContext,
 ) -> Vec<SimpleFamily> {
@@ -900,9 +934,6 @@ mod tests {
                         base,
                         max_weight: Some(5),
                         max_iter: Some(10_000),
-                        first_stage_only: true,
-                        n_hi: 0,
-                        p_max: 0,
                         tree_log: false,
                         stats_only: false,
                     },
@@ -913,11 +944,8 @@ mod tests {
         };
 
         // Figure out the equivalent command
-        let cmd = SearchArgs {
+        let cmd = SolveArgs {
             base,
-            max_weight: None,
-            max_iter: None,
-            first_stage_only: false,
             n_hi: 500,
             // seems to work better than p = 1M, should this be backported
             // to the actual CLI command?
