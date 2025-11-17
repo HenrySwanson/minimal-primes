@@ -4,7 +4,7 @@ use std::sync::Arc;
 use clap::Parser;
 use itertools::Itertools;
 use log::{info, LevelFilter};
-use num_prime::nt_funcs::is_prime;
+use num_prime::buffer::PrimeBufferExt;
 
 use crate::context::{print_stats, SearchContext};
 use crate::digits::{Digit, DigitSeq};
@@ -358,7 +358,7 @@ fn intermediate_process_family(
         // Test if it's prime
         let value = family.value(ctx.base);
 
-        if is_prime(&value, None).probably() {
+        if ctx.prime_buffer.is_prime(&value, None).probably() {
             println!("  Saving {family}, is prime");
             let seq = family.contract();
             ctx.primes.insert(seq);
@@ -444,7 +444,7 @@ fn second_stage(
                 simple
             );
 
-            match sieve::last_resort(base, &slice) {
+            match sieve::last_resort(base, &slice, &mut ctx.prime_buffer) {
                 Some((i, p)) => {
                     let digitseq =
                         DigitSeq(p.to_radix_be(base.into()).into_iter().map(Digit).collect());

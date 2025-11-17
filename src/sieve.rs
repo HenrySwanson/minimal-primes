@@ -5,8 +5,7 @@ use bitvec::prelude::BitVec;
 use log::debug;
 use num_bigint::BigUint;
 use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
-use num_prime::buffer::NaiveBuffer;
-use num_prime::nt_funcs::is_prime;
+use num_prime::buffer::{NaiveBuffer, PrimeBufferExt};
 
 use crate::sequence::Sequence;
 
@@ -80,8 +79,9 @@ pub fn find_first_prime(
     let slice = SequenceSlice::new(seq, n_lo..n_hi);
 
     let mut slices = [slice];
-    sieve(base, &mut slices, p_max, &mut NaiveBuffer::new());
-    last_resort(base, &slices[0])
+    let mut prime_buffer = NaiveBuffer::new();
+    sieve(base, &mut slices, p_max, &mut prime_buffer);
+    last_resort(base, &slices[0], &mut prime_buffer)
 }
 
 pub fn sieve(
@@ -109,12 +109,16 @@ pub fn sieve(
     }
 }
 
-pub fn last_resort(base: u8, slice: &SequenceSlice) -> Option<(usize, BigUint)> {
+pub fn last_resort(
+    base: u8,
+    slice: &SequenceSlice,
+    prime_buffer: &mut NaiveBuffer,
+) -> Option<(usize, BigUint)> {
     for exponent in slice.iter_remaining() {
         let value = slice.seq.compute_term(exponent as u32, base.into());
         debug!("  Check {} at n={}", slice.seq, exponent);
 
-        if is_prime(&value, None).probably() {
+        if prime_buffer.is_prime(&value, None).probably() {
             return Some((exponent, value));
         }
     }
