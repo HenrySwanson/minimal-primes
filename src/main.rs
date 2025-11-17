@@ -426,7 +426,7 @@ fn second_stage(
 
         // Now sieve all these slices at once
         println!(
-            "Sieving {} families from {} to {}",
+            "Sieving {} families for n from {} to {}",
             slices_to_sieve.len(),
             n_range.start,
             n_range.end,
@@ -434,12 +434,14 @@ fn second_stage(
         sieve::sieve(base, &mut slices_to_sieve, cmd.p_max, &mut ctx.prime_buffer);
 
         for (simple, slice) in std::iter::zip(sequences_to_sieve, slices_to_sieve) {
+            // Iterate through the unmarked n and manually check primality
             println!(
-                "Investigating family {} for n from {} to {}",
-                slice.seq,
-                slice.n_lo(),
-                slice.n_hi(),
+                "Investigating the {}/{} terms remaining in {}",
+                slice.num_remaining(),
+                n_range.len(),
+                simple
             );
+
             match sieve::last_resort(base, &slice) {
                 Some((i, p)) => {
                     let digitseq =

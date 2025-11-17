@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use bitvec::prelude::BitVec;
-use log::{debug, info};
+use log::debug;
 use num_bigint::BigUint;
 use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
 use num_prime::buffer::NaiveBuffer;
@@ -26,17 +26,17 @@ impl SequenceSlice {
         }
     }
 
-    pub fn n_lo(&self) -> usize {
-        self.n_lo
-    }
-
-    pub fn n_hi(&self) -> usize {
-        self.n_lo + self.n_bitvec.len()
-    }
-
     #[cfg(test)]
     pub fn check_n(&self, n: usize) -> bool {
         self.n_bitvec[n - self.n_lo]
+    }
+
+    pub fn num_remaining(&self) -> usize {
+        self.n_bitvec.count_ones()
+    }
+
+    pub fn iter_remaining(&self) -> impl Iterator<Item = usize> + use<'_> {
+        self.n_bitvec.iter_ones().map(|i| self.n_lo + i)
     }
 
     pub fn eliminate_multiple(&mut self, p: u64, base: u64, start: usize, spacing: usize) {
@@ -107,16 +107,7 @@ pub fn sieve(
 }
 
 pub fn last_resort(base: u8, slice: &SequenceSlice) -> Option<(usize, BigUint)> {
-    // Lastly, iterate through the remaining numbers and see if they're prime
-    info!(
-        "{} has {}/{} terms remaining",
-        slice.seq,
-        slice.n_bitvec.count_ones(),
-        slice.n_bitvec.len()
-    );
-    for i in slice.n_bitvec.iter_ones() {
-        let exponent = slice.n_lo + i;
-
+    for exponent in slice.iter_remaining() {
         let value = slice.seq.compute_term(exponent as u32, base.into());
         debug!("  Check {} at n={}", slice.seq, exponent);
 
