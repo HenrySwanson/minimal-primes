@@ -72,24 +72,7 @@ impl SearchTree {
         })
     }
 
-    pub fn explore_until(
-        &mut self,
-        ctx: &mut SearchContext,
-        mut stop_condition: impl FnMut(&SearchTree, &SearchContext) -> ControlFlow<()>,
-    ) {
-        loop {
-            if stop_condition(self, ctx).is_break() {
-                break;
-            }
-
-            // Explore and break if nothing happened
-            if self.explore_once(ctx).is_break() {
-                break;
-            }
-        }
-    }
-
-    fn explore_once(&mut self, ctx: &mut SearchContext) -> ControlFlow<()> {
+    pub fn explore_once(&mut self, ctx: &mut SearchContext) -> ControlFlow<()> {
         self.nodes.explore_next(|node| node.explore(ctx))?;
 
         ctx.iter += 1;
@@ -102,7 +85,7 @@ impl SearchTree {
             simple_families: vec![],
             other_families: vec![],
         };
-        for node in self.nodes.iter().cloned() {
+        for node in self.nodes.into_iter() {
             match node.family {
                 NodeType::Arbitrary(family) => ret.other_families.push(family),
                 // TODO: return the whole node, so the other stages can benefit here!

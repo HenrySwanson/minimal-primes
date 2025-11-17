@@ -59,6 +59,11 @@ impl<T: Weight> Frontier<T> {
         self.elements.iter().flatten()
     }
 
+    /// Iterates through every item in the frontier.
+    pub fn into_iter(self) -> impl Iterator<Item = T> {
+        self.elements.into_iter().flatten()
+    }
+
     /// Returns the number of elements in the frontier.
     pub fn len(&self) -> usize {
         self.elements.iter().map(|layer| layer.len()).sum()

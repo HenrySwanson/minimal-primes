@@ -1,4 +1,3 @@
-use std::ops::ControlFlow;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -236,35 +235,37 @@ fn first_stage(
 
     let mut prev_weight = 0;
     let mut counter = 0;
-    tree.explore_until(ctx, |tree: &SearchTree, ctx: &SearchContext| {
+
+    loop {
+        // Check if we need to stop for any reason
         if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
             info!("Interrupted! Stopping now...");
-            return ControlFlow::Break(());
+            break;
         }
 
         let weight = match tree.nodes.min_weight() {
             Some(w) => w,
             // this means the frontier is empty!
-            None => return ControlFlow::Break(()),
+            None => break,
         };
 
-        if let Some(max) = max_weight {
-            if weight > max {
+        if let Some(max_weight) = max_weight {
+            if weight > max_weight {
                 info!("Reached weight cutoff; stopping...");
-                return ControlFlow::Break(());
+                break;
             }
         }
 
-        if let Some(max) = max_iter {
-            if ctx.iter >= max {
+        if let Some(max_iter) = max_iter {
+            if ctx.iter >= max_iter {
                 info!("Reached iteration cutoff; stopping...");
-                return ControlFlow::Break(());
+                break;
             }
         }
 
         if !tree.any_nodes_to_solve() {
             info!("All remaining families are simple; stopping...");
-            return ControlFlow::Break(());
+            break;
         }
 
         // Don't log every single time, that's annoying to read
@@ -290,8 +291,11 @@ fn first_stage(
             );
         }
 
-        ControlFlow::Continue(())
-    });
+        // Now, finally, we can explore a new node
+        if tree.explore_once(ctx).is_break() {
+            break;
+        }
+    }
 
     tree.into_results()
 }
