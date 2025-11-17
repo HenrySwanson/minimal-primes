@@ -639,7 +639,9 @@ impl Weight for SearchNode {
         match &self.node_type {
             NodeType::Arbitrary(node) => node.family.weight(),
             NodeType::Simple(node) => {
-                node.family.before.0.len() + node.family.min_repeats + node.family.after.0.len()
+                node.family.bare.before.0.len()
+                    + node.family.min_repeats
+                    + node.family.bare.after.0.len()
             }
         }
     }

@@ -2,7 +2,7 @@ use num_bigint::{BigInt, BigUint};
 use num_integer::Integer;
 use num_traits::Zero;
 
-use crate::families::SimpleFamily;
+use crate::families::BareSimpleFamily;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Sequence {
@@ -38,7 +38,7 @@ impl Sequence {
     }
 
     // TODO: better error type
-    pub fn try_from_family(simple: &SimpleFamily, base: u8) -> Result<Self, String> {
+    pub fn try_from_family(simple: &BareSimpleFamily, base: u8) -> Result<Self, String> {
         // Compute the sequence for this family: xy*z
         let x = simple.before.value(base);
         let y = simple.center.0;
@@ -123,7 +123,7 @@ impl BigSequence {
         }
     }
 
-    pub fn from_family(simple: &SimpleFamily, base: u8) -> Self {
+    pub fn from_family(simple: &BareSimpleFamily, base: u8) -> Self {
         // Compute the sequence for this family: xy*z
         let x = simple.before.value(base);
         let y = simple.center.0;

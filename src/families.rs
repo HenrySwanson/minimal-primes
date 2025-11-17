@@ -31,9 +31,18 @@ pub struct Core {
 /// For example, `4[6]*7` is a simple family.
 #[derive(Debug, Clone)]
 pub struct SimpleFamily {
+    pub bare: BareSimpleFamily,
+    pub min_repeats: usize,
+}
+
+/// A *simple* family is a family with exactly one core, which contains only
+/// one digit.
+///
+/// For example, `4[6]*7` is a simple family.
+#[derive(Debug, Clone)]
+pub struct BareSimpleFamily {
     pub before: DigitSeq,
     pub center: Digit,
-    pub min_repeats: usize,
     pub after: DigitSeq,
 }
 
@@ -275,21 +284,39 @@ impl SimpleFamily {
     /// Returns the smallest member of this family, i.e., `before + center *
     /// min_repeats + after`.
     pub fn contract(&self) -> DigitSeq {
+        self.bare.digitseq(self.min_repeats)
+    }
+
+    /// Returns the value of [Self::contract], interpreted in the given base.
+    pub fn value(&self, base: u8) -> BigUint {
+        self.bare.value(self.min_repeats, base)
+    }
+
+    /// Returns the smallest n for which this family will contain the given
+    /// digit sequence as a substring, or None if no such n exists.
+    pub fn will_contain_at(&self, needle: &DigitSeq) -> Option<usize> {
+        self.bare.will_contain_at(needle)
+    }
+}
+
+impl BareSimpleFamily {
+    /// Returns the digit sequence with the given number of repeats.
+    pub fn digitseq(&self, num_repeats: usize) -> DigitSeq {
         let mut seq = self.before.clone();
-        for _ in 0..self.min_repeats {
+        for _ in 0..num_repeats {
             seq += self.center;
         }
         seq += &self.after;
         seq
     }
 
-    /// Returns the value of [Self::contract], interpreted in the given base.
-    pub fn value(&self, base: u8) -> BigUint {
+    /// Returns the value of [Self::digitseq], interpreted in the given base.
+    pub fn value(&self, num_repeats: usize, base: u8) -> BigUint {
         let mut value = BigUint::ZERO;
         for d in &self.before.0 {
             value = value * base + d.0;
         }
-        for _ in 0..self.min_repeats {
+        for _ in 0..num_repeats {
             value = value * base + self.center.0;
         }
         for d in &self.after.0 {
@@ -347,11 +374,6 @@ impl SimpleFamily {
             Some(repeats_required)
         }
     }
-
-    #[cfg(test)]
-    pub fn pattern(&self) -> String {
-        format!("{}{}*{}", self.before, self.center, self.after)
-    }
 }
 
 impl TryFrom<Family> for SimpleFamily {
@@ -381,10 +403,12 @@ impl TryFrom<Family> for SimpleFamily {
         }
 
         Ok(SimpleFamily {
-            before,
-            center,
+            bare: BareSimpleFamily {
+                before,
+                center,
+                after,
+            },
             min_repeats: num_repeats,
-            after,
         })
     }
 }
@@ -406,10 +430,12 @@ impl std::fmt::Display for Family {
 
 impl std::fmt::Display for SimpleFamily {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}{}*{} -- x{}",
-            self.before, self.center, self.after, self.min_repeats
-        )
+        write!(f, "{} -- x{}", self.bare, self.min_repeats)
+    }
+}
+
+impl std::fmt::Display for BareSimpleFamily {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}*{}", self.before, self.center, self.after)
     }
 }

@@ -310,7 +310,7 @@ fn get_residues_mod_30(base: u8, family: &Family) -> [bool; 30] {
 pub fn composite_checks_for_simple(base: u8, node: &SimpleNode) -> bool {
     // Get the sequence for this. As a reminder, it looks like:
     // (k B^n + c) / d, where d = B-1
-    let sequence = BigSequence::from_family(&node.family, base);
+    let sequence = BigSequence::from_family(&node.family.bare, base);
 
     check_sum_diff_of_cubes(base, &sequence)
         || check_diff_of_squares(base, &sequence)

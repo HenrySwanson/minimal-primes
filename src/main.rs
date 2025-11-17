@@ -383,10 +383,12 @@ fn second_stage(
     let base = ctx.base;
     let (mut remaining_branches, unsievable_branches): (Vec<_>, Vec<_>) = unsolved_families
         .into_iter()
-        .map(|simple| match Sequence::try_from_family(&simple, base) {
-            Ok(seq) => Ok((simple, seq)),
-            Err(_) => Err(simple),
-        })
+        .map(
+            |simple| match Sequence::try_from_family(&simple.bare, base) {
+                Ok(seq) => Ok((simple, seq)),
+                Err(_) => Err(simple),
+            },
+        )
         .partition_result();
 
     // Okay, now we have a collection of simple familes, and the sequences
@@ -919,7 +921,7 @@ mod tests {
 
         // We should also check that these eventual primes show up in our unsolved
         // list. Otherwise that'd mean we forgot them somehow.
-        let unsolved: Vec<_> = unsolved.iter().map(|f| f.pattern()).collect();
+        let unsolved: Vec<_> = unsolved.iter().map(|f| f.bare.to_string()).collect();
         pretty_assertions::assert_eq!(
             sort_and_dedup(unsolved),
             sort_and_dedup(expected_incomplete.eventual_primes)
