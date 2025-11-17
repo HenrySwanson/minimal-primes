@@ -10,7 +10,7 @@ use crate::context::{print_stats, SearchContext};
 use crate::digits::{Digit, DigitSeq};
 use crate::families::{Family, SimpleFamily};
 use crate::logging::Tracer;
-use crate::search::SearchTree;
+use crate::search::{DiesAt, SearchTree};
 use crate::sequence::Sequence;
 use crate::sieve::SequenceSlice;
 
@@ -200,9 +200,7 @@ fn do_solve(cmd: &SolveArgs, stop_signal: &AtomicBool) -> RemainingNodes {
         return results;
     }
 
-    let unsolved_families = intermediate_stage(results.simple_families, &mut ctx);
-
-    let unsolved = second_stage(cmd, unsolved_families, &mut ctx);
+    let unsolved = second_stage(cmd, results.simple_families, &mut ctx);
 
     println!(
         "Final set of primes ({}): {}",
@@ -300,52 +298,18 @@ fn first_stage(
     tree.into_results()
 }
 
-fn intermediate_stage(
-    unsolved_families: Vec<SimpleFamily>,
-    ctx: &mut SearchContext,
-) -> Vec<SimpleFamily> {
-    // It's possible that a simple family can only be expanded a finite amount
-    // before it conflicts with a known minimal prime. If so, we should not
-    // jump right to sieving, but try to eliminate it quickly.
-    println!("---- INTERMEDIARY PHASE ----");
-
-    unsolved_families
-        .into_iter()
-        .filter_map(|family| intermediate_process_family(family, ctx))
-        .collect()
-}
-
 /// If the family becomes prime, adds it to `primes`. If it contains another
 /// prime, just discards it. If it can't do either of those things, returns
 /// the family, incremented to as far as we searched.
-fn intermediate_process_family(
+fn fast_forward_if_potentially_prime(
     family: SimpleFamily,
     ctx: &mut SearchContext,
 ) -> Option<SimpleFamily> {
-    // Figure out how many iterations we need to check (if any)
-    let mut repeats_until_prime = None;
-    for p in ctx.primes.iter() {
-        match family.will_contain_at(p) {
-            None => {
-                // no luck, move to the next prime
-            }
-            Some(n) => {
-                if n <= family.min_repeats {
-                    // we can discard this immediately!
-                    println!("  Discarding {family}, contains prime {p}");
-                    return None;
-                }
+    let dies_at = find_dies_at(&family, ctx);
 
-                // Otherwise, take the the running minimum of these
-                println!("  {family} will contain {p} after {n} more repeats");
-                repeats_until_prime = Some(repeats_until_prime.map_or(n, |m| n.min(m)));
-            }
-        }
-    }
-
-    let repeats_until_prime = match repeats_until_prime {
-        Some(n) => n,
-        None => {
+    let (repeats_until_prime, killer_prime) = match dies_at {
+        DiesAt::KilledBy(n, p) => (n, p),
+        DiesAt::Unknown => {
             println!("  {family} will not contain any known minimal primes");
             return Some(family);
         }
@@ -370,8 +334,33 @@ fn intermediate_process_family(
     }
 
     // Didn't become prime, discard it
-    println!("  {family} did not become prime, discarding");
+    println!("  {family} killed by {killer_prime}");
     None
+}
+
+fn find_dies_at(family: &SimpleFamily, ctx: &mut SearchContext) -> DiesAt {
+    let mut dies_at = DiesAt::Unknown;
+
+    for p in ctx.primes.iter() {
+        match family.will_contain_at(p) {
+            None => {
+                // no info, move to the next prime
+            }
+            Some(n) => {
+                // Take the the running minimum of these
+                println!("  {family} will contain {p} after {n} more repeats");
+                dies_at.update(n, p);
+
+                // We might be able to bail out instantly!
+                if n <= family.min_repeats {
+                    println!("  Discarding {family}, contains prime {p}");
+                    break;
+                }
+            }
+        }
+    }
+
+    dies_at
 }
 
 fn second_stage(
@@ -379,6 +368,16 @@ fn second_stage(
     unsolved_families: Vec<SimpleFamily>,
     ctx: &mut SearchContext,
 ) -> Vec<SimpleFamily> {
+    // It's possible that a simple family can only be expanded a finite amount
+    // before it conflicts with a known minimal prime. If so, we should not
+    // jump right to sieving, but try to eliminate it quickly.
+    println!("---- INTERMEDIARY PHASE ----");
+
+    let unsolved_families: Vec<_> = unsolved_families
+        .into_iter()
+        .filter_map(|family| fast_forward_if_potentially_prime(family, ctx))
+        .collect();
+
     println!("---- SIEVING PHASE ----");
     let base = ctx.base;
     let (mut remaining_branches, unsievable_branches): (Vec<_>, Vec<_>) = unsolved_families
@@ -466,7 +465,7 @@ fn second_stage(
     // eliminated by an existing minimal prime.
     let mut output = vec![];
     for (family, _) in remaining_branches {
-        if let Some(still_unsolved) = intermediate_process_family(family, ctx) {
+        if let Some(still_unsolved) = fast_forward_if_potentially_prime(family, ctx) {
             output.push(still_unsolved);
         }
     }
@@ -476,7 +475,7 @@ fn second_stage(
     // TODO: we really gotta have some quick way to do this, it happens a lot
     for family in unsievable_branches {
         println!("Checking if we get a lucky break on {family}");
-        if let Some(still_unsolved) = intermediate_process_family(family, ctx) {
+        if let Some(still_unsolved) = fast_forward_if_potentially_prime(family, ctx) {
             output.push(still_unsolved);
         }
     }
@@ -898,14 +897,9 @@ mod tests {
             tree_log: false,
         };
 
-        // First stage
         let mut ctx = SearchContext::new(base, false);
         let results = first_stage(&mut ctx, None, None, &AtomicBool::new(false));
-
-        // Do intermediate and second stages
-        let unsolved_families = intermediate_stage(results.simple_families, &mut ctx);
-
-        let unsolved = second_stage(&cmd, unsolved_families, &mut ctx);
+        let unsolved = second_stage(&cmd, results.simple_families, &mut ctx);
 
         // Compare the primes we got to the primes we expect, except for the ones we
         // know we're missing.

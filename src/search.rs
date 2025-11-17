@@ -123,7 +123,7 @@ struct SimpleNode {
     composite_tested: bool,
     /// When min_repeats equals this number, we can delete this
     /// family, because it contains this prime.
-    dies_at: Option<(usize, DigitSeq)>,
+    dies_at: DiesAt,
     /// What the index of the first prime we've never seen is
     start_unknown_primes: usize,
 }
@@ -240,13 +240,10 @@ impl FamilyNode {
 
             // Take all the primes we know could be contained in this family,
             // and check exactly when this family meets them.
-            let mut dies_at = None;
+            let mut dies_at = DiesAt::Unknown;
             for (_, p) in ctx.primes.get_many(&self.possible_contained_primes) {
                 if let Some(n) = family.will_contain_at(p) {
-                    match dies_at {
-                        Some((old_n, _)) if old_n <= n => {}
-                        Some(_) | None => dies_at = Some((n, p.clone())),
-                    }
+                    dies_at.update(n, p);
                 }
             }
 
@@ -431,7 +428,7 @@ impl SimpleNode {
 
         // On a previous loop, we may have established when this family contains
         // a prime. Check it.
-        if let Some((dies_at, prime)) = &self.dies_at {
+        if let DiesAt::KilledBy(dies_at, prime) = &self.dies_at {
             if self.family.min_repeats >= *dies_at {
                 debug!("  Discarding {}, contains prime {}", self.family, prime);
                 debug_to_tree!(ctx.tracer, "Discarding, contains prime {}", prime);
@@ -452,12 +449,7 @@ impl SimpleNode {
                 }
 
                 // otherwise, we should incorporate this into dies_at
-                match self.dies_at {
-                    // its better to have smaller n; skip this if so
-                    Some((old_n, _)) if old_n <= n => {}
-                    // otherwise, update
-                    Some(_) | None => self.dies_at = Some((n, prime.clone())),
-                }
+                self.dies_at.update(n, prime);
             }
             ctx.stats.num_simple_substring_checks += 1;
             ctx.stats.duration_simple_substring_checks += start.elapsed();
@@ -643,6 +635,21 @@ impl Weight for SearchNode {
                     + node.family.min_repeats
                     + node.family.bare.after.0.len()
             }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum DiesAt {
+    Unknown,
+    KilledBy(usize, DigitSeq),
+}
+
+impl DiesAt {
+    pub fn update(&mut self, n: usize, p: &DigitSeq) {
+        match self {
+            Self::KilledBy(old_n, _) if *old_n <= n => {}
+            Self::KilledBy(..) | Self::Unknown => *self = Self::KilledBy(n, p.clone()),
         }
     }
 }
