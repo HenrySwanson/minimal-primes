@@ -159,7 +159,7 @@ impl SearchNode {
 
 impl Family {
     fn explore(
-        self,
+        mut self,
         possible_contained_primes: &mut CandidateIndices,
         ctx: &mut SearchContext,
     ) -> Vec<NodeType> {
@@ -212,11 +212,10 @@ impl Family {
         }
 
         // Then, we try to reduce the cores.
-        // TODO: mutate don't consume
-        let mut this = self.reduce_cores(possible_contained_primes, ctx);
-        this.simplify();
-        if this.cores.is_empty() {
-            debug!("  {this} was reduced to trivial string");
+        self.reduce_cores(possible_contained_primes, ctx);
+        self.simplify();
+        if self.cores.is_empty() {
+            debug!("  {self} was reduced to trivial string");
             debug_to_tree!(ctx.tracer, "Reduced to trivial string");
             ctx.stats.branch_stats.is_trivial_string += 1;
             return vec![];
@@ -224,8 +223,8 @@ impl Family {
 
         // Now, run some tests to see whether this family is guaranteed to
         // be composite.
-        if this.test_for_perpetual_composite(ctx) {
-            debug!("  Discarding {this}, is always composite");
+        if self.test_for_perpetual_composite(ctx) {
+            debug!("  Discarding {self}, is always composite");
             debug_to_tree!(ctx.tracer, "Discarding, is always composite");
             ctx.stats.branch_stats.detected_composite += 1;
             return vec![];
@@ -234,39 +233,35 @@ impl Family {
         // TODO: is this right?
         // Check if this family is simple or not. If it is, we should
         // re-enqueue it as such. (Note: this is after composite check!)
-        let mut this = match SimpleFamily::try_from(this) {
-            Ok(family) => {
-                ctx.stats.branch_stats.simplified += 1;
-                return vec![NodeType::Simple(SimpleNode {
-                    family,
-                    composite_tested: false,
-                    dies_at: None,
-                })];
-            }
-            // can't convert, put it back to normal
-            Err(f) => f,
-        };
+        if let Ok(family) = SimpleFamily::try_from(self.clone()) {
+            ctx.stats.branch_stats.simplified += 1;
+            return vec![NodeType::Simple(SimpleNode {
+                family,
+                composite_tested: false,
+                dies_at: None,
+            })];
+        }
 
         // Let's see if we can split it in an interesting way
         // TODO: context-ify the splitting functions too!
-        if this.weight() >= 2 {
-            if let Some(children) = ctx.split_on_limited_digit(&this, 3, possible_contained_primes)
+        if self.weight() >= 2 {
+            if let Some(children) = ctx.split_on_limited_digit(&self, 3, possible_contained_primes)
             {
                 ctx.stats.branch_stats.split_on_limited_digit += 1;
                 return children.into_iter().map(NodeType::Arbitrary).collect();
             }
         }
 
-        if this.weight() >= 4 {
+        if self.weight() >= 4 {
             if let Some(children) =
-                ctx.split_on_incompatible_digits_different_cores(&this, possible_contained_primes)
+                ctx.split_on_incompatible_digits_different_cores(&self, possible_contained_primes)
             {
                 ctx.stats.branch_stats.split_on_incompatible_different_cores += 1;
                 return children.into_iter().map(NodeType::Arbitrary).collect();
             }
 
             if let Some(children) =
-                ctx.split_on_incompatible_digits(&this, possible_contained_primes)
+                ctx.split_on_incompatible_digits(&self, possible_contained_primes)
             {
                 ctx.stats.branch_stats.split_on_incompatible_same_core += 1;
                 return children.into_iter().map(NodeType::Arbitrary).collect();
@@ -276,20 +271,20 @@ impl Family {
         // this was introduced to kill long derivation chains of the form x[ab]*y that
         // we have trouble with otherwise. only invoke it when we are really stuck on
         // something.
-        if this.weight() >= 10 {
+        if self.weight() >= 10 {
             if let Some(children) =
-                ctx.split_on_forbidden_sandwich(&this, possible_contained_primes)
+                ctx.split_on_forbidden_sandwich(&self, possible_contained_primes)
             {
                 ctx.stats.branch_stats.split_on_forbidden_sandwich += 1;
                 return children.into_iter().map(NodeType::Arbitrary).collect();
             }
         }
 
-        if this.weight() >= 5 {
+        if self.weight() >= 5 {
             // This one doesn't actually simplify any cores, in fact, it'll make the
             // branch more complicated!. However, it might kickstart some branch elimination
             // by making us intersect another prime. So this check should always be last.
-            if let Some(child) = ctx.split_on_necessary_digit(&this) {
+            if let Some(child) = ctx.split_on_necessary_digit(&self) {
                 ctx.stats.branch_stats.split_on_necessary_digit += 1;
                 return vec![NodeType::Arbitrary(child)];
             }
@@ -317,22 +312,22 @@ impl Family {
             h ^= h >> 33;
             h as usize
         }
-        let magic = match this.weight() {
+        let magic = match self.weight() {
             0 => 0,
             1 => 1,
             w => bit_mixer(w),
         };
 
-        let slot = (magic >> 1) % this.cores.len();
-        debug_assert!(!this.cores[slot].is_empty());
+        let slot = (magic >> 1) % self.cores.len();
+        debug_assert!(!self.cores[slot].is_empty());
         let mut children = if magic % 2 == 1 {
-            debug!("  Splitting {this} left on core {slot}");
+            debug!("  Splitting {self} left on core {slot}");
             debug_to_tree!(ctx.tracer, "Splitting left on core {}", slot);
-            this.expand(slot)
+            self.expand(slot)
         } else {
-            debug!("  Splitting {this} right on core {slot}");
+            debug!("  Splitting {self} right on core {slot}");
             debug_to_tree!(ctx.tracer, "Splitting right on core {}", slot);
-            this.expand_right(slot)
+            self.expand_right(slot)
         };
 
         // We also need to consider the case where the chosen core expands to
@@ -341,10 +336,10 @@ impl Family {
         // For example: if we reduce a[xyz]c, we test the primality of axc, ayc
         // and azc. So after we split, and get ax[xyz]c, there's no need to
         // test ax[]c again.
-        if this.cores.len() > 1 {
-            this.cores[slot].clear();
-            this.simplify();
-            children.push(this);
+        if self.cores.len() > 1 {
+            self.cores[slot].clear();
+            self.simplify();
+            children.push(self);
         }
 
         ctx.stats.branch_stats.explored_generically += 1;
@@ -432,10 +427,10 @@ impl SimpleNode {
 
 impl Family {
     fn reduce_cores(
-        mut self,
+        &mut self,
         possible_contained_primes: &CandidateIndices,
         ctx: &mut SearchContext,
-    ) -> Family {
+    ) {
         let old_family = self.clone();
         for (i, core) in self.cores.iter_mut().enumerate() {
             // Substitute elements from the core into the string to see if any
@@ -472,7 +467,6 @@ impl Family {
         // Now we've reduced the core, and have a new family.
         debug!("  Reducing {old_family} to {self}");
         debug_to_tree!(ctx.tracer, "Reducing to {}", self);
-        self
     }
 }
 
