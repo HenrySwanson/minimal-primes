@@ -124,7 +124,8 @@ struct SimpleNode {
     /// When min_repeats equals this number, we can delete this
     /// family, because it contains this prime.
     dies_at: Option<(usize, DigitSeq)>,
-    possible_contained_primes: CandidateIndices,
+    /// What the index of the first prime we've never seen is
+    start_unknown_primes: usize,
 }
 
 impl SearchNode {
@@ -236,11 +237,24 @@ impl FamilyNode {
         // re-enqueue it as such. (Note: this is after composite check!)
         if let Ok(family) = SimpleFamily::try_from(self.family.clone()) {
             ctx.stats.branch_stats.simplified += 1;
+
+            // Take all the primes we know could be contained in this family,
+            // and check exactly when this family meets them.
+            let mut dies_at = None;
+            for (_, p) in ctx.primes.get_many(&self.possible_contained_primes) {
+                if let Some(n) = family.will_contain_at(p) {
+                    match dies_at {
+                        Some((old_n, _)) if old_n <= n => {}
+                        Some(_) | None => dies_at = Some((n, p.clone())),
+                    }
+                }
+            }
+
             return vec![NodeType::Simple(SimpleNode {
                 family,
                 composite_tested: false,
-                dies_at: None,
-                possible_contained_primes: self.possible_contained_primes,
+                dies_at,
+                start_unknown_primes: ctx.primes.len(),
             })];
         }
 
@@ -427,7 +441,7 @@ impl SimpleNode {
         }
 
         // Now check any new primes.
-        for (_, prime) in ctx.primes.get_many(&self.possible_contained_primes) {
+        for (_, prime) in ctx.primes.get_tail(self.start_unknown_primes) {
             let start = Instant::now();
             if let Some(n) = self.family.will_contain_at(prime) {
                 if n <= self.family.min_repeats {
@@ -448,7 +462,7 @@ impl SimpleNode {
             ctx.stats.num_simple_substring_checks += 1;
             ctx.stats.duration_simple_substring_checks += start.elapsed();
         }
-        self.possible_contained_primes = ctx.primes.indices_none(); // resets our collection
+        self.start_unknown_primes = ctx.primes.len(); // resets our collection
 
         // Test if it is a prime
         let value = self.family.value(ctx.base);

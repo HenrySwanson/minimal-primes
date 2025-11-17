@@ -112,6 +112,18 @@ impl CandidateSequences {
             .chain(indices.start_unknown..self.inner.len())
             .flat_map(|idx| self.inner[idx].as_ref().map(|val| (idx, val)))
     }
+
+    /// Returns an iterator over the elements represented by the given
+    /// range.
+    pub fn get_tail<'slf, 'idx>(
+        &'slf self,
+        start: usize,
+    ) -> impl Iterator<Item = (usize, &'slf DigitSeq)> + 'idx
+    where
+        'slf: 'idx,
+    {
+        (start..self.inner.len()).flat_map(|idx| self.inner[idx].as_ref().map(|val| (idx, val)))
+    }
 }
 
 impl Default for CandidateSequences {
