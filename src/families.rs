@@ -157,7 +157,7 @@ impl Family {
     /// xy2Lz, ....
     ///
     /// This is Lemma 19 in Bright, and in his code, it's called "exploring".
-    pub fn expand(&self, slot: usize) -> Vec<Self> {
+    pub fn expand_left(&self, slot: usize) -> Vec<Self> {
         self.cores[slot]
             .iter()
             // skip 0 if it'd be the first digit

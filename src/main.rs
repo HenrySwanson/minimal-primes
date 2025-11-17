@@ -515,6 +515,7 @@ mod tests {
         /// The number of families grows dramatically, with no signs of
         /// being reducible. This means there's something about our
         /// first stage that can be improved.
+        #[allow(dead_code)]
         Explodes,
         /// Something else!
         Other,
