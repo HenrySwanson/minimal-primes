@@ -49,10 +49,15 @@ impl SequenceSlice {
         if self.seq.check_term_equal(base, p, start) {
             idx += spacing;
         }
-
         // Insane edge case: it could also be zero! In that case, bump it up twice.
-        if self.seq.check_term_equal(base, 0, start) {
+        else if self.seq.check_term_equal(base, 0, start) {
             idx += 2 * spacing;
+        }
+        // Can it be negative? No, that would not be meaningful for the kinds
+        // of sequences we're considering.
+        if self.seq.c < 0 {
+            // 0th term is (k*1+c) / d, which can only go negative if c is large and negative
+            debug_assert!(self.seq.k > self.seq.c.unsigned_abs())
         }
 
         while let Some(mut slot) = self.n_bitvec.get_mut(idx) {
@@ -86,18 +91,16 @@ pub fn sieve(
     p_max: u64,
     prime_buffer: &mut NaiveBuffer,
 ) {
-    if slices.is_empty() {
-        return;
-    }
-
     // Decide how many steps for baby-step giant-step
-    // TODO: i think i can make it all the same range?
-    let n_range = slices
-        .iter()
-        .map(|slice| slice.n_bitvec.len())
-        .max()
-        .unwrap();
-    let num_baby_steps = (n_range as f64).sqrt() as usize;
+    // TODO: will the input slices have different sizes?
+    let Some(n_range) = slices.iter().map(|slice| slice.n_bitvec.len()).max() else {
+        // no slices; return immediately
+        return;
+    };
+
+    // TODO: with multiple sequences, explore different ways to divvy up
+    // baby and giant steps
+    let num_baby_steps = n_range.isqrt();
     let num_giant_steps = n_range.div_ceil(num_baby_steps);
 
     // Now go and eliminate a bunch of terms
@@ -166,9 +169,7 @@ fn baby_step_giant_step(
         .enumerate()
         .map(|(i, slice)| {
             // Here is a convenient place to check d
-            if
-            /* p < seq.d && */
-            slice.seq.d.is_multiple_of(p) {
+            if slice.seq.d.is_multiple_of(p) {
                 // TODO: log something
                 skip[i] = true;
                 return 0;
