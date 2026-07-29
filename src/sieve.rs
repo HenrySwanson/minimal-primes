@@ -90,6 +90,16 @@ pub fn sieve(
     p_max: u64,
     prime_buffer: &mut NaiveBuffer,
 ) {
+    // The modular arithmetic in baby_step_giant_step reduces every value mod
+    // p before operating on it, which lets it stay in u32 (doubling to u64
+    // internally) instead of num_modular's default u64->u128 widening (which
+    // triggers a slow software 128-bit division on every step). That only
+    // works if p itself fits in a u32, which holds for any realistic p_max.
+    assert!(
+        p_max <= u32::MAX as u64,
+        "sieve() requires p_max to fit in a u32 (got {p_max})"
+    );
+
     // Decide how many steps for baby-step giant-step
     // TODO: will the input slices have different sizes?
     let Some(n_range) = slices.iter().map(|slice| slice.n_bitvec.len()).max() else {
@@ -106,13 +116,13 @@ pub fn sieve(
     // not the fastest choice. These are only sqrt(n_range) in size, so they're
     // pretty small, and since we're populating it for each prime up to p_max,
     // we really want to re-use our storage. Let's just use a sorted vector.
-    let mut baby_table: Vec<(u64, usize)> = Vec::with_capacity(num_baby_steps);
+    let mut baby_table: Vec<(u32, usize)> = Vec::with_capacity(num_baby_steps);
 
     // Now go and eliminate a bunch of terms
     for p in prime_buffer.primes(p_max) {
         baby_step_giant_step(
             base.into(),
-            *p,
+            *p as u32,
             num_baby_steps,
             num_giant_steps,
             slices,
@@ -122,7 +132,7 @@ pub fn sieve(
 }
 
 /// Looks up `key` in a baby-step table sorted by [baby_steps].
-fn lookup_baby_step(table: &[(u64, usize)], key: u64) -> Option<usize> {
+fn lookup_baby_step(table: &[(u32, usize)], key: u32) -> Option<usize> {
     let index = table.binary_search_by_key(&key, |&(k, _)| k).ok()?;
 
     Some(table[index].1)
@@ -132,7 +142,7 @@ fn lookup_baby_step(table: &[(u64, usize)], key: u64) -> Option<usize> {
 /// using Montgomery's batch inversion trick.
 ///
 /// If a value is 0 it is skipped entirely and will not be modified.
-fn batch_invm(values: Vec<u64>, p: u64) -> Vec<u64> {
+fn batch_invm(values: Vec<u32>, p: u32) -> Vec<u32> {
     // prefix[i] is the product of values[0..i] mod p, so it starts with 1 and
     // ends with the full product (stuttering on any zeros along the way)
     let mut prefix = Vec::with_capacity(values.len() + 1);
@@ -196,11 +206,11 @@ pub fn last_resort(
 
 fn baby_step_giant_step(
     base: u64,
-    p: u64,
+    p: u32,
     num_baby_steps: usize,
     num_giant_steps: usize,
     slices: &mut [SequenceSlice],
-    baby_table: &mut Vec<(u64, usize)>,
+    baby_table: &mut Vec<(u32, usize)>,
 ) {
     // Now that we're dealing with multiple simultaneous sequences, we may need
     // to skip over some of them. We do so with this vector.
@@ -214,8 +224,15 @@ fn baby_step_giant_step(
     // If p does divide d, then we have to be more careful, and count the number of ps.
     // For now though, we just skip that prime for that sequence! (TODO)
 
+    // All the modular arithmetic below operates on values already reduced
+    // mod p, so it fits in u32 and doubles to u64 internally instead of
+    // num_modular's default u64->u128 widening for u64 operands (which
+    // triggers a slow software 128-bit division on every step).
+    let p64 = u64::from(p);
+    let base_mod_p = (base % p64) as u32;
+
     // Compute some inverses!
-    let binv = match base.invm(&p) {
+    let binv = match base_mod_p.invm(&p) {
         Some(x) => x,
         None => {
             // If p divides b, then the term will be equivalent to c mod p.
@@ -225,7 +242,7 @@ fn baby_step_giant_step(
             debug!("Completely skipping prime {p}, it divides the base b={base}");
             for slice in slices {
                 assert_ne!(
-                    slice.seq.c.unsigned_abs() % p,
+                    slice.seq.c.unsigned_abs() % p64,
                     0,
                     "Sequence {:?} is always divisible by {}",
                     slice.seq,
@@ -247,18 +264,18 @@ fn baby_step_giant_step(
     // all the k's in one shot with Montgomery's batch-inversion trick: one
     // true modular inverse (of the product) plus O(#slices) multiplications,
     // instead of one inverse per slice.
-    let mut k_mods = vec![0u64; slices.len()];
-    let mut neg_c_mods = vec![0u64; slices.len()];
+    let mut k_mods = vec![0u32; slices.len()];
+    let mut neg_c_mods = vec![0u32; slices.len()];
     for (i, slice) in slices.iter().enumerate() {
         // Here is a convenient place to check d
-        if slice.seq.d.is_multiple_of(p) {
+        if slice.seq.d.is_multiple_of(p64) {
             // TODO: log something
             skip[i] = true;
             continue;
         }
 
-        k_mods[i] = slice.seq.k % p;
-        neg_c_mods[i] = slice.seq.c.unsigned_abs() % p;
+        k_mods[i] = (slice.seq.k % p64) as u32;
+        neg_c_mods[i] = (slice.seq.c.unsigned_abs() % p64) as u32;
         if slice.seq.c > 0 {
             // note that c_mods is not fully reduced into [0, p)
             neg_c_mods[i] = neg_c_mods[i].negm(&p);
@@ -278,14 +295,14 @@ fn baby_step_giant_step(
     }
 
     let k_invs = batch_invm(k_mods, p);
-    let ck: Vec<_> = k_invs
+    let ck: Vec<u32> = k_invs
         .iter()
         .zip(neg_c_mods)
         .map(|(k_inv, neg_c)| neg_c.mulm(k_inv, &p))
         .collect();
 
     // Take some baby steps
-    let order = baby_steps(base, p, num_baby_steps, slices[0].n_lo, baby_table);
+    let order = baby_steps(base_mod_p, p, num_baby_steps, slices[0].n_lo, baby_table);
     debug_assert!(
         baby_table.iter().all(|&(x, _)| x != 0),
         "should never see 0s in baby_table when b has an inverse"
@@ -301,7 +318,7 @@ fn baby_step_giant_step(
 
             if let Some(i) = lookup_baby_step(baby_table, ck[idx]) {
                 // eliminate L + i, and all multiples of order afterward
-                slice.eliminate_multiple(p, base, slice.n_lo + i, order);
+                slice.eliminate_multiple(p64, base, slice.n_lo + i, order);
             }
         }
 
@@ -309,7 +326,7 @@ fn baby_step_giant_step(
     }
 
     // Otherwise, we'll do some giant steps
-    let m: u64 = num_baby_steps.try_into().unwrap();
+    let m: u32 = num_baby_steps.try_into().unwrap();
     let bm = binv.powm(m, &p);
     let mut ckb = ck;
 
@@ -372,7 +389,7 @@ fn baby_step_giant_step(
         }
 
         if let Some(exp) = solutions[idx] {
-            slice.eliminate_multiple(p, base, exp, order);
+            slice.eliminate_multiple(p64, base, exp, order);
         }
     }
 }
@@ -385,20 +402,22 @@ fn baby_step_giant_step(
 /// return Some(order), and `table` will have length of that order. Otherwise,
 /// the table will be filled up to `num_baby_steps` and we will return `None`.
 fn baby_steps(
-    base: u64,
-    p: u64,
+    base_mod_p: u32,
+    p: u32,
     num_baby_steps: usize,
     start_exp: usize,
-    table: &mut Vec<(u64, usize)>,
+    table: &mut Vec<(u32, usize)>,
 ) -> Option<usize> {
-    let start_exp: u64 = start_exp.try_into().unwrap();
+    let start_exp: u32 = start_exp
+        .try_into()
+        .expect("sieve exponent range should fit in a u32");
 
     table.clear();
-    let initial_value = base.powm(start_exp, &p);
+    let initial_value = base_mod_p.powm(start_exp, &p);
     let mut value = initial_value;
     for i in 0..num_baby_steps {
         table.push((value, i));
-        value = value.mulm(base, &p);
+        value = value.mulm(base_mod_p, &p);
 
         // We've looped all the way around! No need to insert any more entries,
         // we can return with knowledge of the order.
@@ -432,7 +451,7 @@ mod tests {
         let mut prime_buffer = NaiveBuffer::new();
         let mut baby_table = Vec::new();
         for p in prime_buffer.primes(max_p) {
-            baby_step_giant_step(base, *p, 10, 10, &mut slices, &mut baby_table);
+            baby_step_giant_step(base, *p as u32, 10, 10, &mut slices, &mut baby_table);
         }
 
         let slice = &slices[0];
