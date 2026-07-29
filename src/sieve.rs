@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::ops::Range;
 
 use bitvec::prelude::BitVec;
@@ -103,10 +102,32 @@ pub fn sieve(
     let num_baby_steps = n_range.isqrt();
     let num_giant_steps = n_range.div_ceil(num_baby_steps);
 
+    // The baby-step table is effectively a hashmap, but actually using one is
+    // not the fastest choice. These are only sqrt(n_range) in size, so they're
+    // pretty small, and since we're populating it for each prime up to p_max,
+    // we really want to re-use our storage. Let's just use a sorted vector.
+    let mut baby_table: Vec<(u64, usize)> = Vec::with_capacity(num_baby_steps);
+
     // Now go and eliminate a bunch of terms
     for p in prime_buffer.primes(p_max) {
-        baby_step_giant_step(base.into(), *p, num_baby_steps, num_giant_steps, slices);
+        baby_step_giant_step(
+            base.into(),
+            *p,
+            num_baby_steps,
+            num_giant_steps,
+            slices,
+            &mut baby_table,
+        );
     }
+}
+
+/// Looks up `key` in a baby-step table sorted by [baby_steps].
+fn lookup_baby_step(table: &[(u64, usize)], key: u64) -> Option<usize> {
+    let index = table
+        .binary_search_by_key(&key, |&(k, _)| k)
+        .ok()?;
+
+    Some(table[index].1)
 }
 
 pub fn last_resort(
@@ -132,6 +153,7 @@ fn baby_step_giant_step(
     num_baby_steps: usize,
     num_giant_steps: usize,
     slices: &mut [SequenceSlice],
+    baby_table: &mut Vec<(u64, usize)>,
 ) {
     // Now that we're dealing with multiple simultaneous sequences, we may need
     // to skip over some of them. We do so with this vector.
@@ -209,9 +231,9 @@ fn baby_step_giant_step(
         .collect();
 
     // Take some baby steps
-    let (baby_table, order) = baby_steps(base, p, num_baby_steps, slices[0].n_lo);
+    let order = baby_steps(base, p, num_baby_steps, slices[0].n_lo, baby_table);
     debug_assert!(
-        baby_table.keys().all(|x| *x != 0),
+        baby_table.iter().all(|&(x, _)| x != 0),
         "should never see 0s in baby_table when b has an inverse"
     );
 
@@ -223,7 +245,7 @@ fn baby_step_giant_step(
                 continue;
             }
 
-            if let Some(i) = baby_table.get(&ck[idx]) {
+            if let Some(i) = lookup_baby_step(baby_table, ck[idx]) {
                 // eliminate L + i, and all multiples of order afterward
                 slice.eliminate_multiple(p, base, slice.n_lo + i, order);
             }
@@ -260,7 +282,7 @@ fn baby_step_giant_step(
             }
 
             // See if we got a hit on ckb
-            if let Some(j) = baby_table.get(&ckb[idx]) {
+            if let Some(j) = lookup_baby_step(baby_table, ckb[idx]) {
                 // Found a solution! (-c/k)b^(im) = b^(L+j), so we eliminate L+im+j
                 let exp = slice.n_lo + i * num_baby_steps + j;
 
@@ -301,29 +323,39 @@ fn baby_step_giant_step(
     }
 }
 
+/// Populates `table` with the baby steps.
+/// 
+/// Specifically, table[i] = base^(start_exp + i) mod p.
+/// 
+/// If `num_baby_steps` is less than or equal to the order of base mod p,
+/// return Some(order), and `table` will have length of that order. Otherwise,
+/// the table will be filled up to `num_baby_steps` and we will return `None`.
 fn baby_steps(
     base: u64,
     p: u64,
     num_baby_steps: usize,
     start_exp: usize,
-) -> (HashMap<u64, usize>, Option<usize>) {
+    table: &mut Vec<(u64, usize)>,
+) -> Option<usize> {
     let start_exp: u64 = start_exp.try_into().unwrap();
 
-    let mut map = HashMap::with_capacity(num_baby_steps);
+    table.clear();
     let initial_value = base.powm(start_exp, &p);
     let mut value = initial_value;
     for i in 0..num_baby_steps {
-        map.insert(value, i);
+        table.push((value, i));
         value = value.mulm(base, &p);
 
         // We've looped all the way around! No need to insert any more entries,
         // we can return with knowledge of the order.
         if value == initial_value {
-            return (map, Some(i + 1));
+            table.sort_unstable_by_key(|&(k, _)| k);
+            return Some(i + 1);
         }
     }
 
-    (map, None)
+    table.sort_unstable_by_key(|&(k, _)| k);
+    None
 }
 
 #[cfg(test)]
@@ -344,8 +376,9 @@ mod tests {
         let slice = SequenceSlice::new(seq, 0..n_range);
         let mut slices = [slice];
         let mut prime_buffer = NaiveBuffer::new();
+        let mut baby_table = Vec::new();
         for p in prime_buffer.primes(max_p) {
-            baby_step_giant_step(base, *p, 10, 10, &mut slices);
+            baby_step_giant_step(base, *p, 10, 10, &mut slices, &mut baby_table);
         }
 
         let slice = &slices[0];
