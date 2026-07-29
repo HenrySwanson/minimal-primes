@@ -123,11 +123,58 @@ pub fn sieve(
 
 /// Looks up `key` in a baby-step table sorted by [baby_steps].
 fn lookup_baby_step(table: &[(u64, usize)], key: u64) -> Option<usize> {
-    let index = table
-        .binary_search_by_key(&key, |&(k, _)| k)
-        .ok()?;
+    let index = table.binary_search_by_key(&key, |&(k, _)| k).ok()?;
 
     Some(table[index].1)
+}
+
+/// Inverts every value in `values` mod `p`, using just one modular inversion,
+/// using Montgomery's batch inversion trick.
+///
+/// If a value is 0 it is skipped entirely and will not be modified.
+fn batch_invm(values: Vec<u64>, p: u64) -> Vec<u64> {
+    // prefix[i] is the product of values[0..i] mod p, so it starts with 1 and
+    // ends with the full product (stuttering on any zeros along the way)
+    let mut prefix = Vec::with_capacity(values.len() + 1);
+    prefix.push(1);
+    for v in values.iter().copied() {
+        let last = *prefix.last().unwrap();
+        if v == 0 {
+            prefix.push(last);
+        } else {
+            prefix.push(last.mulm(v, &p));
+        }
+    }
+
+    // Now do our one and only modular inversion. This gives us the inverse of
+    // "everything multiplied together", i.e., (v_0 ... v_{n-1})^-1
+    let Some(mut big_inverse) = prefix
+        .last()
+        .copied()
+        .expect("prefix should have length > 0")
+        .invm(&p)
+    else {
+        panic!("Somehow got something non-invertible; was {p} not prime? Values were: {values:?}")
+    };
+
+    // Now backtrack, filling in our `values` vector in reverse. (We can re-use that
+    // buffer!)
+    let mut result = values;
+    for i in (0..result.len()).rev() {
+        // loop invariant: big_inverse is the inverse of (v_0 ... v_i)
+        
+        let v_i = result[i];
+        if v_i == 0 {
+            continue; // don't do anything for zeros
+        }
+        
+        // (v_0 ... v_i)^-1 * (v_0 ... v_{i-1}) = v_i^-1
+        result[i] = big_inverse.mulm(prefix[i], &p);
+        // maintain the invariant
+        big_inverse = big_inverse.mulm(v_i, &p);
+    }
+
+    result
 }
 
 pub fn last_resort(
@@ -189,45 +236,52 @@ fn baby_step_giant_step(
         }
     };
 
-    // We want to compute -c/k for each of our sequences.
-    let ck: Vec<_> = slices
+    // Next, we need to compute -c/k for each of our sequences. However,
+    // modular inversion is expensive, and we're doing a lot of it! We can
+    // speed things up quite a bit with Montgomery's "batch-inversion" trick.
+
+    // We want to compute -c/k for each of our sequences. Rather than doing a
+    // full extended-Euclidean inversion of k for every slice (the dominant
+    // cost of this whole function, since it happens once per (prime, slice)
+    // pair), reduce k and c mod p for every eligible slice first, then invert
+    // all the k's in one shot with Montgomery's batch-inversion trick: one
+    // true modular inverse (of the product) plus O(#slices) multiplications,
+    // instead of one inverse per slice.
+    let mut k_mods = vec![0u64; slices.len()];
+    let mut neg_c_mods = vec![0u64; slices.len()];
+    for (i, slice) in slices.iter().enumerate() {
+        // Here is a convenient place to check d
+        if slice.seq.d.is_multiple_of(p) {
+            // TODO: log something
+            skip[i] = true;
+            continue;
+        }
+
+        k_mods[i] = slice.seq.k % p;
+        neg_c_mods[i] = slice.seq.c.unsigned_abs() % p;
+        if slice.seq.c > 0 {
+            // note that c_mods is not fully reduced into [0, p)
+            neg_c_mods[i] = neg_c_mods[i].negm(&p);
+        }
+
+        // If p divides k, then the term will always be equivalent to c mod p,
+        // so we need to check if c is also divisible by p. If so, we should skip
+        // this prime.
+        if k_mods[i] == 0 {
+            assert_ne!(
+                neg_c_mods[i], 0,
+                "Sequence {:?} is always divisible by {}",
+                slice.seq, p
+            );
+            skip[i] = true;
+        }
+    }
+
+    let k_invs = batch_invm(k_mods, p);
+    let ck: Vec<_> = k_invs
         .iter()
-        .enumerate()
-        .map(|(i, slice)| {
-            // Here is a convenient place to check d
-            if slice.seq.d.is_multiple_of(p) {
-                // TODO: log something
-                skip[i] = true;
-                return 0;
-            }
-
-            // If k is zero mod p, we have the same situation as with b, but
-            // we only need to check one c.
-            let kinv = match slice.seq.k.invm(&p) {
-                Some(x) => x,
-                None => {
-                    assert_ne!(
-                        slice.seq.c.unsigned_abs() % p,
-                        0,
-                        "Sequence {:?} is always divisible by {}",
-                        slice.seq,
-                        p
-                    );
-                    skip[i] = true;
-                    return 0;
-                }
-            };
-
-            // We first have to get c as a u64 before we can do mod-p math with it.
-            let neg_c_mod_p = if slice.seq.c >= 0 {
-                slice.seq.c.unsigned_abs().negm(&p)
-            } else {
-                slice.seq.c.unsigned_abs()
-            };
-
-            // -c/k mod p
-            neg_c_mod_p.mulm(kinv, &p)
-        })
+        .zip(neg_c_mods)
+        .map(|(k_inv, neg_c)| neg_c.mulm(k_inv, &p))
         .collect();
 
     // Take some baby steps
@@ -324,9 +378,9 @@ fn baby_step_giant_step(
 }
 
 /// Populates `table` with the baby steps.
-/// 
+///
 /// Specifically, table[i] = base^(start_exp + i) mod p.
-/// 
+///
 /// If `num_baby_steps` is less than or equal to the order of base mod p,
 /// return Some(order), and `table` will have length of that order. Otherwise,
 /// the table will be filled up to `num_baby_steps` and we will return `None`.
@@ -445,5 +499,51 @@ mod tests {
         // This takes too long.
         // let x = find_first_prime(13, 8, 183, 3, 40000).unwrap();
         // assert_eq!(x.0, 32021 - 1);
+    }
+
+    #[test]
+    fn test_batch_invm() {
+        // Let's pick some numbers to invert, including a zero to make sure
+        // it's skipped rather than breaking the rest of the batch.
+        let p = 101;
+        let values = vec![1, 2, 3, 5, 7, 100, 50, 0, 99];
+        let inverses = batch_invm(values.clone(), p);
+
+        assert_eq!(inverses.len(), values.len());
+        for (&v, &inv) in values.iter().zip(inverses.iter()) {
+            if v == 0 {
+                assert_eq!(inv, 0, "zero should be left unmodified");
+            } else {
+                assert_eq!(
+                    v.mulm(inv, &p),
+                    1,
+                    "{v} * {inv} should be 1 mod {p}, got {}",
+                    v.mulm(inv, &p)
+                );
+            }
+
+            assert!(inv < p, "{v} should be between 0 and {p}");
+        }
+    }
+
+    #[test]
+    fn test_batch_invm_empty() {
+        let inverses = batch_invm(Vec::new(), 101);
+        assert!(inverses.is_empty());
+    }
+
+    #[test]
+    fn test_batch_invm_single() {
+        let p = 13;
+        let inverses = batch_invm(vec![5], p);
+        // 5 * 8 = 40 = 1 mod 13
+        assert_eq!(inverses, vec![8]);
+    }
+
+    #[test]
+    fn test_batch_invm_all_zero() {
+        let values = vec![0, 0, 0];
+        let inverses = batch_invm(values.clone(), 101);
+        assert_eq!(inverses, values);
     }
 }
