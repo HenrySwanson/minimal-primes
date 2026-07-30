@@ -6,7 +6,71 @@ use num_bigint::BigUint;
 use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
 use num_prime::buffer::{NaiveBuffer, PrimeBufferExt};
 
+use crate::context::SearchContext;
+use crate::digits::{Digit, DigitSeq};
+use crate::families::SimpleFamily;
 use crate::sequence::Sequence;
+
+/// Entry point for eliminating simple families through sieving.
+pub fn do_one_round(
+    ctx: &mut SearchContext,
+    remaining_branches: &mut Vec<(SimpleFamily, Sequence)>,
+    n_range: &Range<usize>,
+    p_max: u64,
+) {
+    let base = ctx.base;
+
+    let mut sequences_to_sieve = vec![];
+    let mut slices_to_sieve = vec![];
+
+    // Real quick, check if this can be eliminated via a minimal prime
+    // TODO: shouldn't this come _after_ sieving?
+    for (simple, seq) in std::mem::take(remaining_branches) {
+        if let Some(p) = ctx
+            .primes
+            .iter()
+            .find(|p| simple.will_contain_at(p).is_some_and(|n| n < n_range.start))
+        {
+            println!("{simple} can be eliminated, since it contains {p}");
+            continue;
+        }
+
+        sequences_to_sieve.push(simple);
+        slices_to_sieve.push(SequenceSlice::new(seq, n_range.clone()))
+    }
+
+    // Now sieve all these slices at once
+    println!(
+        "Sieving {} families for n from {} to {}",
+        slices_to_sieve.len(),
+        n_range.start,
+        n_range.end,
+    );
+    sieve(base, &mut slices_to_sieve, p_max, &mut ctx.prime_buffer);
+
+    for (simple, slice) in std::iter::zip(sequences_to_sieve, slices_to_sieve) {
+        // Iterate through the unmarked n and manually check primality
+        println!(
+            "Investigating the {}/{} terms remaining in {}",
+            slice.num_remaining(),
+            n_range.len(),
+            simple
+        );
+
+        match last_resort(base, &slice, &mut ctx.prime_buffer) {
+            Some((i, p)) => {
+                let digitseq =
+                    DigitSeq(p.to_radix_be(base.into()).into_iter().map(Digit).collect());
+                println!("Found prime at exponent {i}: {digitseq}");
+                ctx.primes.insert(digitseq);
+            }
+            None => {
+                println!("Unable to find prime in the given range: {simple}");
+                remaining_branches.push((simple, slice.seq))
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct SequenceSlice {
@@ -65,6 +129,7 @@ impl SequenceSlice {
     }
 }
 
+/// Small convenience function for sieving a single sequence.
 pub fn find_first_prime(
     base: u8,
     k: u64,
@@ -83,7 +148,7 @@ pub fn find_first_prime(
     last_resort(base, &slices[0], &mut prime_buffer)
 }
 
-pub fn sieve(
+fn sieve(
     base: u8,
     slices: &mut [SequenceSlice],
     // TODO: how many? can i decide from "outside"?
@@ -187,7 +252,7 @@ fn batch_invm(values: Vec<u32>, p: u32) -> Vec<u32> {
     result
 }
 
-pub fn last_resort(
+fn last_resort(
     base: u8,
     slice: &SequenceSlice,
     prime_buffer: &mut NaiveBuffer,

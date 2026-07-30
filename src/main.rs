@@ -7,12 +7,10 @@ use log::{info, LevelFilter};
 use num_prime::buffer::PrimeBufferExt;
 
 use crate::context::{print_stats, SearchContext};
-use crate::digits::{Digit, DigitSeq};
 use crate::families::{Family, SimpleFamily};
 use crate::logging::Tracer;
 use crate::search::{DiesAt, SearchTree};
 use crate::sequence::Sequence;
-use crate::sieve::SequenceSlice;
 
 mod candidates;
 mod context;
@@ -397,9 +395,6 @@ fn second_stage(
     let mut n_range = 0..16;
 
     while !remaining_branches.is_empty() {
-        let mut sequences_to_sieve = vec![];
-        let mut slices_to_sieve = vec![];
-
         // clamp the range
         n_range.end = std::cmp::min(n_range.end, cmd.n_hi);
 
@@ -409,53 +404,7 @@ fn second_stage(
             break;
         }
 
-        // Real quick, check if this can be eliminated via a minimal prime
-        // TODO: shouldn't this come _after_ sieving?
-        for (simple, seq) in std::mem::take(&mut remaining_branches) {
-            if let Some(p) = ctx
-                .primes
-                .iter()
-                .find(|p| simple.will_contain_at(p).is_some_and(|n| n < n_range.start))
-            {
-                println!("{simple} can be eliminated, since it contains {p}");
-                continue;
-            }
-
-            sequences_to_sieve.push(simple);
-            slices_to_sieve.push(SequenceSlice::new(seq, n_range.clone()))
-        }
-
-        // Now sieve all these slices at once
-        println!(
-            "Sieving {} families for n from {} to {}",
-            slices_to_sieve.len(),
-            n_range.start,
-            n_range.end,
-        );
-        sieve::sieve(base, &mut slices_to_sieve, cmd.p_max, &mut ctx.prime_buffer);
-
-        for (simple, slice) in std::iter::zip(sequences_to_sieve, slices_to_sieve) {
-            // Iterate through the unmarked n and manually check primality
-            println!(
-                "Investigating the {}/{} terms remaining in {}",
-                slice.num_remaining(),
-                n_range.len(),
-                simple
-            );
-
-            match sieve::last_resort(base, &slice, &mut ctx.prime_buffer) {
-                Some((i, p)) => {
-                    let digitseq =
-                        DigitSeq(p.to_radix_be(base.into()).into_iter().map(Digit).collect());
-                    println!("Found prime at exponent {i}: {digitseq}");
-                    ctx.primes.insert(digitseq);
-                }
-                None => {
-                    println!("Unable to find prime in the given range: {simple}");
-                    remaining_branches.push((simple, slice.seq))
-                }
-            }
-        }
+        sieve::do_one_round(ctx, &mut remaining_branches, &n_range, cmd.p_max);
 
         // Double the range for next time
         n_range = n_range.end..(n_range.end * 2);
