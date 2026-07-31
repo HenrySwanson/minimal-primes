@@ -88,8 +88,11 @@ struct SolveArgs {
     /// upper bound for n
     #[arg(long, default_value_t = 5_000)]
     n_hi: usize,
-    /// max p to sieve with
-    #[arg(long, default_value_t = 1_000_000)]
+    /// When doing the first round of sieving, how many primes do we use?
+    #[arg(long, default_value_t = 200)]
+    p_initial: u64,
+    /// What's the ultimate limit on how many primes we should sieve with?
+    #[arg(long, default_value_t = 10_000_000)]
     p_max: u64,
     /// whether to log the whole search tree
     #[arg(long)]
@@ -394,6 +397,16 @@ fn second_stage(
     // Start slow with a small range
     let mut n_range = 0..16;
 
+    // We'll track some timing stats from the previous round, which will allow
+    // us to adaptively pick p_max for the next round. For now, it's None, since
+    // there's no history to go on yet.
+    // Also put the previous size of n_range in there since we need it.
+    let mut prev_round_stats: Option<(sieve::SieveStats, usize)> = None;
+
+    // Put reasonable bounds on p_max, just in cast the adaptive algorithm
+    // decides to get silly with it. Remember we have to stay within a u32.
+    const MIN_P_MAX: u64 = 100;
+
     while !remaining_branches.is_empty() {
         // clamp the range
         n_range.end = std::cmp::min(n_range.end, cmd.n_hi);
@@ -404,7 +417,24 @@ fn second_stage(
             break;
         }
 
-        sieve::do_one_round(ctx, &mut remaining_branches, &n_range, cmd.p_max);
+        // Pick p_max for this upcoming round by asking the magic oracle.
+        // Details are specific to implementation in `sieve` but it depends
+        // on timing stats from the previous round.
+        let p_max = prev_round_stats
+            .as_ref()
+            .and_then(|(prev_stats, prev_range_len)| {
+                sieve::suggest_next_p_max(
+                    prev_stats,
+                    *prev_range_len,
+                    n_range.len(),
+                    remaining_branches.len(),
+                )
+            })
+            .map(|p| p.clamp(MIN_P_MAX, cmd.p_max))
+            .unwrap_or(cmd.p_initial);
+
+        let stats = sieve::do_one_round(ctx, &mut remaining_branches, &n_range, p_max);
+        prev_round_stats = Some((stats, n_range.len()));
 
         // Double the range for next time
         n_range = n_range.end..(n_range.end * 2);
@@ -842,7 +872,8 @@ mod tests {
             n_hi: 500,
             // seems to work better than p = 1M, should this be backported
             // to the actual CLI command?
-            p_max: 1_000,
+            p_initial: 1_000,
+            p_max: 1_000_000,
             tree_log: false,
         };
 
