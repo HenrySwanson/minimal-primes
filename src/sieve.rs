@@ -278,15 +278,32 @@ fn sieve(
         return;
     };
 
-    // TODO: with multiple sequences, explore different ways to divvy up
-    // baby and giant steps
-    let num_baby_steps = n_range.isqrt();
+    // Traditionally, baby-step-giant-step uses sqrt(N) baby steps and sqrt(N) giant
+    // steps, since this is what minimizes the sum.
+    // But we're sieving multiple sequences at once, which changes the tradeoffs
+    // quite a bit!
+    //
+    // Let's say we have m baby-steps, M giant-steps, and S slices. We build the
+    // baby-step table only once, so it costs O(m). However, we iterate over the
+    // giant-steps for each slice, so it costs O(M * S). (There's some log m stuff
+    // in there because we have to sort the baby-table but it's probably fine to
+    // ignore...)
+    //
+    // Since m*M has to be at least N, this gives us a total cost of m + (N/m)S,
+    // which is minimized at m = sqrt(N*S).
+    //
+    // Basically, having more slices means that we can push more cost into the
+    // (shared) baby table so we don't have to pay it for the (not-shared) giant
+    // steps.
+    let num_baby_steps = ((n_range * slices.len()) as f64).sqrt();
+    let num_baby_steps = (num_baby_steps.round() as usize).clamp(1, n_range);
     let num_giant_steps = n_range.div_ceil(num_baby_steps);
 
     // The baby-step table is effectively a hashmap, but actually using one is
-    // not the fastest choice. These are only sqrt(n_range) in size, so they're
-    // pretty small, and since we're populating it for each prime up to p_max,
-    // we really want to re-use our storage. Let's just use a sorted vector.
+    // not the fastest choice. These are only ~sqrt(N*S) in size, so
+    // they're pretty small, and since we're populating it for each prime up
+    // to p_max, we really want to re-use our storage. Let's just use a sorted
+    // vector.
     let mut baby_table: Vec<(u32, usize)> = Vec::with_capacity(num_baby_steps);
 
     // Now go and eliminate a bunch of terms
