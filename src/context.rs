@@ -17,14 +17,14 @@ pub struct SearchContext {
     /// TODO: re-use in sieving too!
     pub prime_buffer: NaiveBuffer,
     /// For potentially getting insight into what's going on
-    pub stats: Stats,
+    pub stats: SearchStats,
     /// For tracking our paths through the search space in a more
     /// understandable format.
     pub tracer: Tracer,
 }
 
 #[derive(Debug, Default)]
-pub struct Stats {
+pub struct SearchStats {
     pub num_primality_checks: usize,
     pub num_substring_checks: usize,
     pub num_simple_substring_checks: usize,
@@ -56,7 +56,7 @@ impl SearchContext {
             iter: 0,
             primes: CandidateSequences::new(),
             prime_buffer: NaiveBuffer::new(),
-            stats: Stats::default(),
+            stats: SearchStats::default(),
             tracer: if tree_log {
                 Tracer::new()
             } else {
@@ -66,7 +66,7 @@ impl SearchContext {
     }
 }
 
-pub fn print_stats(stats: &Stats) {
+pub fn print_stats(stats: &SearchStats) {
     println!("{} branches explored", stats.num_branches_explored);
     println!(
         "{} primality tests",
