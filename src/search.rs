@@ -4,7 +4,6 @@ mod gcd;
 mod split;
 
 use std::ops::ControlFlow;
-use std::time::Instant;
 
 use itertools::Itertools;
 use log::{debug, trace};
@@ -176,12 +175,10 @@ impl FamilyNode {
         // family could contain.
         let mut new_contained_primes = ctx.primes.indices_none();
         for (i, prime) in ctx.primes.get_many(&self.possible_contained_primes) {
-            let start = Instant::now();
             if self.family.could_contain(prime) {
                 new_contained_primes.add(i);
             }
             ctx.stats.num_could_contains += 1;
-            ctx.stats.duration_could_contains += start.elapsed();
         }
         self.possible_contained_primes = new_contained_primes;
 
@@ -439,7 +436,6 @@ impl SimpleNode {
 
         // Now check any new primes.
         for (_, prime) in ctx.primes.get_tail(self.start_unknown_primes) {
-            let start = Instant::now();
             if let Some(n) = self.family.will_contain_at(prime) {
                 if n <= self.family.min_repeats {
                     debug!("  Discarding {}, contains prime {}", self.family, prime);
@@ -452,7 +448,6 @@ impl SimpleNode {
                 self.dies_at.update(n, prime);
             }
             ctx.stats.num_simple_substring_checks += 1;
-            ctx.stats.duration_simple_substring_checks += start.elapsed();
         }
         self.start_unknown_primes = ctx.primes.len(); // resets our collection
 
@@ -523,7 +518,6 @@ impl SearchContext {
         seq: &DigitSeq,
         possible_contained_primes: &CandidateIndices,
     ) -> Option<&DigitSeq> {
-        let start = Instant::now();
         // We don't need to search for *all* possible primes, just the minimal
         // ones. And if we've been doing our job right, we should have a complete
         // list of them (up to a length limit).
@@ -535,15 +529,12 @@ impl SearchContext {
                 seq.properly_contains(subseq)
             });
 
-        self.stats.duration_substring_checks += start.elapsed();
         let (_, seq) = result?;
         Some(seq)
     }
 
     fn test_for_prime(&mut self, value: &BigUint) -> bool {
-        let start = Instant::now();
         let result = self.prime_buffer.is_prime(value, None).probably();
-        self.stats.duration_primality_checks += start.elapsed();
         self.stats.num_primality_checks += 1;
         result
     }

@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use num_prime::buffer::NaiveBuffer;
 
 use crate::candidates::CandidateSequences;
@@ -28,13 +26,9 @@ pub struct SearchContext {
 #[derive(Debug, Default)]
 pub struct Stats {
     pub num_primality_checks: usize,
-    pub duration_primality_checks: Duration,
     pub num_substring_checks: usize,
-    pub duration_substring_checks: Duration,
     pub num_simple_substring_checks: usize,
-    pub duration_simple_substring_checks: Duration,
     pub num_could_contains: usize,
-    pub duration_could_contains: Duration,
     pub num_branches_explored: usize,
     pub branch_stats: BranchStats,
 }
@@ -75,24 +69,20 @@ impl SearchContext {
 pub fn print_stats(stats: &Stats) {
     println!("{} branches explored", stats.num_branches_explored);
     println!(
-        "{} primality tests ({}ms)",
+        "{} primality tests",
         stats.num_primality_checks,
-        stats.duration_primality_checks.as_millis()
     );
     println!(
-        "{} calls Family::could_contain ({}ms)",
+        "{} calls Family::could_contain",
         stats.num_could_contains,
-        stats.duration_could_contains.as_millis()
     );
     println!(
-        "{} substring tests ({}ms)",
+        "{} substring tests",
         stats.num_substring_checks,
-        stats.duration_substring_checks.as_millis()
     );
     println!(
-        "{} simple substring tests ({}ms)",
+        "{} simple substring tests",
         stats.num_simple_substring_checks,
-        stats.duration_simple_substring_checks.as_millis()
     );
     let branch_stats = &stats.branch_stats;
     println!(
