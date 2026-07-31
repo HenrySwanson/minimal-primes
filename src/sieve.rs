@@ -1,4 +1,5 @@
 use std::ops::Range;
+use std::time::{Duration, Instant};
 
 use bitvec::prelude::BitVec;
 use log::debug;
@@ -11,6 +12,92 @@ use crate::digits::{Digit, DigitSeq};
 use crate::families::SimpleFamily;
 use crate::sequence::Sequence;
 
+/// Stats for a single round of sieving (one n_range). A fresh one is created
+/// (and thus implicitly reset) at the start of every [do_one_round] call, and
+/// printed at the end of it, so these numbers are always specific to one
+/// round rather than cumulative across the whole run.
+#[derive(Debug, Default)]
+pub struct SieveStats {
+    /// number of sequences being sieved this round
+    pub num_slices: usize,
+
+    /// number of primes iterated over while running BSGS this round
+    pub num_bsgs_primes: usize,
+    /// total time spent inside baby_step_giant_step this round
+    pub duration_bsgs: Duration,
+
+    /// number of (slice, n) candidates the BSGS sieve eliminated this round
+    pub num_eliminated_by_sieve: usize,
+    /// number of (slice, n) candidates that survived sieving and had to be
+    /// checked individually
+    pub num_candidates_after_sieve: usize,
+
+    /// number of individual candidates actually run through a primality test
+    /// this round (<= num_candidates_after_sieve, since we stop checking a
+    /// slice as soon as we find a prime in it)
+    pub num_primality_tests: usize,
+    /// total time spent on those primality tests
+    pub duration_primality_tests: Duration,
+
+    /// number of new primes found this round
+    pub num_primes_found: usize,
+}
+
+impl SieveStats {
+    fn record_bsgs(&mut self, count: usize, elapsed: Duration) {
+        self.num_bsgs_primes += count;
+        self.duration_bsgs += elapsed;
+    }
+
+    fn record_primality_test(&mut self, elapsed: Duration) {
+        self.num_primality_tests += 1;
+        self.duration_primality_tests += elapsed;
+    }
+
+    pub fn print(&self, n_range: &Range<usize>, p_max: u64) {
+        println!(
+            "---- SIEVE STATS (n = {}..{}, p_max = {}) ----",
+            n_range.start, n_range.end, p_max
+        );
+        println!(
+            "{} sequences sieved over {} values of n",
+            self.num_slices,
+            n_range.len()
+        );
+        println!(
+            "{} primes used in BSGS ({}ms total, {}/prime, {}/prime/seq)",
+            self.num_bsgs_primes,
+            self.duration_bsgs.as_millis(),
+            format_avg(self.duration_bsgs, self.num_bsgs_primes),
+            format_avg(self.duration_bsgs, self.num_bsgs_primes * self.num_slices),
+        );
+        println!(
+            "{} candidates eliminated by sieving, {} left over for primality testing",
+            self.num_eliminated_by_sieve, self.num_candidates_after_sieve,
+        );
+        println!(
+            "{} primality tests performed ({}ms total, {}/test)",
+            self.num_primality_tests,
+            self.duration_primality_tests.as_millis(),
+            format_avg(self.duration_primality_tests, self.num_primality_tests),
+        );
+        println!("{} new primes found", self.num_primes_found);
+    }
+}
+
+/// Formats `d / n` as a human-readable per-unit duration, or "n/a" if n is 0.
+fn format_avg(d: Duration, n: usize) -> String {
+    if n == 0 {
+        return "n/a".to_string();
+    }
+    let micros_per = d.as_micros() as f64 / n as f64;
+    if micros_per >= 1000.0 {
+        format!("{:.3}ms", micros_per / 1000.0)
+    } else {
+        format!("{:.3}us", micros_per)
+    }
+}
+
 /// Entry point for eliminating simple families through sieving.
 pub fn do_one_round(
     ctx: &mut SearchContext,
@@ -19,6 +106,7 @@ pub fn do_one_round(
     p_max: u64,
 ) {
     let base = ctx.base;
+    let mut stats = SieveStats::default();
 
     let mut sequences_to_sieve = vec![];
     let mut slices_to_sieve = vec![];
@@ -39,6 +127,9 @@ pub fn do_one_round(
         slices_to_sieve.push(SequenceSlice::new(seq, n_range.clone()))
     }
 
+    stats.num_slices = slices_to_sieve.len();
+    let candidates_before: usize = slices_to_sieve.iter().map(|s| s.num_remaining()).sum();
+
     // Now sieve all these slices at once
     println!(
         "Sieving {} families for n from {} to {}",
@@ -46,7 +137,17 @@ pub fn do_one_round(
         n_range.start,
         n_range.end,
     );
-    sieve(base, &mut slices_to_sieve, p_max, &mut ctx.prime_buffer);
+    sieve(
+        base,
+        &mut slices_to_sieve,
+        p_max,
+        &mut ctx.prime_buffer,
+        &mut stats,
+    );
+
+    let candidates_after: usize = slices_to_sieve.iter().map(|s| s.num_remaining()).sum();
+    stats.num_eliminated_by_sieve = candidates_before - candidates_after;
+    stats.num_candidates_after_sieve = candidates_after;
 
     for (simple, slice) in std::iter::zip(sequences_to_sieve, slices_to_sieve) {
         // Iterate through the unmarked n and manually check primality
@@ -57,12 +158,13 @@ pub fn do_one_round(
             simple
         );
 
-        match last_resort(base, &slice, &mut ctx.prime_buffer) {
+        match last_resort(base, &slice, &mut ctx.prime_buffer, &mut stats) {
             Some((i, p)) => {
                 let digitseq =
                     DigitSeq(p.to_radix_be(base.into()).into_iter().map(Digit).collect());
                 println!("Found prime at exponent {i}: {digitseq}");
                 ctx.primes.insert(digitseq);
+                stats.num_primes_found += 1;
             }
             None => {
                 println!("Unable to find prime in the given range: {simple}");
@@ -70,6 +172,8 @@ pub fn do_one_round(
             }
         }
     }
+
+    stats.print(n_range, p_max);
 }
 
 #[derive(Debug)]
@@ -144,8 +248,9 @@ pub fn find_first_prime(
 
     let mut slices = [slice];
     let mut prime_buffer = NaiveBuffer::new();
-    sieve(base, &mut slices, p_max, &mut prime_buffer);
-    last_resort(base, &slices[0], &mut prime_buffer)
+    let mut stats = SieveStats::default();
+    sieve(base, &mut slices, p_max, &mut prime_buffer, &mut stats);
+    last_resort(base, &slices[0], &mut prime_buffer, &mut stats)
 }
 
 fn sieve(
@@ -154,6 +259,7 @@ fn sieve(
     // TODO: how many? can i decide from "outside"?
     p_max: u64,
     prime_buffer: &mut NaiveBuffer,
+    stats: &mut SieveStats,
 ) {
     // The modular arithmetic in baby_step_giant_step reduces every value mod
     // p before operating on it, which lets it stay in u32 (doubling to u64
@@ -184,6 +290,8 @@ fn sieve(
     let mut baby_table: Vec<(u32, usize)> = Vec::with_capacity(num_baby_steps);
 
     // Now go and eliminate a bunch of terms
+    let start = Instant::now();
+    let mut num_primes = 0;
     for p in prime_buffer.primes(p_max) {
         baby_step_giant_step(
             base.into(),
@@ -193,7 +301,9 @@ fn sieve(
             slices,
             &mut baby_table,
         );
+        num_primes += 1;
     }
+    stats.record_bsgs(num_primes, start.elapsed());
 }
 
 /// Looks up `key` in a baby-step table sorted by [baby_steps].
@@ -237,12 +347,12 @@ fn batch_invm(values: Vec<u32>, p: u32) -> Vec<u32> {
     let mut result = values;
     for i in (0..result.len()).rev() {
         // loop invariant: big_inverse is the inverse of (v_0 ... v_i)
-        
+
         let v_i = result[i];
         if v_i == 0 {
             continue; // don't do anything for zeros
         }
-        
+
         // (v_0 ... v_i)^-1 * (v_0 ... v_{i-1}) = v_i^-1
         result[i] = big_inverse.mulm(prefix[i], &p);
         // maintain the invariant
@@ -256,12 +366,17 @@ fn last_resort(
     base: u8,
     slice: &SequenceSlice,
     prime_buffer: &mut NaiveBuffer,
+    stats: &mut SieveStats,
 ) -> Option<(usize, BigUint)> {
     for exponent in slice.iter_remaining() {
         let value = slice.seq.compute_term(exponent as u32, base.into());
         debug!("  Check {} at n={}", slice.seq, exponent);
 
-        if prime_buffer.is_prime(&value, None).probably() {
+        let start = Instant::now();
+        let is_prime = prime_buffer.is_prime(&value, None).probably();
+        stats.record_primality_test(start.elapsed());
+
+        if is_prime {
             return Some((exponent, value));
         }
     }
