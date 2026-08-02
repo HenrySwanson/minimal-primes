@@ -1,3 +1,4 @@
+use num_bigint::BigUint;
 use num_prime::buffer::NaiveBuffer;
 
 use crate::candidates::CandidateSequences;
@@ -51,7 +52,7 @@ impl BranchStats {
             ExploreEvent::ContainsPrime(_) => self.contains_prime += 1,
             ExploreEvent::IsNewPrime => self.is_new_prime += 1,
             ExploreEvent::NoCoresRemaining => self.is_trivial_string += 1,
-            ExploreEvent::DetectedComposite => self.detected_composite += 1,
+            ExploreEvent::DetectedComposite(_) => self.detected_composite += 1,
             ExploreEvent::Simplified => self.simplified += 1,
             ExploreEvent::SplitOnLimitedDigit { .. } => self.split_on_limited_digit += 1,
             ExploreEvent::SplitOnIncompatibleDifferentCores { .. } => {
@@ -95,8 +96,7 @@ pub enum ExploreEvent {
     NoCoresRemaining,
     /// One of the compositeness lemmas proved every member is composite. Eliminates
     /// the branch.
-    // TODO: record the reason for compositeness here too?
-    DetectedComposite,
+    DetectedComposite(CompositeReason),
     /// The family has only one core with only one digit, so it was converted into
     /// a [crate::families::SimpleFamily].
     Simplified,
@@ -134,6 +134,40 @@ pub enum ExploreEvent {
     /// A [crate::families::SimpleFamily] didn't die and no lemma applied;
     /// just incremented `min_repeats` and kept going.
     IncrementedRepeat,
+}
+
+/// Describes why a family was proven to be composite.
+#[derive(Debug, Clone)]
+#[expect(dead_code)] // TODO: remove this when we use the bodies in the tree tracer thing
+pub enum CompositeReason {
+    /// The family shares a factor with the base.
+    SharesFactorWithBase(u8),
+    /// All members of the family are divisible by some shared factor.
+    CommonFactor(BigUint),
+    /// The one-core family has a periodic factor sequence; the nth member
+    /// of the family is divisible by the nth element in the sequence.
+    PeriodicFactors(Vec<BigUint>),
+    /// This one's a tricky one to explain, but given some core `m`, members
+    /// of the family where `m` is expanded an even number of times all have
+    /// one factor, and members where it's expanded an odd number of times
+    /// have another.
+    LocalAlternatingFactors {
+        core_idx: usize,
+        even_factor: BigUint,
+        odd_factor: BigUint,
+    },
+    /// Members of the family are divisible by one of the given factors,
+    /// depending on whether the total number of digits contributed by the
+    /// cores is odd or even.
+    GlobalAlternatingFactors {
+        even_factor: BigUint,
+        odd_factor: BigUint,
+    },
+    /// Members of the family are never coprime to 30.
+    NeverCoprimeTo30,
+    /// Each member of the family factors as something like a sum of cubes,
+    /// difference of squares, etc.
+    FactorsAlgebraically
 }
 
 impl SearchContext {

@@ -98,10 +98,10 @@ pub fn find_periodic_factor(base: u8, family: &Family, stride: usize) -> Option<
 ///
 /// Mentioned in Bright under Example 10, and corresponds to `PRINTDIVISORTWO`
 /// in mepn.
-pub fn find_two_factors(base: u8, family: &Family) -> Option<(BigUint, BigUint)> {
+pub fn find_two_factors(base: u8, family: &Family) -> Option<(usize, BigUint, BigUint)> {
     for i in 0..family.cores.len() {
         if let Some(factors) = find_two_factors_helper(base, family, i) {
-            return Some(factors);
+            return Some((i, factors.0, factors.1));
         }
     }
     None

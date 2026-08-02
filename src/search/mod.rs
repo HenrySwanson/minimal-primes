@@ -21,6 +21,7 @@ use crate::families::{Core, Family, SimpleFamily};
 use crate::search::composite::{
     check_residues_mod_30, composite_checks_for_simple, find_common_factor, find_two_factors,
 };
+use crate::search::context::CompositeReason;
 use crate::RemainingNodes;
 
 pub struct SearchTree {
@@ -184,9 +185,9 @@ impl FamilyNode {
 
         // Now, run some tests to see whether this family is guaranteed to
         // be composite.
-        if self.family.test_for_perpetual_composite(ctx) {
+        if let Some(reason) = self.family.test_for_perpetual_composite(ctx) {
             debug!("  Discarding {}, is always composite", self.family);
-            return (vec![], ExploreEvent::DetectedComposite);
+            return (vec![], ExploreEvent::DetectedComposite(reason));
         }
 
         // TODO: is this right?
@@ -386,7 +387,10 @@ impl SimpleNode {
         if !self.composite_tested {
             if composite_checks_for_simple(ctx.base, &self) {
                 debug!("  Discarding {}, is always composite", self.family);
-                return (vec![], ExploreEvent::DetectedComposite);
+                return (
+                    vec![],
+                    ExploreEvent::DetectedComposite(CompositeReason::FactorsAlgebraically),
+                );
             }
             self.composite_tested = true;
         }
@@ -506,7 +510,7 @@ impl SearchContext {
 }
 
 impl Family {
-    fn test_for_perpetual_composite(&self, ctx: &mut SearchContext) -> bool {
+    fn test_for_perpetual_composite(&self, ctx: &mut SearchContext) -> Option<CompositeReason> {
         // This function is used to eliminate families that will always result
         // in composite numbers, letting us cut off infinite branches of the
         // search space.
@@ -516,38 +520,45 @@ impl Family {
         // p divides BASE (e.g., 2, 5)
         if let Some(factor) = shares_factor_with_base(ctx.base, self) {
             debug!("  {self} has divisor {factor}");
-            return true;
+            return Some(CompositeReason::SharesFactorWithBase(factor));
         }
         // p does not divide BASE (e.g. 7)
         // -------------------------------
         // This is how we detect families like 4[6]9 being divisible by 7.
-        if let Some(divisor) = find_common_factor(ctx.base, self) {
-            debug!("  {self} is divisible by {divisor}");
-            return true;
+        if let Some(factor) = find_common_factor(ctx.base, self) {
+            debug!("  {self} is divisible by {factor}");
+            return Some(CompositeReason::CommonFactor(factor));
         }
         // start at stride 2; `find_guaranteed_factor` effectively handles stride 1
         for stride in 2..=4 {
             if let Some(factors) = find_periodic_factor(ctx.base, self, stride) {
                 debug!("  {} is divisible by {}", self, factors.iter().format(", "));
-                return true;
+                return Some(CompositeReason::PeriodicFactors(factors));
             }
         }
-        if let Some((even_factor, odd_factor)) = find_two_factors(ctx.base, self) {
+        if let Some((core_idx, even_factor, odd_factor)) = find_two_factors(ctx.base, self) {
             debug!("  {self} is divisible by either {even_factor} or {odd_factor} (#1)");
-            return true;
+            return Some(CompositeReason::LocalAlternatingFactors {
+                core_idx,
+                even_factor,
+                odd_factor,
+            });
         }
 
         if let Some((even_factor, odd_factor)) = find_even_odd_factor(ctx.base, self) {
             debug!("  {self} is divisible by either {even_factor} or {odd_factor} (#2)");
-            return true;
+            return Some(CompositeReason::GlobalAlternatingFactors {
+                even_factor,
+                odd_factor,
+            });
         }
 
         if check_residues_mod_30(ctx.base, self) {
             debug!("  {self} always shares a factor with 30");
-            return true;
+            return Some(CompositeReason::NeverCoprimeTo30);
         }
 
-        false
+        None
     }
 }
 
