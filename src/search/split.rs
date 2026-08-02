@@ -4,6 +4,7 @@ use log::debug;
 use crate::candidates::CandidateIndices;
 use crate::digits::Digit;
 use crate::families::Family;
+use crate::search::context::ExploreEvent;
 use crate::search::gcd::nontrivial_gcd;
 use crate::search::SearchContext;
 
@@ -22,7 +23,7 @@ impl SearchContext {
         family: &Family,
         max_repeats: usize,
         possible_contained_primes: &CandidateIndices,
-    ) -> Option<Vec<Family>> {
+    ) -> Option<(Vec<Family>, ExploreEvent)> {
         for (i, core) in family.cores.iter().enumerate() {
             for d in core.iter() {
                 for n in 2..=max_repeats {
@@ -60,7 +61,12 @@ impl SearchContext {
                             family,
                             children.iter().format(" and ")
                         );
-                        return Some(children);
+                        let event = ExploreEvent::SplitOnLimitedDigit {
+                            core_idx: i,
+                            digit: d,
+                            n,
+                        };
+                        return Some((children, event));
                     }
                 }
             }
@@ -75,7 +81,7 @@ impl SearchContext {
     /// does seem to help in small doses though.
     ///
     /// This is Lemma 29 in Bright.
-    pub fn split_on_necessary_digit(&mut self, family: &Family) -> Option<Family> {
+    pub fn split_on_necessary_digit(&mut self, family: &Family) -> Option<(Family, ExploreEvent)> {
         // There's a case in base 11 (and probably others) where we have
         // just one core, where all the digits except one are even, and so
         // is the rest of the number.
@@ -138,7 +144,11 @@ impl SearchContext {
                 new.digitseqs.insert(i + 1, d.into());
                 new.cores.insert(i + 1, d_less_core);
                 debug!("  {family} must have a {d}, transforming into {new}");
-                return Some(new);
+                let event = ExploreEvent::SplitOnNecessaryDigit {
+                    core_idx: i,
+                    digit: d,
+                };
+                return Some((new, event));
             }
         }
 
@@ -166,7 +176,7 @@ impl SearchContext {
         &mut self,
         family: &Family,
         possible_contained_primes: &CandidateIndices,
-    ) -> Option<Vec<Family>> {
+    ) -> Option<(Vec<Family>, ExploreEvent)> {
         for (i, core) in family.cores.iter().enumerate() {
             for (a, b) in core.iter().tuple_combinations() {
                 if a == b {
@@ -211,7 +221,13 @@ impl SearchContext {
                         with_b.digitseqs.insert(i + 1, b.into());
                         with_b.cores[i + 1].remove(a);
 
-                        return Some(vec![with_neither, with_a, with_b]);
+                        let event = ExploreEvent::SplitOnIncompatibleSameCore {
+                            core_idx: i,
+                            first: a,
+                            second: b,
+                            reverse_also_forbidden: true,
+                        };
+                        return Some((vec![with_neither, with_a, with_b], event));
                     }
                     (Some(p), None) => {
                         // a can't occur before b
@@ -251,7 +267,7 @@ impl SearchContext {
         &mut self,
         family: &Family,
         possible_contained_primes: &CandidateIndices,
-    ) -> Option<Vec<Family>> {
+    ) -> Option<(Vec<Family>, ExploreEvent)> {
         // iterate over unordered pairs of cores
         for (j, core_j) in family.cores.iter().enumerate() {
             for (i, core_i) in family.cores.iter().enumerate() {
@@ -288,7 +304,13 @@ impl SearchContext {
                             with_a.digitseqs.insert(i + 1, a.into());
                             with_a.cores.insert(i + 1, family.cores[i].clone());
 
-                            return Some(vec![without_a, with_a]);
+                            let event = ExploreEvent::SplitOnIncompatibleDifferentCores {
+                                core_i: i,
+                                core_j: j,
+                                a,
+                                b,
+                            };
+                            return Some((vec![without_a, with_a], event));
                         }
                     }
                 }
@@ -309,7 +331,7 @@ impl SearchContext {
         &mut self,
         family: &Family,
         possible_contained_primes: &CandidateIndices,
-    ) -> Option<Vec<Family>> {
+    ) -> Option<(Vec<Family>, ExploreEvent)> {
         // iterate over cores
         for (i, core) in family.cores.iter().enumerate() {
             for (a, b) in core.iter().cartesian_product(core.iter()) {
@@ -343,7 +365,8 @@ impl SearchContext {
                         .cores
                         .insert(i + 1, family.cores[i].clone().without(b));
 
-                    return Some(vec![no_as, one_a, more_as]);
+                    let event = ExploreEvent::SplitOnForbiddenSandwich { core_idx: i, a, b };
+                    return Some((vec![no_as, one_a, more_as], event));
                 }
             }
         }
@@ -356,7 +379,12 @@ impl SearchContext {
 /// splits it into:
 /// - families with no a: `x(L-a)z`
 /// - families with an a: `x(L-a)a(L-b)z`
-fn do_split_for_semi_incompatible(family: &Family, i: usize, a: Digit, b: Digit) -> Vec<Family> {
+fn do_split_for_semi_incompatible(
+    family: &Family,
+    i: usize,
+    a: Digit,
+    b: Digit,
+) -> (Vec<Family>, ExploreEvent) {
     // xLz -> x(L-a)z
     let mut without_a = family.clone();
     without_a.cores[i].remove(a);
@@ -366,5 +394,12 @@ fn do_split_for_semi_incompatible(family: &Family, i: usize, a: Digit, b: Digit)
     with_a
         .cores
         .insert(i + 1, family.cores[i].clone().without(b));
-    vec![without_a, with_a]
+
+    let event = ExploreEvent::SplitOnIncompatibleSameCore {
+        core_idx: i,
+        first: a,
+        second: b,
+        reverse_also_forbidden: false,
+    };
+    (vec![without_a, with_a], event)
 }

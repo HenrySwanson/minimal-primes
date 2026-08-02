@@ -13,6 +13,7 @@ use num_prime::buffer::PrimeBufferExt;
 
 use self::composite::{find_even_odd_factor, find_periodic_factor, shares_factor_with_base};
 pub use self::context::{print_stats, SearchContext};
+use self::context::{ExploreEvent, SplitDirection};
 use self::frontier::{Frontier, Weight};
 use crate::candidates::CandidateIndices;
 use crate::digits::DigitSeq;
@@ -113,7 +114,7 @@ impl SearchNode {
     fn explore(self, ctx: &mut SearchContext) -> Vec<SearchNode> {
         // Say our family is xL*z.
         // We want to explore all possible children with weight one more than this one.
-        let children = match self.node_type {
+        let (children, event) = match self.node_type {
             NodeType::Arbitrary(node) => {
                 debug!(" Exploring {}", node.family);
                 node.explore(ctx)
@@ -124,6 +125,8 @@ impl SearchNode {
             }
         };
         ctx.stats.num_branches_explored += 1;
+        // TODO: also emit `event` to the trace log once that exists.
+        ctx.stats.branch_stats.record(&event);
 
         children
             .into_iter()
@@ -133,7 +136,7 @@ impl SearchNode {
 }
 
 impl FamilyNode {
-    fn explore(mut self, ctx: &mut SearchContext) -> Vec<NodeType> {
+    fn explore(mut self, ctx: &mut SearchContext) -> (Vec<NodeType>, ExploreEvent) {
         // We have to be careful about not generating leading zeros. There's
         // a lot of different ways we could do that, but one possible way is
         // just to rig things so that on the first round, we split left (and
@@ -160,8 +163,7 @@ impl FamilyNode {
         if let Some(p) = ctx.test_for_contained_prime(&seq, &self.possible_contained_primes) {
             assert_ne!(seq, *p);
             debug!("  Discarding {}, contains prime {}", self.family, p);
-            ctx.stats.branch_stats.contains_prime += 1;
-            return vec![];
+            return (vec![], ExploreEvent::ContainsPrime(p.clone()));
         }
 
         trace!("  Testing for primality {seq}");
@@ -169,8 +171,7 @@ impl FamilyNode {
         if ctx.test_for_prime(&value) {
             debug!("  Saving {}, contracts to prime", self.family);
             ctx.primes.insert(seq);
-            ctx.stats.branch_stats.is_new_prime += 1;
-            return vec![];
+            return (vec![], ExploreEvent::IsNewPrime);
         }
 
         // Then, we try to reduce the cores.
@@ -178,24 +179,20 @@ impl FamilyNode {
         self.family.simplify();
         if self.family.cores.is_empty() {
             debug!("  {} was reduced to trivial string", self.family);
-            ctx.stats.branch_stats.is_trivial_string += 1;
-            return vec![];
+            return (vec![], ExploreEvent::NoCoresRemaining);
         }
 
         // Now, run some tests to see whether this family is guaranteed to
         // be composite.
         if self.family.test_for_perpetual_composite(ctx) {
             debug!("  Discarding {}, is always composite", self.family);
-            ctx.stats.branch_stats.detected_composite += 1;
-            return vec![];
+            return (vec![], ExploreEvent::DetectedComposite);
         }
 
         // TODO: is this right?
         // Check if this family is simple or not. If it is, we should
         // re-enqueue it as such. (Note: this is after composite check!)
         if let Ok(family) = SimpleFamily::try_from(self.family.clone()) {
-            ctx.stats.branch_stats.simplified += 1;
-
             // Take all the primes we know could be contained in this family,
             // and check exactly when this family meets them.
             let mut dies_at = DiesAt::Unknown;
@@ -205,22 +202,24 @@ impl FamilyNode {
                 }
             }
 
-            return vec![NodeType::Simple(SimpleNode {
-                family,
-                composite_tested: false,
-                dies_at,
-                start_unknown_primes: ctx.primes.len(),
-            })];
+            return (
+                vec![NodeType::Simple(SimpleNode {
+                    family,
+                    composite_tested: false,
+                    dies_at,
+                    start_unknown_primes: ctx.primes.len(),
+                })],
+                ExploreEvent::Simplified,
+            );
         }
 
         // Let's see if we can split it in an interesting way
         // TODO: context-ify the splitting functions too!
         if self.family.weight() >= 2 {
-            if let Some(children) =
+            if let Some((children, event)) =
                 ctx.split_on_limited_digit(&self.family, 3, &self.possible_contained_primes)
             {
-                ctx.stats.branch_stats.split_on_limited_digit += 1;
-                return children
+                let children = children
                     .into_iter()
                     .map(|family| {
                         NodeType::Arbitrary(FamilyNode {
@@ -229,16 +228,16 @@ impl FamilyNode {
                         })
                     })
                     .collect();
+                return (children, event);
             }
         }
 
         if self.family.weight() >= 4 {
-            if let Some(children) = ctx.split_on_incompatible_digits_different_cores(
+            if let Some((children, event)) = ctx.split_on_incompatible_digits_different_cores(
                 &self.family,
                 &self.possible_contained_primes,
             ) {
-                ctx.stats.branch_stats.split_on_incompatible_different_cores += 1;
-                return children
+                let children = children
                     .into_iter()
                     .map(|family| {
                         NodeType::Arbitrary(FamilyNode {
@@ -247,13 +246,13 @@ impl FamilyNode {
                         })
                     })
                     .collect();
+                return (children, event);
             }
 
-            if let Some(children) =
+            if let Some((children, event)) =
                 ctx.split_on_incompatible_digits(&self.family, &self.possible_contained_primes)
             {
-                ctx.stats.branch_stats.split_on_incompatible_same_core += 1;
-                return children
+                let children = children
                     .into_iter()
                     .map(|family| {
                         NodeType::Arbitrary(FamilyNode {
@@ -262,6 +261,7 @@ impl FamilyNode {
                         })
                     })
                     .collect();
+                return (children, event);
             }
         }
 
@@ -269,11 +269,10 @@ impl FamilyNode {
         // we have trouble with otherwise. only invoke it when we are really stuck on
         // something.
         if self.family.weight() >= 10 {
-            if let Some(children) =
+            if let Some((children, event)) =
                 ctx.split_on_forbidden_sandwich(&self.family, &self.possible_contained_primes)
             {
-                ctx.stats.branch_stats.split_on_forbidden_sandwich += 1;
-                return children
+                let children = children
                     .into_iter()
                     .map(|family| {
                         NodeType::Arbitrary(FamilyNode {
@@ -282,6 +281,7 @@ impl FamilyNode {
                         })
                     })
                     .collect();
+                return (children, event);
             }
         }
 
@@ -289,12 +289,12 @@ impl FamilyNode {
             // This one doesn't actually simplify any cores, in fact, it'll make the
             // branch more complicated!. However, it might kickstart some branch elimination
             // by making us intersect another prime. So this check should always be last.
-            if let Some(child) = ctx.split_on_necessary_digit(&self.family) {
-                ctx.stats.branch_stats.split_on_necessary_digit += 1;
-                return vec![NodeType::Arbitrary(FamilyNode {
+            if let Some((child, event)) = ctx.split_on_necessary_digit(&self.family) {
+                let children = vec![NodeType::Arbitrary(FamilyNode {
                     family: child,
                     possible_contained_primes: self.possible_contained_primes,
                 })];
+                return (children, event);
             }
         }
 
@@ -328,12 +328,20 @@ impl FamilyNode {
 
         let slot = (magic >> 1) % self.family.cores.len();
         debug_assert!(!self.family.cores[slot].is_empty());
-        let mut children = if magic % 2 == 1 {
-            debug!("  Splitting {} left on core {slot}", self.family);
-            self.family.expand_left(slot)
+        let direction = if magic % 2 == 1 {
+            SplitDirection::Left
         } else {
-            debug!("  Splitting {} right on core {slot}", self.family);
-            self.family.expand_right(slot)
+            SplitDirection::Right
+        };
+        let mut children = match direction {
+            SplitDirection::Left => {
+                debug!("  Splitting {} left on core {slot}", self.family);
+                self.family.expand_left(slot)
+            }
+            SplitDirection::Right => {
+                debug!("  Splitting {} right on core {slot}", self.family);
+                self.family.expand_right(slot)
+            }
         };
 
         // We also need to consider the case where the chosen core expands to
@@ -348,8 +356,7 @@ impl FamilyNode {
             children.push(self.family);
         }
 
-        ctx.stats.branch_stats.explored_generically += 1;
-        children
+        let children = children
             .into_iter()
             .map(|family| {
                 NodeType::Arbitrary(FamilyNode {
@@ -357,12 +364,19 @@ impl FamilyNode {
                     possible_contained_primes: self.possible_contained_primes.clone(),
                 })
             })
-            .collect()
+            .collect();
+        (
+            children,
+            ExploreEvent::SplitGenerically {
+                core_idx: slot,
+                direction,
+            },
+        )
     }
 }
 
 impl SimpleNode {
-    fn explore(mut self, ctx: &mut SearchContext) -> Vec<NodeType> {
+    fn explore(mut self, ctx: &mut SearchContext) -> (Vec<NodeType>, ExploreEvent) {
         // There's a lot less we can do here! We can't split anything,
         // we can't reduce cores, etc, etc.
 
@@ -372,8 +386,7 @@ impl SimpleNode {
         if !self.composite_tested {
             if composite_checks_for_simple(ctx.base, &self) {
                 debug!("  Discarding {}, is always composite", self.family);
-                ctx.stats.branch_stats.detected_composite += 1;
-                return vec![];
+                return (vec![], ExploreEvent::DetectedComposite);
             }
             self.composite_tested = true;
         }
@@ -386,8 +399,7 @@ impl SimpleNode {
         if let DiesAt::KilledBy(dies_at, prime) = &self.dies_at {
             if self.family.min_repeats >= *dies_at {
                 debug!("  Discarding {}, contains prime {}", self.family, prime);
-                ctx.stats.branch_stats.contains_prime += 1;
-                return vec![];
+                return (vec![], ExploreEvent::ContainsPrime(prime.clone()));
             }
         }
 
@@ -396,8 +408,7 @@ impl SimpleNode {
             if let Some(n) = self.family.will_contain_at(prime) {
                 if n <= self.family.min_repeats {
                     debug!("  Discarding {}, contains prime {}", self.family, prime);
-                    ctx.stats.branch_stats.contains_prime += 1;
-                    return vec![];
+                    return (vec![], ExploreEvent::ContainsPrime(prime.clone()));
                 }
 
                 // otherwise, we should incorporate this into dies_at
@@ -412,15 +423,16 @@ impl SimpleNode {
 
         if ctx.test_for_prime(&value) {
             debug!("  Saving {}, is prime", self.family);
-            ctx.stats.branch_stats.is_new_prime += 1;
             let seq = self.family.contract();
             ctx.primes.insert(seq);
-            return vec![];
+            return (vec![], ExploreEvent::IsNewPrime);
         }
 
         self.family.min_repeats += 1;
-        ctx.stats.branch_stats.explored_generically += 1;
-        vec![NodeType::Simple(self)]
+        (
+            vec![NodeType::Simple(self)],
+            ExploreEvent::IncrementedRepeat,
+        )
     }
 }
 
