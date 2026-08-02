@@ -7,10 +7,30 @@ use num_bigint::BigUint;
 use num_modular::{ModularCoreOps, ModularPow, ModularUnaryOps};
 use num_prime::buffer::{NaiveBuffer, PrimeBufferExt};
 
-use crate::context::SearchContext;
+use crate::candidates::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
 use crate::families::SimpleFamily;
+use crate::search::SearchContext;
 use crate::sequence::Sequence;
+
+/// Context needed for sieving. This makes the most sense if it takes place
+/// after searching, where we have a list of minimal primes discovered so far,
+/// but I think it might make sense without it too.
+pub struct SieveContext {
+    pub base: u8,
+    pub primes: CandidateSequences,
+    pub prime_buffer: NaiveBuffer,
+}
+
+impl From<SearchContext> for SieveContext {
+    fn from(ctx: SearchContext) -> Self {
+        Self {
+            base: ctx.base,
+            primes: ctx.primes,
+            prime_buffer: ctx.prime_buffer,
+        }
+    }
+}
 
 /// Stats for a single round of sieving (one n_range). A fresh one is created
 /// (and thus implicitly reset) at the start of every [do_one_round] call, and
@@ -175,7 +195,7 @@ pub fn suggest_next_p_max(
 
 /// Entry point for eliminating simple families through sieving.
 pub fn do_one_round(
-    ctx: &mut SearchContext,
+    ctx: &mut SieveContext,
     remaining_branches: &mut Vec<(SimpleFamily, Sequence)>,
     n_range: &Range<usize>,
     p_max: u64,

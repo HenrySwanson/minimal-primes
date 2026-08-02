@@ -14,7 +14,6 @@ pub struct SearchContext {
 
     /// For primality testing. Re-using this avoids unnecessary re-computation
     /// of primes.
-    /// TODO: re-use in sieving too!
     pub prime_buffer: NaiveBuffer,
     /// For potentially getting insight into what's going on
     pub stats: SearchStats,
@@ -68,18 +67,9 @@ impl SearchContext {
 
 pub fn print_stats(stats: &SearchStats) {
     println!("{} branches explored", stats.num_branches_explored);
-    println!(
-        "{} primality tests",
-        stats.num_primality_checks,
-    );
-    println!(
-        "{} calls Family::could_contain",
-        stats.num_could_contains,
-    );
-    println!(
-        "{} substring tests",
-        stats.num_substring_checks,
-    );
+    println!("{} primality tests", stats.num_primality_checks,);
+    println!("{} calls Family::could_contain", stats.num_could_contains,);
+    println!("{} substring tests", stats.num_substring_checks,);
     println!(
         "{} simple substring tests",
         stats.num_simple_substring_checks,

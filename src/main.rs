@@ -6,14 +6,13 @@ use itertools::Itertools;
 use log::{info, LevelFilter};
 use num_prime::buffer::PrimeBufferExt;
 
-use crate::context::{print_stats, SearchContext};
 use crate::families::{Family, SimpleFamily};
 use crate::logging::Tracer;
-use crate::search::{DiesAt, SearchTree};
+use crate::search::{print_stats, DiesAt, SearchContext, SearchTree};
 use crate::sequence::Sequence;
+use crate::sieve::SieveContext;
 
 mod candidates;
-mod context;
 mod digits;
 mod families;
 mod logging;
@@ -201,6 +200,7 @@ fn do_solve(cmd: &SolveArgs, stop_signal: &AtomicBool) -> RemainingNodes {
         return results;
     }
 
+    let mut ctx = SieveContext::from(ctx);
     let unsolved = second_stage(cmd, results.simple_families, &mut ctx);
 
     println!(
@@ -304,7 +304,7 @@ fn first_stage(
 /// the family, incremented to as far as we searched.
 fn fast_forward_if_potentially_prime(
     family: SimpleFamily,
-    ctx: &mut SearchContext,
+    ctx: &mut SieveContext,
 ) -> Option<SimpleFamily> {
     let dies_at = find_dies_at(&family, ctx);
 
@@ -339,7 +339,7 @@ fn fast_forward_if_potentially_prime(
     None
 }
 
-fn find_dies_at(family: &SimpleFamily, ctx: &mut SearchContext) -> DiesAt {
+fn find_dies_at(family: &SimpleFamily, ctx: &mut SieveContext) -> DiesAt {
     let mut dies_at = DiesAt::Unknown;
 
     for p in ctx.primes.iter() {
@@ -367,7 +367,7 @@ fn find_dies_at(family: &SimpleFamily, ctx: &mut SearchContext) -> DiesAt {
 fn second_stage(
     cmd: &SolveArgs,
     unsolved_families: Vec<SimpleFamily>,
-    ctx: &mut SearchContext,
+    ctx: &mut SieveContext,
 ) -> Vec<SimpleFamily> {
     // It's possible that a simple family can only be expanded a finite amount
     // before it conflicts with a known minimal prime. If so, we should not
@@ -879,6 +879,7 @@ mod tests {
 
         let mut ctx = SearchContext::new(base, false);
         let results = first_stage(&mut ctx, None, None, &AtomicBool::new(false));
+        let mut ctx = SieveContext::from(ctx);
         let unsolved = second_stage(&cmd, results.simple_families, &mut ctx);
 
         // Compare the primes we got to the primes we expect, except for the ones we

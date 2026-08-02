@@ -1,4 +1,5 @@
 mod composite;
+mod context;
 mod frontier;
 mod gcd;
 mod split;
@@ -11,9 +12,9 @@ use num_bigint::BigUint;
 use num_prime::buffer::PrimeBufferExt;
 
 use self::composite::{find_even_odd_factor, find_periodic_factor, shares_factor_with_base};
+pub use self::context::{print_stats, SearchContext};
 use self::frontier::{Frontier, Weight};
 use crate::candidates::CandidateIndices;
-use crate::context::SearchContext;
 use crate::digits::DigitSeq;
 use crate::families::{Core, Family, SimpleFamily};
 use crate::logging::AppendTreeNodeID;
