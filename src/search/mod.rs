@@ -3,6 +3,7 @@ mod context;
 mod frontier;
 mod gcd;
 mod split;
+mod trace;
 
 use std::ops::ControlFlow;
 
@@ -15,6 +16,7 @@ use self::composite::{find_even_odd_factor, find_periodic_factor, shares_factor_
 pub use self::context::{print_stats, SearchContext};
 use self::context::{ExploreEvent, SplitDirection};
 use self::frontier::{Frontier, Weight};
+use self::trace::TraceRecord;
 use crate::candidates::CandidateIndices;
 use crate::digits::DigitSeq;
 use crate::families::{Core, Family, SimpleFamily};
@@ -29,8 +31,10 @@ pub struct SearchTree {
 }
 
 impl SearchTree {
-    pub fn new(ctx: &SearchContext) -> Self {
+    pub fn new(ctx: &mut SearchContext) -> Self {
         let initial_node = SearchNode {
+            id: ctx.alloc_node_id(),
+            parent_id: None,
             node_type: NodeType::Arbitrary(FamilyNode {
                 family: Family::any(ctx.base),
                 possible_contained_primes: ctx.primes.indices_all(),
@@ -85,6 +89,8 @@ impl SearchTree {
 
 #[derive(Debug, Clone)]
 pub struct SearchNode {
+    id: u64,
+    parent_id: Option<u64>,
     node_type: NodeType,
 }
 
@@ -113,6 +119,14 @@ struct SimpleNode {
 
 impl SearchNode {
     fn explore(self, ctx: &mut SearchContext) -> Vec<SearchNode> {
+        let node_id = self.id;
+        let parent_id = self.parent_id;
+
+        // We're about to relinquish our ownership of "family", so if tracing
+        // is enabled, we should call our display method now before we lose
+        // the opportunity.
+        let family_display = ctx.trace.is_some().then(|| self.node_type.to_string());
+
         // Say our family is xL*z.
         // We want to explore all possible children with weight one more than this one.
         let (children, event) = match self.node_type {
@@ -125,14 +139,31 @@ impl SearchNode {
                 node.explore(ctx)
             }
         };
+
+        // Log what kind of split or discard occured.
         ctx.stats.num_branches_explored += 1;
-        // TODO: also emit `event` to the trace log once that exists.
         ctx.stats.branch_stats.record(&event);
 
-        children
+        // Wrap the child nodes into proper SearchNodes and log them if enabled.
+        let children: Vec<SearchNode> = children
             .into_iter()
-            .map(|node_type| SearchNode { node_type })
-            .collect()
+            .map(|node_type| SearchNode {
+                id: ctx.alloc_node_id(),
+                parent_id: Some(node_id),
+                node_type,
+            })
+            .collect();
+
+        if let (Some(trace), Some(family)) = (&mut ctx.trace, family_display) {
+            trace.record(&TraceRecord {
+                node_id,
+                parent_id,
+                family,
+                event,
+            });
+        }
+
+        children
     }
 }
 

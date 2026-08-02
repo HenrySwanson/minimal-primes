@@ -54,9 +54,14 @@ struct SearchArgs {
     /// Stop exploring after a specific number of iterations.
     #[arg(long)]
     max_iter: Option<usize>,
-    /// whether to skip printing the actual primes and branches
+    /// Whether to skip printing the actual primes and branches
     #[arg(long)]
     stats_only: bool,
+    /// Log the details of search-tree exploration in detail.
+    ///
+    /// This will produce a JSONL file under `results/`.
+    #[arg(long)]
+    trace: bool,
 }
 
 #[derive(clap::Args)]
@@ -89,6 +94,11 @@ struct SolveArgs {
     /// What's the ultimate limit on how many primes we should sieve with?
     #[arg(long, default_value_t = 10_000_000)]
     p_max: u64,
+    /// Log the details of search-tree exploration in detail.
+    ///
+    /// This will produce a JSONL file under `results/`.
+    #[arg(long)]
+    trace: bool,
 }
 
 fn main() {
@@ -127,7 +137,7 @@ fn main() {
 }
 
 fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) {
-    let mut ctx = SearchContext::new(cmd.base);
+    let mut ctx = SearchContext::new(cmd.base, cmd.trace);
     let results = first_stage(&mut ctx, cmd.max_weight, cmd.max_iter, stop_signal);
 
     if !cmd.stats_only {
@@ -172,7 +182,7 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) {
 }
 
 fn do_solve(cmd: &SolveArgs, stop_signal: &AtomicBool) -> RemainingNodes {
-    let mut ctx = SearchContext::new(cmd.base);
+    let mut ctx = SearchContext::new(cmd.base, cmd.trace);
     let results = first_stage(&mut ctx, None, None, stop_signal);
 
     println!(
@@ -845,6 +855,7 @@ mod tests {
                         max_weight: Some(5),
                         max_iter: Some(10_000),
                         stats_only: false,
+                        trace: false,
                     },
                     &AtomicBool::new(false),
                 );
@@ -860,9 +871,10 @@ mod tests {
             // to the actual CLI command?
             p_initial: 1_000,
             p_max: 1_000_000,
+            trace: false,
         };
 
-        let mut ctx = SearchContext::new(base);
+        let mut ctx = SearchContext::new(base, false);
         let results = first_stage(&mut ctx, None, None, &AtomicBool::new(false));
         let mut ctx = SieveContext::from(ctx);
         let unsolved = second_stage(&cmd, results.simple_families, &mut ctx);

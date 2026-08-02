@@ -1,8 +1,10 @@
 use num_bigint::BigUint;
 use num_prime::buffer::NaiveBuffer;
+use serde::Serialize;
 
 use crate::candidates::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
+use crate::search::trace::TraceWriter;
 
 pub struct SearchContext {
     pub base: u8,
@@ -18,6 +20,12 @@ pub struct SearchContext {
     pub prime_buffer: NaiveBuffer,
     /// For potentially getting insight into what's going on
     pub stats: SearchStats,
+
+    /// Used for assigning unique IDs to search nodes. This is necessary for
+    /// tree-tracing to work.
+    next_node_id: u64,
+    /// Where to log the tree-tracing events to, if at all.
+    pub(super) trace: Option<TraceWriter>,
 }
 
 #[derive(Debug, Default)]
@@ -71,7 +79,7 @@ impl BranchStats {
 }
 
 /// Which way [ExploreEvent::SplitArbitrarily] expanded the chosen core.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub enum SplitDirection {
     Left,
     Right,
@@ -80,10 +88,10 @@ pub enum SplitDirection {
 /// Describes what happened to a family (simple or otherwise) when we explored
 /// it (i.e., expanded it into a (possibly empty) list of children).
 ///
-/// This is what powers the [BranchStats] and also eventually the tree-based
-/// logging that'll let me trace through the search tree after-the-fact.
-#[derive(Debug, Clone)]
-#[expect(dead_code)] // TODO: remove this when we use the bodies in the tree tracer thing
+/// This is what powers the [BranchStats] and also the tree-based trace
+/// logging in [crate::search::trace] that lets us reconstruct the search
+/// tree after the fact.
+#[derive(Debug, Clone, Serialize)]
 pub enum ExploreEvent {
     /// This family's smallest member contains an already-known prime, so every
     /// member of the family does too. Eliminates the branch.
@@ -137,8 +145,7 @@ pub enum ExploreEvent {
 }
 
 /// Describes why a family was proven to be composite.
-#[derive(Debug, Clone)]
-#[expect(dead_code)] // TODO: remove this when we use the bodies in the tree tracer thing
+#[derive(Debug, Clone, Serialize)]
 pub enum CompositeReason {
     /// The family shares a factor with the base.
     SharesFactorWithBase(u8),
@@ -167,18 +174,33 @@ pub enum CompositeReason {
     NeverCoprimeTo30,
     /// Each member of the family factors as something like a sum of cubes,
     /// difference of squares, etc.
-    FactorsAlgebraically
+    FactorsAlgebraically,
 }
 
 impl SearchContext {
-    pub fn new(base: u8) -> Self {
+    /// Creates some fresh context for the given `base`.
+    ///
+    /// If `trace` is set, creates a fresh trace file under `results/` and
+    /// logs every explored node's event to it.
+    pub fn new(base: u8, trace: bool) -> Self {
+        let trace = trace.then(|| TraceWriter::create(base).expect("failed to create trace file"));
+
         Self {
             base,
             iter: 0,
             primes: CandidateSequences::new(),
             prime_buffer: NaiveBuffer::new(),
             stats: SearchStats::default(),
+            next_node_id: 0,
+            trace,
         }
+    }
+
+    /// Allocates a fresh id for a newly created search node.
+    pub fn alloc_node_id(&mut self) -> u64 {
+        let id = self.next_node_id;
+        self.next_node_id += 1;
+        id
     }
 }
 
