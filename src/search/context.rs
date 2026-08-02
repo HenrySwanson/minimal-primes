@@ -1,7 +1,6 @@
 use num_prime::buffer::NaiveBuffer;
 
 use crate::candidates::CandidateSequences;
-use crate::logging::Tracer;
 
 pub struct SearchContext {
     pub base: u8,
@@ -17,9 +16,6 @@ pub struct SearchContext {
     pub prime_buffer: NaiveBuffer,
     /// For potentially getting insight into what's going on
     pub stats: SearchStats,
-    /// For tracking our paths through the search space in a more
-    /// understandable format.
-    pub tracer: Tracer,
 }
 
 #[derive(Debug, Default)]
@@ -49,18 +45,13 @@ pub struct BranchStats {
 }
 
 impl SearchContext {
-    pub fn new(base: u8, tree_log: bool) -> Self {
+    pub fn new(base: u8) -> Self {
         Self {
             base,
             iter: 0,
             primes: CandidateSequences::new(),
             prime_buffer: NaiveBuffer::new(),
             stats: SearchStats::default(),
-            tracer: if tree_log {
-                Tracer::new()
-            } else {
-                Tracer::dummy()
-            },
         }
     }
 }

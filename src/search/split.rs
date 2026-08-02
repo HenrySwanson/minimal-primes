@@ -2,7 +2,6 @@ use itertools::Itertools;
 use log::debug;
 
 use crate::candidates::CandidateIndices;
-use crate::debug_to_tree;
 use crate::digits::Digit;
 use crate::families::Family;
 use crate::search::gcd::nontrivial_gcd;
@@ -59,11 +58,6 @@ impl SearchContext {
                         debug!(
                             "  {} split into {}",
                             family,
-                            children.iter().format(" and ")
-                        );
-                        debug_to_tree!(
-                            self.tracer,
-                            "Splitting into {}",
                             children.iter().format(" and ")
                         );
                         return Some(children);
@@ -144,7 +138,6 @@ impl SearchContext {
                 new.digitseqs.insert(i + 1, d.into());
                 new.cores.insert(i + 1, d_less_core);
                 debug!("  {family} must have a {d}, transforming into {new}");
-                debug_to_tree!(self.tracer, "Must have a {}, transforming to {}", d, new);
                 return Some(new);
             }
         }
@@ -196,10 +189,6 @@ impl SearchContext {
                         assert_ne!(seq_ab, p);
                         assert_ne!(seq_ba, q);
                         debug!("  {seq_ab} contains a prime {p} and {seq_ba} contains a prime {q}");
-                        debug_to_tree!(
-                            self.tracer,
-                            "digits {a} and {b} are incompatible in core {i}"
-                        );
 
                         // Make the family with neither a nor b
                         let mut with_neither = family.clone();
@@ -228,10 +217,6 @@ impl SearchContext {
                         // a can't occur before b
                         assert_ne!(seq_ab, p);
                         debug!("  {seq_ab} contains a prime {p}");
-                        debug_to_tree!(
-                            self.tracer,
-                            "digits {a} and {b} are semi-incompatible in core {i}"
-                        );
 
                         return Some(do_split_for_semi_incompatible(family, i, a, b));
                     }
@@ -239,10 +224,6 @@ impl SearchContext {
                         // b can't occur before a; converse of the previous branch
                         assert_ne!(seq_ba, q);
                         debug!("  {seq_ba} contains a prime {q}");
-                        debug_to_tree!(
-                            self.tracer,
-                            "digits {b} and {a} are semi-incompatible in core {i}"
-                        );
 
                         // note that b and a are switched!
                         return Some(do_split_for_semi_incompatible(family, i, b, a));
@@ -291,10 +272,6 @@ impl SearchContext {
                             assert_ne!(seq, p);
 
                             debug!("  {seq} contains a prime {p}");
-                            debug_to_tree!(
-                                self.tracer,
-                                "digits {a} and {b} are incompatible in slots {i} and {j}"
-                            );
 
                             // We can split the family into two:
                             // - with no a: x(L-a)yMz
@@ -349,7 +326,6 @@ impl SearchContext {
                     assert_ne!(seq, p);
 
                     debug!("  {seq} contains a prime {p}");
-                    debug_to_tree!(self.tracer, "sandwich {a}{b}{a} is forbidden in slot {i}");
 
                     // Split the family
                     // xLz -> x(L-a)z

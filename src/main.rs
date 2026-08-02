@@ -7,7 +7,6 @@ use log::{info, LevelFilter};
 use num_prime::buffer::PrimeBufferExt;
 
 use crate::families::{Family, SimpleFamily};
-use crate::logging::Tracer;
 use crate::search::{print_stats, DiesAt, SearchContext, SearchTree};
 use crate::sequence::Sequence;
 use crate::sieve::SieveContext;
@@ -55,9 +54,6 @@ struct SearchArgs {
     /// Stop exploring after a specific number of iterations.
     #[arg(long)]
     max_iter: Option<usize>,
-    /// whether to log the whole search tree
-    #[arg(long)]
-    tree_log: bool,
     /// whether to skip printing the actual primes and branches
     #[arg(long)]
     stats_only: bool,
@@ -93,9 +89,6 @@ struct SolveArgs {
     /// What's the ultimate limit on how many primes we should sieve with?
     #[arg(long, default_value_t = 10_000_000)]
     p_max: u64,
-    /// whether to log the whole search tree
-    #[arg(long)]
-    tree_log: bool,
 }
 
 fn main() {
@@ -134,14 +127,8 @@ fn main() {
 }
 
 fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) {
-    let mut ctx = SearchContext::new(cmd.base, cmd.tree_log);
+    let mut ctx = SearchContext::new(cmd.base);
     let results = first_stage(&mut ctx, cmd.max_weight, cmd.max_iter, stop_signal);
-
-    // print the tree to stdout if we're tracing
-    match &ctx.tracer {
-        Tracer::Real(t, _) => t.pretty_print_to_stdout(),
-        Tracer::Dummy(_) => {}
-    }
 
     if !cmd.stats_only {
         println!("---- BRANCHES REMAINING ----");
@@ -185,7 +172,7 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) {
 }
 
 fn do_solve(cmd: &SolveArgs, stop_signal: &AtomicBool) -> RemainingNodes {
-    let mut ctx = SearchContext::new(cmd.base, cmd.tree_log);
+    let mut ctx = SearchContext::new(cmd.base);
     let results = first_stage(&mut ctx, None, None, stop_signal);
 
     println!(
@@ -857,7 +844,6 @@ mod tests {
                         base,
                         max_weight: Some(5),
                         max_iter: Some(10_000),
-                        tree_log: false,
                         stats_only: false,
                     },
                     &AtomicBool::new(false),
@@ -874,10 +860,9 @@ mod tests {
             // to the actual CLI command?
             p_initial: 1_000,
             p_max: 1_000_000,
-            tree_log: false,
         };
 
-        let mut ctx = SearchContext::new(base, false);
+        let mut ctx = SearchContext::new(base);
         let results = first_stage(&mut ctx, None, None, &AtomicBool::new(false));
         let mut ctx = SieveContext::from(ctx);
         let unsolved = second_stage(&cmd, results.simple_families, &mut ctx);
