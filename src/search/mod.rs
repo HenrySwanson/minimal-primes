@@ -13,9 +13,11 @@ use num_bigint::BigUint;
 use num_prime::buffer::PrimeBufferExt;
 
 use self::composite::{find_even_odd_factor, find_periodic_factor, shares_factor_with_base};
-use self::context::{ExploreEvent, SplitDirection};
-pub use self::context::{SearchContext, print_stats};
+pub use self::context::{
+    CompositeReason, ExploreEvent, SearchContext, SplitDirection, print_stats,
+};
 use self::frontier::{Frontier, Weight};
+pub use self::trace::TraceRecord;
 use crate::RemainingNodes;
 use crate::candidates::CandidateIndices;
 use crate::digits::DigitSeq;
@@ -23,7 +25,6 @@ use crate::families::{Core, Family, SimpleFamily};
 use crate::search::composite::{
     check_residues_mod_30, composite_checks_for_simple, find_common_factor, find_two_factors,
 };
-use crate::search::context::CompositeReason;
 
 pub struct SearchTree {
     pub nodes: Frontier<SearchNode>,

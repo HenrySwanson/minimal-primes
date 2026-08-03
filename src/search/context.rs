@@ -1,6 +1,6 @@
 use num_bigint::BigUint;
 use num_prime::buffer::NaiveBuffer;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::candidates::CandidateSequences;
 use crate::digits::{Digit, DigitSeq};
@@ -79,7 +79,7 @@ impl BranchStats {
 }
 
 /// Which way [ExploreEvent::SplitArbitrarily] expanded the chosen core.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum SplitDirection {
     Left,
     Right,
@@ -91,7 +91,7 @@ pub enum SplitDirection {
 /// This is what powers the [BranchStats] and also the tree-based trace
 /// logging in [crate::search::trace] that lets us reconstruct the search
 /// tree after the fact.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ExploreEvent {
     /// This family's smallest member contains an already-known prime, so every
     /// member of the family does too. Eliminates the branch.
@@ -145,7 +145,7 @@ pub enum ExploreEvent {
 }
 
 /// Describes why a family was proven to be composite.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CompositeReason {
     /// The family shares a factor with the base.
     SharesFactorWithBase(u8),

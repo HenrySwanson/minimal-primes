@@ -2,16 +2,16 @@ use std::fmt::Write;
 
 use itertools::Itertools;
 use num_bigint::BigUint;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A digit. The base is not specified and is provided as another parameter
 /// in the necessary methods.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Digit(pub u8);
 
 /// A sequence of digits. The base is not specified and is provided as
 /// another parameter in the necessary methods.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DigitSeq(pub Vec<Digit>);
 
 impl DigitSeq {

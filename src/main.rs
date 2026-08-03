@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -18,6 +19,7 @@ mod logging;
 mod search;
 mod sequence;
 mod sieve;
+mod tree;
 
 const LOG_EVERY_N: usize = 10_000;
 
@@ -42,6 +44,9 @@ enum Command {
     Sieve(SieveArgs),
     /// Finds all minimal primes in the given base.
     Solve(SolveArgs),
+    /// Reconstructs and prints the search tree from a trace file produced by
+    /// `--trace`.
+    Tree(TreeArgs),
 }
 
 #[derive(clap::Args)]
@@ -101,6 +106,12 @@ struct SolveArgs {
     trace: bool,
 }
 
+#[derive(clap::Args)]
+struct TreeArgs {
+    /// Path to a trace file produced by `--trace`.
+    path: PathBuf,
+}
+
 fn main() {
     let args = Args::parse();
 
@@ -132,6 +143,9 @@ fn main() {
         }
         Command::Solve(cmd) => {
             do_solve(&cmd, &stop_signal);
+        }
+        Command::Tree(cmd) => {
+            tree::print_tree(&cmd.path).expect("failed to print tree");
         }
     }
 }

@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::search::context::ExploreEvent;
 
@@ -22,7 +22,7 @@ pub struct TraceWriter {
 /// One line of the trace: what happened when we explored `node_id` (a child
 /// of `parent_id`, or the root if `parent_id` is `None`), and which new
 /// nodes it produced.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct TraceRecord {
     pub node_id: u64,
     pub parent_id: Option<u64>,
