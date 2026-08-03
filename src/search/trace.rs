@@ -12,6 +12,11 @@ use crate::search::context::ExploreEvent;
 /// down the whole search over a broken trace file.
 pub struct TraceWriter {
     writer: BufWriter<File>,
+    // awkward place to put this, but it avoids threading the reduced
+    // family through every single ExploreEvent.
+    // basically, set this when you reduce a family and it'll get added
+    // to the next record.
+    pending_reduction: Option<String>,
 }
 
 /// One line of the trace: what happened when we explored `node_id` (a child
@@ -22,6 +27,7 @@ pub struct TraceRecord {
     pub node_id: u64,
     pub parent_id: Option<u64>,
     pub family: String,
+    pub reduced: Option<String>,
     pub event: ExploreEvent,
 }
 
@@ -42,16 +48,35 @@ impl TraceWriter {
         println!("Writing trace events to {path}");
         Ok(Self {
             writer: BufWriter::new(file),
+            pending_reduction: None,
         })
     }
 
-    pub fn record(&mut self, record: &TraceRecord) {
-        if let Err(e) = serde_json::to_writer(&mut self.writer, record) {
+    pub fn record(
+        &mut self,
+        node_id: u64,
+        parent_id: Option<u64>,
+        family: String,
+        event: ExploreEvent,
+    ) {
+        let record = TraceRecord {
+            node_id,
+            parent_id,
+            family,
+            reduced: self.pending_reduction.take(),
+            event,
+        };
+
+        if let Err(e) = serde_json::to_writer(&mut self.writer, &record) {
             log::warn!("failed to write trace record: {e}");
             return;
         }
         if let Err(e) = self.writer.write_all(b"\n") {
             log::warn!("failed to write trace record newline: {e}");
         }
+    }
+
+    pub fn set_reduction(&mut self, reduced: String) {
+        self.pending_reduction = Some(reduced);
     }
 }

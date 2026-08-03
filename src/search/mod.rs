@@ -13,10 +13,10 @@ use num_bigint::BigUint;
 use num_prime::buffer::PrimeBufferExt;
 
 use self::composite::{find_even_odd_factor, find_periodic_factor, shares_factor_with_base};
-pub use self::context::{print_stats, SearchContext};
 use self::context::{ExploreEvent, SplitDirection};
+pub use self::context::{SearchContext, print_stats};
 use self::frontier::{Frontier, Weight};
-use self::trace::TraceRecord;
+use crate::RemainingNodes;
 use crate::candidates::CandidateIndices;
 use crate::digits::DigitSeq;
 use crate::families::{Core, Family, SimpleFamily};
@@ -24,7 +24,6 @@ use crate::search::composite::{
     check_residues_mod_30, composite_checks_for_simple, find_common_factor, find_two_factors,
 };
 use crate::search::context::CompositeReason;
-use crate::RemainingNodes;
 
 pub struct SearchTree {
     pub nodes: Frontier<SearchNode>,
@@ -144,26 +143,19 @@ impl SearchNode {
         ctx.stats.num_branches_explored += 1;
         ctx.stats.branch_stats.record(&event);
 
-        // Wrap the child nodes into proper SearchNodes and log them if enabled.
-        let children: Vec<SearchNode> = children
+        if let (Some(trace), Some(family)) = (&mut ctx.trace, family_display) {
+            trace.record(node_id, parent_id, family, event);
+        }
+
+        // Wrap the child nodes into proper SearchNodes and return them
+        children
             .into_iter()
             .map(|node_type| SearchNode {
                 id: ctx.alloc_node_id(),
                 parent_id: Some(node_id),
                 node_type,
             })
-            .collect();
-
-        if let (Some(trace), Some(family)) = (&mut ctx.trace, family_display) {
-            trace.record(&TraceRecord {
-                node_id,
-                parent_id,
-                family,
-                event,
-            });
-        }
-
-        children
+            .collect()
     }
 }
 
@@ -206,9 +198,14 @@ impl FamilyNode {
             return (vec![], ExploreEvent::IsNewPrime);
         }
 
-        // Then, we try to reduce the cores.
-        self.reduce_cores(ctx);
-        self.family.simplify();
+        // Then, we try to reduce the cores, notifying the tracer if that changed
+        // anything.
+        let mut anything_changed = false;
+        anything_changed |= self.reduce_cores(ctx);
+        anything_changed |= self.family.simplify();
+        if anything_changed && let Some(trace) = &mut ctx.trace {
+            trace.set_reduction(self.family.to_string());
+        }
         if self.family.cores.is_empty() {
             debug!("  {} was reduced to trivial string", self.family);
             return (vec![], ExploreEvent::NoCoresRemaining);
@@ -472,11 +469,14 @@ impl SimpleNode {
 }
 
 impl FamilyNode {
-    // TODO: the node can change here as we discover primes and eliminate
-    // digits from cores. we should log some kind of event about that; something
-    // different from the "explore children" events.
-    fn reduce_cores(&mut self, ctx: &mut SearchContext) {
+    /// Removes digits from the family's cores that would cause the family to
+    /// contain a known prime.
+    ///
+    /// Returns `true` if any cores were modified, otherwise `false`.
+    fn reduce_cores(&mut self, ctx: &mut SearchContext) -> bool {
+        let mut anything_changed = false;
         let old_family = self.family.clone();
+
         for (i, core) in self.family.cores.iter_mut().enumerate() {
             // Substitute elements from the core into the string to see if any
             // of them contain or are a prime.
@@ -490,6 +490,7 @@ impl FamilyNode {
                 {
                     assert_ne!(seq, *p);
                     debug!("  Discarding {seq}, contains prime {p}");
+                    anything_changed = true;
                     continue;
                 }
 
@@ -498,6 +499,7 @@ impl FamilyNode {
                 if ctx.test_for_prime(&value) {
                     debug!("  Saving {seq}, is prime");
                     ctx.primes.insert(seq);
+                    anything_changed = true;
                 } else {
                     allowed_digits.push(digit);
                 }
@@ -507,6 +509,7 @@ impl FamilyNode {
         }
         // Now we've reduced the core, and have a new family.
         debug!("  Reducing {} to {}", old_family, self.family);
+        anything_changed
     }
 }
 

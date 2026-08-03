@@ -65,7 +65,10 @@ impl Family {
 
     /// Reduces the family to an equivalent but simpler form. For example,
     /// it removes empty cores (which can only expand to the empty string).
-    pub fn simplify(&mut self) {
+    ///
+    /// Returns `true` if anything changed, `false` otherwise.
+    pub fn simplify(&mut self) -> bool {
+        let mut anything_changed = false;
         debug_assert_eq!(self.digitseqs.len(), self.cores.len() + 1);
 
         // Contract out any empty cores
@@ -79,6 +82,7 @@ impl Family {
                 let rhs = self.digitseqs.remove(i + 1);
                 self.digitseqs[i] += rhs;
                 self.cores.remove(i);
+                anything_changed = true;
             } else {
                 i += 1;
             }
@@ -93,8 +97,11 @@ impl Family {
             {
                 self.digitseqs.remove(0);
                 self.cores.remove(0);
+                anything_changed = true;
             }
         }
+
+        anything_changed
     }
 
     /// Returns the sequence gotten by removing all the cores (equivalently,
