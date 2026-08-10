@@ -59,10 +59,10 @@ impl CandidateSequences {
         // We can't merge this loop with the one above! We need to make a complete
         // decision first before we start modifying things.
         for slot in self.inner.iter_mut() {
-            if let Some(other) = slot {
-                if other.properly_contains(&seq) {
-                    *slot = None;
-                }
+            if let Some(other) = slot
+                && other.properly_contains(&seq)
+            {
+                *slot = None;
             }
         }
 

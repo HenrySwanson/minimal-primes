@@ -8,9 +8,5 @@ pub fn nontrivial_gcd<T: Integer + One>(a: &T, b: &T) -> Option<T> {
     // usually want to discard the input! should we reimplement GCD
     // but taking by value / mut ref?
     let g = a.gcd(b);
-    if g.is_one() {
-        None
-    } else {
-        Some(g)
-    }
+    if g.is_one() { None } else { Some(g) }
 }

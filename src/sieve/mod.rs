@@ -8,7 +8,7 @@ use num_prime::buffer::{NaiveBuffer, PrimeBufferExt};
 use self::bsgs::sieve;
 pub use self::context::SieveContext;
 use self::sequence_slice::SequenceSlice;
-pub use self::stats::{suggest_next_p_max, SieveStats};
+pub use self::stats::{SieveStats, suggest_next_p_max};
 use crate::digits::{Digit, DigitSeq};
 use crate::families::SimpleFamily;
 use crate::sequence::Sequence;

@@ -245,21 +245,20 @@ impl FamilyNode {
 
         // Let's see if we can split it in an interesting way
         // TODO: context-ify the splitting functions too!
-        if self.family.weight() >= 2 {
-            if let Some((children, event)) =
+        if self.family.weight() >= 2
+            && let Some((children, event)) =
                 ctx.split_on_limited_digit(&self.family, 3, &self.possible_contained_primes)
-            {
-                let children = children
-                    .into_iter()
-                    .map(|family| {
-                        NodeType::Arbitrary(FamilyNode {
-                            family,
-                            possible_contained_primes: self.possible_contained_primes.clone(),
-                        })
+        {
+            let children = children
+                .into_iter()
+                .map(|family| {
+                    NodeType::Arbitrary(FamilyNode {
+                        family,
+                        possible_contained_primes: self.possible_contained_primes.clone(),
                     })
-                    .collect();
-                return (children, event);
-            }
+                })
+                .collect();
+            return (children, event);
         }
 
         if self.family.weight() >= 4 {
@@ -298,21 +297,20 @@ impl FamilyNode {
         // this was introduced to kill long derivation chains of the form x[ab]*y that
         // we have trouble with otherwise. only invoke it when we are really stuck on
         // something.
-        if self.family.weight() >= 10 {
-            if let Some((children, event)) =
+        if self.family.weight() >= 10
+            && let Some((children, event)) =
                 ctx.split_on_forbidden_sandwich(&self.family, &self.possible_contained_primes)
-            {
-                let children = children
-                    .into_iter()
-                    .map(|family| {
-                        NodeType::Arbitrary(FamilyNode {
-                            family,
-                            possible_contained_primes: self.possible_contained_primes.clone(),
-                        })
+        {
+            let children = children
+                .into_iter()
+                .map(|family| {
+                    NodeType::Arbitrary(FamilyNode {
+                        family,
+                        possible_contained_primes: self.possible_contained_primes.clone(),
                     })
-                    .collect();
-                return (children, event);
-            }
+                })
+                .collect();
+            return (children, event);
         }
 
         if self.family.weight() >= 5 {
@@ -429,11 +427,11 @@ impl SimpleNode {
 
         // On a previous loop, we may have established when this family contains
         // a prime. Check it.
-        if let DiesAt::KilledBy(dies_at, prime) = &self.dies_at {
-            if self.family.min_repeats >= *dies_at {
-                debug!("  Discarding {}, contains prime {}", self.family, prime);
-                return (vec![], ExploreEvent::ContainsPrime(prime.clone()));
-            }
+        if let DiesAt::KilledBy(dies_at, prime) = &self.dies_at
+            && self.family.min_repeats >= *dies_at
+        {
+            debug!("  Discarding {}, contains prime {}", self.family, prime);
+            return (vec![], ExploreEvent::ContainsPrime(prime.clone()));
         }
 
         // Now check any new primes.

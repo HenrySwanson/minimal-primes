@@ -8,8 +8,8 @@ use num_prime::ExactRoots;
 
 use crate::digits::DigitSeq;
 use crate::families::{Core, Family};
-use crate::search::gcd::nontrivial_gcd;
 use crate::search::SimpleNode;
+use crate::search::gcd::nontrivial_gcd;
 use crate::sequence::BigSequence;
 
 /// Checks whether this family shares a factor with the base, returning that factor.

@@ -1,14 +1,14 @@
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use clap::Parser;
 use itertools::Itertools;
-use log::{info, LevelFilter};
+use log::{LevelFilter, info};
 use num_prime::buffer::PrimeBufferExt;
 
 use crate::families::{Family, SimpleFamily};
-use crate::search::{print_stats, DiesAt, SearchContext, SearchTree};
+use crate::search::{DiesAt, SearchContext, SearchTree, print_stats};
 use crate::sequence::Sequence;
 use crate::sieve::SieveContext;
 
@@ -259,18 +259,18 @@ fn first_stage(
             None => break,
         };
 
-        if let Some(max_weight) = max_weight {
-            if weight > max_weight {
-                info!("Reached weight cutoff; stopping...");
-                break;
-            }
+        if let Some(max_weight) = max_weight
+            && weight > max_weight
+        {
+            info!("Reached weight cutoff; stopping...");
+            break;
         }
 
-        if let Some(max_iter) = max_iter {
-            if ctx.iter >= max_iter {
-                info!("Reached iteration cutoff; stopping...");
-                break;
-            }
+        if let Some(max_iter) = max_iter
+            && ctx.iter >= max_iter
+        {
+            info!("Reached iteration cutoff; stopping...");
+            break;
         }
 
         if !tree.any_nodes_to_solve() {

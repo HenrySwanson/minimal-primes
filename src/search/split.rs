@@ -4,9 +4,9 @@ use log::debug;
 use crate::candidates::CandidateIndices;
 use crate::digits::Digit;
 use crate::families::Family;
+use crate::search::SearchContext;
 use crate::search::context::ExploreEvent;
 use crate::search::gcd::nontrivial_gcd;
-use crate::search::SearchContext;
 
 // TODO: this probably shouldn't be searchcontext, but this works well now
 impl SearchContext {
