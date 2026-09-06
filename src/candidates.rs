@@ -1,4 +1,4 @@
-use crate::digits::DigitSeq;
+use crate::digits::{DigitSeq, DigitSet};
 
 /// This struct contains all of the (potentially) minimal primes we discovered
 /// so far.
@@ -12,10 +12,26 @@ pub struct CandidateSequences {
     // item is just replacing it with None. indices also can't
     // be re-used.
     inner: Vec<Option<DigitSeq>>,
+    /// tracks the digits presents in `inner`, so that we can very quickly
+    /// eliminate candidates during containment testing. removed entries
+    /// (those that are `None`) get a mask of [REMOVED].
+    masks: Vec<DigitSet>,
     /// How many of `inner` are still present. Tracked as we go, because
     /// counting them is O(n) and [CandidateSequences::len] is called often.
     num_present: usize,
 }
+
+/// A candidate minimal prime, together with its index and precomputed digit set.
+#[derive(Debug, Clone, Copy)]
+pub struct Candidate<'a> {
+    pub idx: usize,
+    pub seq: &'a DigitSeq,
+    pub mask: DigitSet,
+}
+
+/// The mask stored for a vacated slot. Every bit is set, so it never looks
+/// like a subset of anything and scans pass it by.
+const REMOVED: DigitSet = DigitSet::from_mask(u64::MAX);
 
 /// A collection of indices for [CandidateSequences] that automatically extends
 /// to include new elements added to the container. This makes it useful for
@@ -38,6 +54,7 @@ impl CandidateSequences {
     pub fn new() -> Self {
         Self {
             inner: vec![],
+            masks: vec![],
             num_present: 0,
         }
     }
@@ -61,31 +78,60 @@ impl CandidateSequences {
         self.inner.iter().flatten()
     }
 
+    // TODO: do we need to test this here? given how dense this vector is, it might
+    // be worth just keeping the extra candidates and eliminate them all at the end.
+    // also we don't really need the "does contain" check; callers all check against
+    // "possible contained primes"... might get to throw away some work here :o
     pub fn insert(&mut self, seq: DigitSeq) {
-        // Does this contain an existing candidate? Reject it.
-        for other in self.iter() {
+        let our_mask = seq.digit_set();
+
+        // Does the new sequence contain any of our existing sequences?
+        for (idx, &mask) in self.masks.iter().enumerate() {
+            // `properly_contains` is slow, if our digits aren't a subset of
+            // their digits, we can skip this test. matches are very rare, so
+            // this prefilter gets rid of like 99% of the work :)
+            if !mask.is_subset_of(our_mask) {
+                continue;
+            }
+
+            // skip removed elements
+            let Some(other) = &self.inner[idx] else {
+                continue;
+            };
+
             // we shouldn't be inserting duplicates ever
             assert_ne!(&seq, other);
+
+            // do the actual expensive containment check
             if seq.properly_contains(other) {
                 return;
             }
         }
 
-        // Okay, we're definitely going to insert this. Remove any candidates that
-        // contain this.
+        // Okay, we're definitely going to insert this. But due to some peculiarities
+        // in how we explore the space, we might be inserted a sequence that's contained
+        // in some of our existing entries, which we need to remove.
+        //
         // We can't merge this loop with the one above! We need to make a complete
-        // decision first before we start modifying things.
-        for slot in self.inner.iter_mut() {
-            if let Some(other) = slot
+        // decision first before we start modifying the list.
+        for (idx, mask) in self.masks.iter_mut().enumerate() {
+            // This time we're checking whether we are a subset of the other element,
+            // so the arguments are flipped.
+            if !mask.is_superset_of(our_mask) {
+                continue;
+            }
+            if let Some(other) = &self.inner[idx]
                 && other.properly_contains(&seq)
             {
-                *slot = None;
+                self.inner[idx] = None;
+                *mask = REMOVED;
                 self.num_present -= 1;
             }
         }
 
         // Insert
         self.inner.push(Some(seq));
+        self.masks.push(our_mask);
         self.num_present += 1;
     }
 
@@ -120,7 +166,7 @@ impl CandidateSequences {
     pub fn get_many<'slf, 'idx>(
         &'slf self,
         indices: &'idx CandidateIndices,
-    ) -> impl Iterator<Item = (usize, &'slf DigitSeq)> + 'idx
+    ) -> impl Iterator<Item = Candidate<'slf>> + 'idx
     where
         'slf: 'idx,
     {
@@ -129,18 +175,26 @@ impl CandidateSequences {
             .iter()
             .copied()
             .chain(indices.start_unknown..self.inner.len())
-            .flat_map(|idx| self.inner[idx].as_ref().map(|val| (idx, val)))
+            .flat_map(|idx| self.get(idx))
     }
 
     /// Returns an iterator over the elements from `start` onwards.
     pub fn get_tail<'slf, 'idx>(
         &'slf self,
         start: usize,
-    ) -> impl Iterator<Item = (usize, &'slf DigitSeq)> + 'idx
+    ) -> impl Iterator<Item = Candidate<'slf>> + 'idx
     where
         'slf: 'idx,
     {
-        (start..self.inner.len()).flat_map(|idx| self.inner[idx].as_ref().map(|val| (idx, val)))
+        (start..self.inner.len()).flat_map(|idx| self.get(idx))
+    }
+
+    fn get(&self, idx: usize) -> Option<Candidate<'_>> {
+        self.inner[idx].as_ref().map(|seq| Candidate {
+            idx,
+            seq,
+            mask: self.masks[idx],
+        })
     }
 }
 

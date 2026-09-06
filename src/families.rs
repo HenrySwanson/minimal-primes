@@ -201,6 +201,23 @@ impl Family {
             .collect()
     }
 
+    /// Every digit that could appear in any member of this family.
+    ///
+    /// No member of this family can contain a digit outside this set, so this
+    /// is very useful for containment testing.
+    pub fn digit_set(&self) -> DigitSet {
+        let mut set = DigitSet::EMPTY;
+        for seq in &self.digitseqs {
+            for d in &seq.0 {
+                set.insert(*d);
+            }
+        }
+        for core in &self.cores {
+            set |= *core;
+        }
+        set
+    }
+
     /// Returns true if this family contains `needle`.
     pub fn could_contain(&self, needle: &DigitSeq) -> bool {
         let mut needle_iter = needle.0.iter().copied().peekable();
@@ -266,6 +283,20 @@ impl SimpleFamily {
 }
 
 impl BareSimpleFamily {
+    /// Every digit that could appear in any member of this family.
+    ///
+    /// As usual, useful for containment.
+    pub fn digit_set(&self) -> DigitSet {
+        let mut set = DigitSet::new([self.center]);
+        for d in &self.before.0 {
+            set.insert(*d);
+        }
+        for d in &self.after.0 {
+            set.insert(*d)
+        }
+        set
+    }
+
     /// Returns the digit sequence with the given number of repeats.
     pub fn digitseq(&self, num_repeats: usize) -> DigitSeq {
         let mut seq = self.before.clone();

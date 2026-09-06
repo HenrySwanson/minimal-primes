@@ -22,7 +22,10 @@ pub struct DigitSet {
 pub struct DigitSeq(pub Vec<Digit>);
 
 impl DigitSet {
-    /// Returns a core containing no digits.
+    /// A digit set containing nothing.
+    pub const EMPTY: Self = Self { mask: 0 };
+
+    /// Returns a set containing the given digits.
     pub fn new(digits: impl IntoIterator<Item = Digit>) -> Self {
         let mut core = Self { mask: 0 };
         for d in digits {
@@ -31,7 +34,12 @@ impl DigitSet {
         core
     }
 
-    /// Returns a core containing all the digits in the given base, i.e., 0, 1,
+    /// Returns a set from the raw mask
+    pub const fn from_mask(mask: u64) -> Self {
+        Self { mask }
+    }
+
+    /// Returns a set containing all the digits in the given base, i.e., 0, 1,
     /// ..., `base` - 1.
     ///
     /// Panics if `base >= 64`.
@@ -51,6 +59,7 @@ impl DigitSet {
         1 << d.0
     }
 
+    // TODO: replace these with ones that also return Self
     pub fn insert(&mut self, d: Digit) {
         self.mask |= Self::bit(d);
     }
@@ -72,7 +81,16 @@ impl DigitSet {
         self.mask = 0;
     }
 
-    /// Iterates the digits in this core, smallest first.
+    pub fn is_subset_of(self, other: Self) -> bool {
+        // erase all other's bits from us and see if there's anything left
+        (self.mask & !other.mask) == 0
+    }
+
+    pub fn is_superset_of(self, other: Self) -> bool {
+        other.is_subset_of(self)
+    }
+
+    /// Iterates the digits in this set, smallest first.
     pub fn iter(&self) -> impl Iterator<Item = Digit> + Clone {
         let mut mask = self.mask;
         std::iter::from_fn(move || {
@@ -96,6 +114,22 @@ impl DigitSet {
 
     pub fn len(&self) -> usize {
         self.mask.count_ones() as usize
+    }
+}
+
+impl std::ops::BitOr for DigitSet {
+    type Output = DigitSet;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self {
+            mask: self.mask | rhs.mask,
+        }
+    }
+}
+
+impl std::ops::BitOrAssign for DigitSet {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.mask |= rhs.mask
     }
 }
 
@@ -126,6 +160,13 @@ impl DigitSeq {
             }
         }
         value
+    }
+
+    /// The set of digits appearing in this sequence, as a [`DigitSet`].
+    ///
+    /// This is really useful for containment testing.
+    pub fn digit_set(&self) -> DigitSet {
+        DigitSet::new(self.0.iter().copied())
     }
 
     /// Returns true if `needle` appears as a proper subsequence of this
@@ -293,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn core_insert_and_remove() {
+    fn digitset_insert_and_remove() {
         let digits = vec![Digit(0), Digit(3), Digit(9)];
         let mut core = DigitSet::new(digits.clone());
         check_digitset(core, &[0, 3, 9]);
@@ -317,5 +358,24 @@ mod tests {
         core.insert(Digit(9));
         assert!(core.contains(Digit(9)));
         check_digitset(core, &[3, 5, 9]);
+    }
+
+    #[test]
+    fn digitset_subset() {
+        let core_123 = DigitSet::new(vec![Digit(1), Digit(2), Digit(3)]);
+        let core_12 = DigitSet::new(vec![Digit(1), Digit(2)]);
+        assert!(core_12.is_subset_of(core_123));
+        assert!(core_123.is_superset_of(core_123));
+
+        // Self-tests
+        assert!(core_12.is_subset_of(core_12));
+        assert!(core_12.is_superset_of(core_12));
+    }
+
+    #[test]
+    fn digitset_union() {
+        let core_123 = DigitSet::new(vec![Digit(1), Digit(2), Digit(3)]);
+        let core_246 = DigitSet::new(vec![Digit(2), Digit(4), Digit(6)]);
+        check_digitset(core_123 | core_246, &[1, 2, 3, 4, 6]);
     }
 }

@@ -170,11 +170,13 @@ impl FamilyNode {
         // the explore_node? this feels iffy
 
         // Now is a good time for us to narrow down the potential primes this
-        // family could contain.
+        // family could contain. Prefilter with the digit set so we don't have
+        // to do the full subsequence walk.
         let mut new_contained_primes = ctx.primes.indices_none();
-        for (i, prime) in ctx.primes.get_many(&self.possible_contained_primes) {
-            if self.family.could_contain(prime) {
-                new_contained_primes.add(i);
+        let our_mask = self.family.digit_set();
+        for candidate in ctx.primes.get_many(&self.possible_contained_primes) {
+            if our_mask.is_superset_of(candidate.mask) && self.family.could_contain(candidate.seq) {
+                new_contained_primes.add(candidate.idx);
             }
             ctx.stats.num_could_contains += 1;
         }
@@ -226,9 +228,13 @@ impl FamilyNode {
             // Take all the primes we know could be contained in this family,
             // and check exactly when this family meets them.
             let mut dies_at = DiesAt::Unknown;
-            for (_, p) in ctx.primes.get_many(&self.possible_contained_primes) {
-                if let Some(n) = family.will_contain_at(p) {
-                    dies_at.update(n, p);
+            let our_mask = family.bare.digit_set();
+            for candidate in ctx.primes.get_many(&self.possible_contained_primes) {
+                if !(our_mask.is_superset_of(candidate.mask)) {
+                    continue;
+                }
+                if let Some(n) = family.will_contain_at(candidate.seq) {
+                    dies_at.update(n, candidate.seq);
                 }
             }
 
@@ -434,8 +440,16 @@ impl SimpleNode {
             return (vec![], ExploreEvent::ContainsPrime(prime.clone()));
         }
 
-        // Now check any new primes.
-        for (_, prime) in ctx.primes.get_tail(self.start_unknown_primes) {
+        // Now incorporate any new primes that have appeared in the meantime.
+        let our_mask = self.family.bare.digit_set();
+        for candidate in ctx.primes.get_tail(self.start_unknown_primes) {
+            // prefilter by mask
+            if !our_mask.is_superset_of(candidate.mask) {
+                // eh, count it for now, but maybe add a separate metric
+                ctx.stats.num_simple_substring_checks += 1;
+                continue;
+            }
+            let prime = candidate.seq;
             if let Some(n) = self.family.will_contain_at(prime) {
                 if n <= self.family.min_repeats {
                     debug!("  Discarding {}, contains prime {}", self.family, prime);
@@ -523,16 +537,17 @@ impl SearchContext {
         // We don't need to search for *all* possible primes, just the minimal
         // ones. And if we've been doing our job right, we should have a complete
         // list of them (up to a length limit).
+        // As usual, we prefilter with the digit masks
+        let our_mask = seq.digit_set();
         let result = self
             .primes
             .get_many(possible_contained_primes)
-            .find(|(_, subseq)| {
+            .find(|candidate| {
                 self.stats.num_substring_checks += 1;
-                seq.properly_contains(subseq)
-            });
+                our_mask.is_superset_of(candidate.mask) && seq.properly_contains(candidate.seq)
+            })?;
 
-        let (_, seq) = result?;
-        Some(seq)
+        Some(result.seq)
     }
 
     fn test_for_prime(&mut self, value: &BigUint) -> bool {
