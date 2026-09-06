@@ -94,6 +94,14 @@ impl SearchContext {
         let contracted = family.contract().value(self.base);
 
         'cores: for (i, core) in family.cores.iter().enumerate() {
+            // If there's only one digit in the core, then we'd be changing
+            // x{a}z to x{}a{a}z, which is the same as exploring naturally. In fact,
+            // it's theoretically a bit worse -- if this rule triggers on a single-digit
+            // core, it might prevent discovering a better application on a later core.
+            if core.len() < 2 {
+                continue;
+            }
+
             // Try substituting everything from all other cores (saves some repeat
             // work in the try_digit closure.)
             let mut gcd_other_cores = contracted.clone();
