@@ -30,11 +30,20 @@ pub struct SearchContext {
 
 #[derive(Debug, Default)]
 pub struct SearchStats {
+    /// How many primality checks we ran.
     pub num_primality_checks: usize,
+    /// How many primality checks were settled by the small-factor screen,
+    /// without running a Miller-Rabin round.
+    pub num_screened_out: usize,
+    /// How many times we checked if a prime was contained in a digit sequence.
     pub num_substring_checks: usize,
+    /// How many times we checked if a prime was contained in a `SimpleFamily`.
     pub num_simple_substring_checks: usize,
+    /// How many times we checked if a prime could be contained in `Family`.
     pub num_could_contains: usize,
+    /// How many branches of the search tree we explored.
     pub num_branches_explored: usize,
+    /// What happened to those branches.
     pub branch_stats: BranchStats,
 }
 
@@ -206,7 +215,10 @@ impl SearchContext {
 
 pub fn print_stats(stats: &SearchStats) {
     println!("{} branches explored", stats.num_branches_explored);
-    println!("{} primality tests", stats.num_primality_checks,);
+    println!(
+        "{} primality tests ({} settled by the small-factor screen)",
+        stats.num_primality_checks, stats.num_screened_out,
+    );
     println!("{} calls Family::could_contain", stats.num_could_contains,);
     println!("{} substring tests", stats.num_substring_checks,);
     println!(

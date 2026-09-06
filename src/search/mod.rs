@@ -10,6 +10,7 @@ use std::ops::ControlFlow;
 use itertools::Itertools;
 use log::{debug, trace};
 use num_bigint::BigUint;
+use num_integer::Integer;
 use num_prime::buffer::PrimeBufferExt;
 
 use self::composite::{find_even_odd_factor, find_periodic_factor, shares_factor_with_base};
@@ -17,6 +18,7 @@ pub use self::context::{
     CompositeReason, ExploreEvent, SearchContext, SplitDirection, print_stats,
 };
 use self::frontier::{Frontier, Weight};
+use self::gcd::nontrivial_gcd;
 pub use self::trace::TraceRecord;
 use crate::RemainingNodes;
 use crate::candidates::CandidateIndices;
@@ -551,10 +553,48 @@ impl SearchContext {
     }
 
     fn test_for_prime(&mut self, value: &BigUint) -> bool {
-        let result = self.prime_buffer.is_prime(value, None).probably();
         self.stats.num_primality_checks += 1;
-        result
+
+        // Implementation details of `num-prime` are leaking a bit here, but the
+        // win is pretty nice here, so it's worth it.
+        //
+        // TL;DR: when testing numbers under 2^64, it does a fast deterministic
+        // test, and above it, it jumps right to Miller-Rabin testing, no trial
+        // division by small primes (not even "is it even"). Each Miller-Rabin
+        // test on a number n costs a modpow where the modulus is n, which can
+        // be huge.
+        //
+        // We pass a _lot_ of composites to this function, so we can nix a whole
+        // lot of Miller-Rabin tests with a pretty cheap GCD check against the
+        // first few primes.
+        if value.bits() > 64 && has_small_factor(value) {
+            self.stats.num_screened_out += 1;
+            return false;
+        }
+
+        self.prime_buffer.is_prime(value, None).probably()
     }
+}
+
+/// The product of the odd primes up to 53, which is the largest such product
+/// that still fits in a `u64`.
+const SMALL_ODD_PRIME_PRODUCT: u64 =
+    3 * 5 * 7 * 11 * 13 * 17 * 19 * 23 * 29 * 31 * 37 * 41 * 43 * 47 * 53;
+
+/// Whether `value` is divisible by some prime less than or equal to 53.
+///
+/// Note that if `value` *is* a prime less than or equal to 53, this will
+/// return `true`, meaning that this method isn't quite the same as a
+/// composite checker.
+///
+/// About 14% of all numbers make it through this test:
+///   prod(1 - 1/p for p prime <= 53) = 0.136087...
+fn has_small_factor(value: &BigUint) -> bool {
+    if value.is_even() {
+        return true;
+    }
+
+    nontrivial_gcd(value, &SMALL_ODD_PRIME_PRODUCT.into()).is_some()
 }
 
 impl Family {
