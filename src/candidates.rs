@@ -12,6 +12,9 @@ pub struct CandidateSequences {
     // item is just replacing it with None. indices also can't
     // be re-used.
     inner: Vec<Option<DigitSeq>>,
+    /// How many of `inner` are still present. Tracked as we go, because
+    /// counting them is O(n) and [CandidateSequences::len] is called often.
+    num_present: usize,
 }
 
 /// A collection of indices for [CandidateSequences] that automatically extends
@@ -33,11 +36,25 @@ pub struct CandidateIndices {
 
 impl CandidateSequences {
     pub fn new() -> Self {
-        Self { inner: vec![] }
+        Self {
+            inner: vec![],
+            num_present: 0,
+        }
     }
 
+    /// The number of primes in this container. Will differ from [CandidateSequences::upper_bound]
+    /// if elements have been removed.
     pub fn len(&self) -> usize {
-        self.iter().count()
+        self.num_present
+    }
+
+    /// One past the largest index any current element has.
+    ///
+    /// This is what you want when you have checked all known primes, but want to
+    /// be aware of any new ones that arise. It will differ from [CandidateSequences::len]
+    /// if elements have been removed.
+    pub fn upper_bound(&self) -> usize {
+        self.inner.len()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &DigitSeq> {
@@ -63,11 +80,13 @@ impl CandidateSequences {
                 && other.properly_contains(&seq)
             {
                 *slot = None;
+                self.num_present -= 1;
             }
         }
 
         // Insert
         self.inner.push(Some(seq));
+        self.num_present += 1;
     }
 
     /// Return a sorted list of the primes contained in this struct.
@@ -113,8 +132,7 @@ impl CandidateSequences {
             .flat_map(|idx| self.inner[idx].as_ref().map(|val| (idx, val)))
     }
 
-    /// Returns an iterator over the elements represented by the given
-    /// range.
+    /// Returns an iterator over the elements from `start` onwards.
     pub fn get_tail<'slf, 'idx>(
         &'slf self,
         start: usize,

@@ -237,7 +237,7 @@ impl FamilyNode {
                     family,
                     composite_tested: false,
                     dies_at,
-                    start_unknown_primes: ctx.primes.len(),
+                    start_unknown_primes: ctx.primes.upper_bound(),
                 })],
                 ExploreEvent::Simplified,
             );
@@ -447,7 +447,7 @@ impl SimpleNode {
             }
             ctx.stats.num_simple_substring_checks += 1;
         }
-        self.start_unknown_primes = ctx.primes.len(); // resets our collection
+        self.start_unknown_primes = ctx.primes.upper_bound(); // resets our collection
 
         // Test if it is a prime
         let value = self.family.value(ctx.base);
