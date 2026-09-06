@@ -35,10 +35,10 @@ impl SearchContext {
                         debug!("  {seq} contains a prime {p}");
 
                         // Split into n families, x (L-y) (y (L-y))^i z for i in 0..n
-                        let yless_core = core.clone().without(d);
+                        let yless_core = core.without(d);
                         // xLz -> x(L-y)z
                         let mut first_child = family.clone();
-                        first_child.cores[i] = yless_core.clone();
+                        first_child.cores[i] = yless_core;
 
                         let mut children = vec![first_child];
 
@@ -46,7 +46,7 @@ impl SearchContext {
                             let mut new = children.last().unwrap().clone();
                             // x(L-y)z -> x(L-y)y(L-y)z
                             new.digitseqs.insert(i + 1, d.into());
-                            new.cores.insert(i + 1, yless_core.clone());
+                            new.cores.insert(i + 1, yless_core);
                             children.push(new);
                         }
 
@@ -146,7 +146,7 @@ impl SearchContext {
                 // If we got here, then g is a nontrivial common divisor of "substituting anything
                 // except (i, d)", and so we must have at least one substitution of (i, d).
                 let mut new = family.clone();
-                let d_less_core = core.clone().without(d);
+                let d_less_core = core.without(d);
 
                 // xLz -> xLy(L-y)z
                 new.digitseqs.insert(i + 1, d.into());
@@ -213,19 +213,19 @@ impl SearchContext {
                         // xLz -> x(L-a-b)z
                         with_neither.cores[i].remove(a);
                         with_neither.cores[i].remove(b);
-                        let neither_core = &with_neither.cores[i];
+                        let neither_core = with_neither.cores[i];
 
                         // Make the families with only a or b
                         let mut with_a = family.clone();
                         let mut with_b = family.clone();
 
                         // xLz -> x(L-a-b)aLz -> x(L-a-b)a(L-b)z
-                        with_a.cores.insert(i, neither_core.clone());
+                        with_a.cores.insert(i, neither_core);
                         with_a.digitseqs.insert(i + 1, a.into());
                         with_a.cores[i + 1].remove(b);
 
                         // converse
-                        with_b.cores.insert(i, neither_core.clone());
+                        with_b.cores.insert(i, neither_core);
                         with_b.digitseqs.insert(i + 1, b.into());
                         with_b.cores[i + 1].remove(a);
 
@@ -310,7 +310,7 @@ impl SearchContext {
                             with_a.cores[j].remove(b);
                             // x(L-a)y(M-b)z -> x(L-a)aLy(M-b)z
                             with_a.digitseqs.insert(i + 1, a.into());
-                            with_a.cores.insert(i + 1, family.cores[i].clone());
+                            with_a.cores.insert(i + 1, family.cores[i]);
 
                             let event = ExploreEvent::SplitOnIncompatibleDifferentCores {
                                 core_i: i,
@@ -361,17 +361,15 @@ impl SearchContext {
                     // xLz -> x(L-a)z
                     let mut no_as = family.clone();
                     no_as.cores[i].remove(a);
-                    let aless_core = &no_as.cores[i];
+                    let aless_core = no_as.cores[i];
                     // x(L-a)z -> x(L-a)a(L-a)z
                     let mut one_a = no_as.clone();
                     one_a.digitseqs.insert(i + 1, a.into());
-                    one_a.cores.insert(i + 1, aless_core.clone());
+                    one_a.cores.insert(i + 1, aless_core);
                     // x(L-a)a(L-a)z -> x(L-a)a(L-b)a(L-a)z
                     let mut more_as = one_a.clone();
                     more_as.digitseqs.insert(i + 1, a.into());
-                    more_as
-                        .cores
-                        .insert(i + 1, family.cores[i].clone().without(b));
+                    more_as.cores.insert(i + 1, family.cores[i].without(b));
 
                     let event = ExploreEvent::SplitOnForbiddenSandwich { core_idx: i, a, b };
                     return Some((vec![no_as, one_a, more_as], event));
@@ -399,9 +397,7 @@ fn do_split_for_semi_incompatible(
     // x(L-a)a(L-b)z
     let mut with_a = without_a.clone();
     with_a.digitseqs.insert(i + 1, a.into());
-    with_a
-        .cores
-        .insert(i + 1, family.cores[i].clone().without(b));
+    with_a.cores.insert(i + 1, family.cores[i].without(b));
 
     let event = ExploreEvent::SplitOnIncompatibleSameCore {
         core_idx: i,

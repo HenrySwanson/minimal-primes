@@ -20,8 +20,8 @@ use self::frontier::{Frontier, Weight};
 pub use self::trace::TraceRecord;
 use crate::RemainingNodes;
 use crate::candidates::CandidateIndices;
-use crate::digits::DigitSeq;
-use crate::families::{Core, Family, SimpleFamily};
+use crate::digits::{DigitSeq, DigitSet};
+use crate::families::{Family, SimpleFamily};
 use crate::search::composite::{
     check_residues_mod_30, composite_checks_for_simple, find_common_factor, find_two_factors,
 };
@@ -504,7 +504,7 @@ impl FamilyNode {
                 }
             }
 
-            *core = Core::new(allowed_digits);
+            *core = DigitSet::new(allowed_digits);
         }
         // Now we've reduced the core, and have a new family.
         debug!("  Reducing {} to {}", old_family, self.family);

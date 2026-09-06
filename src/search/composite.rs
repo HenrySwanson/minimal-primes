@@ -6,8 +6,8 @@ use num_bigint::{BigInt, BigUint};
 use num_integer::Integer;
 use num_prime::ExactRoots;
 
-use crate::digits::DigitSeq;
-use crate::families::{Core, Family};
+use crate::digits::{DigitSeq, DigitSet};
+use crate::families::Family;
 use crate::search::SimpleNode;
 use crate::search::gcd::nontrivial_gcd;
 use crate::sequence::BigSequence;
@@ -270,7 +270,7 @@ fn get_residues_mod_30(base: u8, family: &Family) -> [bool; 30] {
         *residues = new_residues;
     }
 
-    fn process_core(base: u8, core: &Core, residues: &mut [bool; 30]) {
+    fn process_core(base: u8, core: &DigitSet, residues: &mut [bool; 30]) {
         // [LX*] = [L] U [L x_i] U [L x_i x_j] U ...
         // Eventually this union chain will stabilize, so let's just
         // compute it until it does.
@@ -434,7 +434,7 @@ mod tests {
             if let Some(s) = s.strip_suffix(']') {
                 let (x, y) = s.split_once('[').unwrap();
                 digitseqs.push(DigitSeq(string_to_vec_digit(x, base)));
-                cores.push(Core::new(string_to_vec_digit(y, base)));
+                cores.push(DigitSet::new(string_to_vec_digit(y, base)));
             } else {
                 digitseqs.push(DigitSeq(string_to_vec_digit(s, base)));
             }

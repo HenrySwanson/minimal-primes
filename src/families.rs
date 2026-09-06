@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use num_bigint::BigUint;
 
-use crate::digits::{Digit, DigitSeq};
+use crate::digits::{Digit, DigitSeq, DigitSet};
 
 /// A *family* is a subset of digit sequences, specified by concatenating fixed
 /// digit sequences and cores, for example, `1[78]*23[9]*4`. Some sequences in
@@ -9,20 +9,16 @@ use crate::digits::{Digit, DigitSeq};
 /// - `1234`
 /// - `188882394`
 /// - `1787239994`
-#[derive(Debug, Clone, PartialEq)]
-pub struct Family {
-    // invariant: digitseqs.len() = cores.len() + 1
-    pub digitseqs: Vec<DigitSeq>,
-    pub cores: Vec<Core>,
-}
-
+///
 /// A *core* is an unordered set of digits, representing any sequence, of any
 /// length made from those digits. We notate cores, and families, with a
 /// regex-like syntax, so the core `[134]*` represents any strings made out
 /// of only 1s, 3s, and 4s (including the empty string).
 #[derive(Debug, Clone, PartialEq)]
-pub struct Core {
-    digits: Vec<Digit>,
+pub struct Family {
+    // invariant: digitseqs.len() = cores.len() + 1
+    pub digitseqs: Vec<DigitSeq>,
+    pub cores: Vec<DigitSet>,
 }
 
 /// A *simple* family is a family with exactly one core, which contains only
@@ -52,7 +48,7 @@ impl Family {
     pub fn any(base: u8) -> Self {
         Self {
             digitseqs: vec![DigitSeq::new(), DigitSeq::new()],
-            cores: vec![Core::full(base)],
+            cores: vec![DigitSet::full(base)],
         }
     }
 
@@ -225,7 +221,7 @@ impl Family {
             // as possible.
             loop {
                 match needle_iter.peek() {
-                    Some(d2) if core.digits.contains(d2) => {
+                    Some(d2) if core.contains(*d2) => {
                         needle_iter.next();
                     }
                     Some(_) => break,
@@ -247,43 +243,6 @@ impl Family {
 
         // could have exhausted it on the very last round, still gotta check
         needle_iter.peek().is_none()
-    }
-}
-
-impl Core {
-    pub fn new(digits: Vec<Digit>) -> Self {
-        Self { digits }
-    }
-
-    pub fn full(base: u8) -> Self {
-        Self {
-            digits: (0..base).map(Digit).collect(),
-        }
-    }
-
-    pub fn remove(&mut self, d: Digit) {
-        self.digits.retain(|d2| d != *d2);
-    }
-
-    pub fn without(mut self, d: Digit) -> Self {
-        self.remove(d);
-        self
-    }
-
-    pub fn clear(&mut self) {
-        self.digits.clear();
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = Digit> + Clone + '_ {
-        self.digits.iter().copied()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.digits.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.digits.len()
     }
 }
 
