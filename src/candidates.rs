@@ -126,16 +126,6 @@ impl CandidateSequences {
         self.inner.push((seq, our_mask));
     }
 
-    /// Return a sorted list of the primes contained in this struct.
-    ///
-    /// TODO: ugly as sin but i can deal with it later after giving this
-    /// thing some stable indices
-    pub fn clone_and_sort_and_iter(&self) -> impl Iterator<Item = &DigitSeq> {
-        let mut primes: Vec<_> = self.iter().collect();
-        primes.sort();
-        primes.into_iter()
-    }
-
     /// Returns a [CandidateIndices] containing none of the current elements.
     pub fn indices_none(&self) -> CandidateIndices {
         CandidateIndices {

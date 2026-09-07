@@ -154,6 +154,9 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) {
     let mut ctx = SearchContext::new(cmd.base, cmd.trace);
     let results = first_stage(&mut ctx, cmd.max_weight, cmd.max_iter, stop_signal);
 
+    let sorted_primes = ctx.primes.iter().sorted().collect_vec();
+
+    // TODO: i think i gotta rework this flag a bit
     if !cmd.stats_only {
         println!("---- BRANCHES REMAINING ----");
         for f in results.simple_families.iter() {
@@ -163,7 +166,7 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) {
             println!("{f}");
         }
         println!("---- MINIMAL PRIMES ----");
-        println!("{}", ctx.primes.clone_and_sort_and_iter().format(", "));
+        println!("{}", sorted_primes.iter().format(", "));
         println!("------------");
         println!(
             "{} primes found, {} simple branches and {} non-simple branches remaining",
@@ -179,7 +182,7 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) {
     println!(
         "Final set of primes ({}): {}",
         ctx.primes.num_elements(),
-        ctx.primes.clone_and_sort_and_iter().format(", ")
+        sorted_primes.iter().format(", ")
     );
 
     println!("{} branches unsolved", results.simple_families.len());
@@ -217,7 +220,7 @@ fn do_solve(cmd: &SolveArgs, stop_signal: &AtomicBool) -> RemainingNodes {
     println!(
         "Final set of primes ({}): {}",
         ctx.primes.num_elements(),
-        ctx.primes.clone_and_sort_and_iter().format(", ")
+        ctx.primes.iter().sorted().format(", ")
     );
     println!("{} branches unsolved", unsolved.len());
     for x in &unsolved {
@@ -925,10 +928,7 @@ mod tests {
 
     fn compare_primes(base: u8, primes: &CandidateSequences, exceptions: Vec<Regex>) {
         let mut truth_iter = iter_ground_truth(base).peekable();
-        let mut iter = primes
-            .clone_and_sort_and_iter()
-            .map(|seq| seq.to_string())
-            .peekable();
+        let mut iter = primes.iter().sorted().map(|seq| seq.to_string()).peekable();
 
         let mut fail = false;
         loop {
