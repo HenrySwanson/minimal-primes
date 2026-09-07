@@ -283,6 +283,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "stable-vec",
 ]
 
 [[package]]
@@ -510,6 +511,12 @@ dependencies = [
  "serde_core",
  "zmij",
 ]
+
+[[package]]
+name = "stable-vec"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "047720fbc1c4cc7daa75c925adba9ce3fa8e1f7b039337c281b142d4ecc6d86b"
 
 [[package]]
 name = "strsim"

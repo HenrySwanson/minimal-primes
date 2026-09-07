@@ -34,11 +34,6 @@ impl DigitSet {
         core
     }
 
-    /// Returns a set from the raw mask
-    pub const fn from_mask(mask: u64) -> Self {
-        Self { mask }
-    }
-
     /// Returns a set containing all the digits in the given base, i.e., 0, 1,
     /// ..., `base` - 1.
     ///

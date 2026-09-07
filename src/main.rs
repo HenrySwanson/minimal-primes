@@ -167,7 +167,7 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) {
         println!("------------");
         println!(
             "{} primes found, {} simple branches and {} non-simple branches remaining",
-            ctx.primes.len(),
+            ctx.primes.num_elements(),
             results.simple_families.len(),
             results.other_families.len()
         );
@@ -178,7 +178,7 @@ fn do_search(cmd: &SearchArgs, stop_signal: &AtomicBool) {
 
     println!(
         "Final set of primes ({}): {}",
-        ctx.primes.len(),
+        ctx.primes.num_elements(),
         ctx.primes.clone_and_sort_and_iter().format(", ")
     );
 
@@ -201,7 +201,7 @@ fn do_solve(cmd: &SolveArgs, stop_signal: &AtomicBool) -> RemainingNodes {
 
     println!(
         "{} primes found, {} simple branches and {} non-simple branches remaining",
-        ctx.primes.len(),
+        ctx.primes.num_elements(),
         results.simple_families.len(),
         results.other_families.len()
     );
@@ -216,7 +216,7 @@ fn do_solve(cmd: &SolveArgs, stop_signal: &AtomicBool) -> RemainingNodes {
 
     println!(
         "Final set of primes ({}): {}",
-        ctx.primes.len(),
+        ctx.primes.num_elements(),
         ctx.primes.clone_and_sort_and_iter().format(", ")
     );
     println!("{} branches unsolved", unsolved.len());
